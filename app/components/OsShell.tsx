@@ -1,166 +1,228 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import React, { useMemo, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
+import { useRouter } from "next/navigation";
 
-/* ================= CONFIG ================= */
+type RoleTab = "CEO" | "Staff";
 
-type Role = "CEO" | "Staff";
 const CEO_EMAIL = "hardikvekariya799@gmail.com";
+const STAFF_EMAIL = "eventurastaff@gmail.com";
 
-/* ================= HELPERS ================= */
+// ✅ Set your desired passwords here (change anytime)
+const DEFAULT_CEO_PASSWORD = "Hardik@9727";
+const DEFAULT_STAFF_PASSWORD = "Eventura@79";
 
-function getCookie(name: string) {
-  if (typeof document === "undefined") return "";
-  const match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
-  return match ? decodeURIComponent(match[2]) : "";
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+function setSessionEmail(email: string) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem("eventura_email", email);
+  document.cookie = `eventura_email=${encodeURIComponent(email)}; Path=/; Max-Age=31536000; SameSite=Lax`;
 }
 
-/* ================= COMPONENT ================= */
-
-export default function OsShell({ children }: { children: React.ReactNode }) {
+export default function LoginPage() {
   const router = useRouter();
-  const pathname = usePathname();
 
-  const [email, setEmail] = useState("");
+  const [tab, setTab] = useState<RoleTab>("CEO");
+  const [password, setPassword] = useState<string>(DEFAULT_CEO_PASSWORD);
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState<string>("");
 
-  const role: Role = useMemo(() => {
-    return email.toLowerCase() === CEO_EMAIL.toLowerCase() ? "CEO" : "Staff";
-  }, [email]);
+  const email = useMemo(() => (tab === "CEO" ? CEO_EMAIL : STAFF_EMAIL), [tab]);
 
-  /* ===== Load session ===== */
-  useEffect(() => {
-    const lsEmail =
-      typeof window !== "undefined"
-        ? window.localStorage.getItem("eventura_email") || ""
-        : "";
+  function switchTab(next: RoleTab) {
+    setTab(next);
+    setMsg("");
+    setPassword(next === "CEO" ? DEFAULT_CEO_PASSWORD : DEFAULT_STAFF_PASSWORD);
+  }
 
-    const ckEmail = getCookie("eventura_email");
-    const finalEmail = (lsEmail || ckEmail).trim();
+  function hardBlockCrossLogin(selectedTab: RoleTab, usedEmail: string) {
+    const ok =
+      (selectedTab === "CEO" && usedEmail.toLowerCase() === CEO_EMAIL.toLowerCase()) ||
+      (selectedTab === "Staff" && usedEmail.toLowerCase() === STAFF_EMAIL.toLowerCase());
+    return ok;
+  }
 
-    if (!finalEmail) {
-      router.push("/login");
+  async function createAccount() {
+    setMsg("");
+    if (!supabaseUrl || !supabaseAnonKey) {
+      setMsg("❌ Supabase env missing: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY");
       return;
     }
 
-    setEmail(finalEmail);
-  }, [router]);
+    if (!password || password.length < 6) {
+      setMsg("❌ Password must be at least 6 characters.");
+      return;
+    }
 
-  /* ===== Navigation ===== */
-  const navItems = useMemo(() => {
-    const common = [
-      { href: "/dashboard", label: "Dashboard", group: "Core" },
-      { href: "/events", label: "Events", group: "Core" },
-      { href: "/tasks", label: "Tasks", group: "Core" },
-      { href: "/vendors", label: "Vendors", group: "Operations" },
-      { href: "/hr", label: "HR", group: "Operations" },
-    ];
-
-    const ceoOnly = [
-      { href: "/finance", label: "Finance", group: "CEO Only" },
-      { href: "/reports", label: "Reports", group: "CEO Only" },
-      { href: "/settings", label: "Settings", group: "CEO Only" },
-    ];
-
-    return role === "CEO" ? [...common, ...ceoOnly] : common;
-  }, [role]);
-
-  const groupedNav = useMemo(() => {
-    const map: Record<string, typeof navItems> = {};
-    navItems.forEach((item) => {
-      if (!map[item.group]) map[item.group] = [];
-      map[item.group].push(item);
-    });
-    return map;
-  }, [navItems]);
-
-  /* ===== Logout ===== */
-  function logout() {
+    setLoading(true);
     try {
-      localStorage.removeItem("eventura_email");
-      document.cookie = "eventura_email=; Path=/; Max-Age=0";
-    } catch {}
-    router.push("/login");
+      // Create/Recreate user (since you deleted all users)
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+
+      if (error) {
+        // If already exists, tell user to just sign in
+        setMsg(`⚠️ ${error.message}`);
+      } else {
+        setMsg("✅ Account created. Now click Sign In.");
+      }
+    } catch (e: any) {
+      setMsg(`❌ ${e?.message || "Unknown error"}`);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  /* ================= RENDER ================= */
+  async function signIn() {
+    setMsg("");
+    if (!supabaseUrl || !supabaseAnonKey) {
+      setMsg("❌ Supabase env missing: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY");
+      return;
+    }
+
+    if (!password) {
+      setMsg("❌ Enter password.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Hard prevent cross login
+      if (!hardBlockCrossLogin(tab, email)) {
+        setMsg("❌ Cross-login blocked. Use the correct tab for this account.");
+        return;
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        setMsg(`❌ ${error.message}`);
+        return;
+      }
+
+      const signedEmail = data?.user?.email || email;
+
+      // Double-check: do not allow cross role even if Supabase signs in
+      if (!hardBlockCrossLogin(tab, signedEmail)) {
+        await supabase.auth.signOut();
+        setMsg("❌ Cross-login blocked. Wrong account for this tab.");
+        return;
+      }
+
+      // ✅ This fixes “always staff” because OsShell reads this email
+      setSessionEmail(signedEmail);
+
+      setMsg("✅ Signed in. Redirecting...");
+      router.push("/dashboard");
+    } catch (e: any) {
+      setMsg(`❌ ${e?.message || "Unknown error"}`);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <div className="osShell">
-      {/* ===== SIDEBAR ===== */}
-      <aside className="osPanel osSidebar">
-        <div className="card" style={{ marginBottom: 14 }}>
-          <div className="h2">Eventura OS</div>
-          <div className="p" style={{ marginTop: 6 }}>
-            {email}
-          </div>
-
-          <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
-            <span className="chip">{role}</span>
-            {role === "Staff" && <span className="chip chipWarn">Restricted</span>}
-          </div>
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 18,
+      }}
+    >
+      <div
+        className="card"
+        style={{
+          width: "100%",
+          maxWidth: 520,
+        }}
+      >
+        <div className="h1">Eventura OS Login</div>
+        <div className="p" style={{ marginTop: 6 }}>
+          Choose role tab. Emails are locked to prevent cross login.
         </div>
 
-        {Object.keys(groupedNav).map((group) => (
-          <div key={group}>
-            <div className="navGroupTitle">{group}</div>
-            {groupedNav[group].map((item) => {
-              const active =
-                pathname === item.href ||
-                (item.href !== "/dashboard" &&
-                  pathname.startsWith(item.href + "/"));
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={active ? "navItem navItemActive" : "navItem"}
-                >
-                  {item.label}
-                  {role === "CEO" &&
-                    (item.href === "/finance" ||
-                      item.href === "/settings") && (
-                      <span className="badge">CEO</span>
-                    )}
-                </Link>
-              );
-            })}
-          </div>
-        ))}
-
-        <div style={{ marginTop: 16 }}>
-          <button className="btn btnGhost" onClick={logout} style={{ width: "100%" }}>
-            Logout
+        {/* Tabs */}
+        <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+          <button
+            className={tab === "CEO" ? "btn btnPrimary" : "btn"}
+            onClick={() => switchTab("CEO")}
+            disabled={loading}
+            style={{ flex: 1 }}
+          >
+            CEO Login
+          </button>
+          <button
+            className={tab === "Staff" ? "btn btnPrimary" : "btn"}
+            onClick={() => switchTab("Staff")}
+            disabled={loading}
+            style={{ flex: 1 }}
+          >
+            Staff Login
           </button>
         </div>
-      </aside>
 
-      {/* ===== MAIN ===== */}
-      <main className="osMain">
-        <div className="osTopbar">
-          <div>
-            <div className="h1">Eventura OS</div>
-            <div className="p">Access Level: {role}</div>
+        {/* Form */}
+        <div style={{ marginTop: 14 }}>
+          <label className="p">Email (locked)</label>
+          <input className="input" value={email} readOnly style={{ marginTop: 6 }} />
+
+          <label className="p" style={{ marginTop: 12, display: "block" }}>
+            Password
+          </label>
+          <input
+            className="input"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder={tab === "CEO" ? "Enter CEO password" : "Enter Staff password"}
+            style={{ marginTop: 6 }}
+          />
+
+          <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+            <button className="btn" onClick={createAccount} disabled={loading} style={{ flex: 1 }}>
+              {loading ? "Working..." : "Create/Recreate Account"}
+            </button>
+            <button className="btn btnPrimary" onClick={signIn} disabled={loading} style={{ flex: 1 }}>
+              {loading ? "Signing in..." : "Sign In"}
+            </button>
           </div>
 
-          {role === "CEO" ? (
-            <button
-              className="btn btnPrimary"
-              onClick={() => router.push("/events/new")}
+          {msg ? (
+            <div
+              className="p"
+              style={{
+                marginTop: 12,
+                padding: 10,
+                borderRadius: 14,
+                border: "1px solid rgba(255,255,255,0.08)",
+                background: "rgba(255,255,255,0.04)",
+              }}
             >
-              + New Event
-            </button>
-          ) : (
-            <button className="btn" onClick={() => router.push("/tasks")}>
-              View Tasks
-            </button>
-          )}
-        </div>
+              {msg}
+            </div>
+          ) : null}
 
-        {/* CONTENT WRAPPER – prevents white background */}
-        <div className="card">{children}</div>
-      </main>
+          <div className="p" style={{ marginTop: 12 }}>
+            Default accounts:
+            <br />
+            <b>CEO:</b> {CEO_EMAIL}
+            <br />
+            <b>Staff:</b> {STAFF_EMAIL}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
