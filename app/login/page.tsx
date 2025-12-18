@@ -11,7 +11,6 @@ const supabase = createClient(
 
 export default function LoginPage() {
   const router = useRouter();
-
   const [tab, setTab] = useState<"CEO" | "Staff">("CEO");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,10 +21,7 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error || !data.user) {
       setLoading(false);
@@ -46,35 +42,18 @@ export default function LoginPage() {
         <p style={{ color: "#6b7280" }}>CEO / Staff Login</p>
 
         <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-          <button onClick={() => setTab("CEO")} style={{ flex: 1, fontWeight: tab === "CEO" ? 700 : 400, padding: 10 }}>
-            CEO
-          </button>
-          <button onClick={() => setTab("Staff")} style={{ flex: 1, fontWeight: tab === "Staff" ? 700 : 400, padding: 10 }}>
-            Staff
-          </button>
+          <button onClick={() => setTab("CEO")} style={{ flex: 1, fontWeight: tab === "CEO" ? 700 : 400, padding: 10 }}>CEO</button>
+          <button onClick={() => setTab("Staff")} style={{ flex: 1, fontWeight: tab === "Staff" ? 700 : 400, padding: 10 }}>Staff</button>
         </div>
 
-        <input
-          type="email"
-          placeholder={`${tab} Email`}
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #d1d5db" }}
-        />
+        <input type="email" placeholder={`${tab} Email`} value={email} onChange={(e) => setEmail(e.target.value)}
+          style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #d1d5db" }} />
 
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #d1d5db", marginTop: 10 }}
-        />
+        <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)}
+          style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #d1d5db", marginTop: 10 }} />
 
-        <button
-          onClick={login}
-          disabled={loading}
-          style={{ width: "100%", marginTop: 14, padding: 12, fontWeight: 700, cursor: "pointer" }}
-        >
+        <button onClick={login} disabled={loading}
+          style={{ width: "100%", marginTop: 14, padding: 12, fontWeight: 700, cursor: "pointer" }}>
           {loading ? "Signing in..." : "Login"}
         </button>
 
