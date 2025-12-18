@@ -34,7 +34,9 @@ export default function LoginPage() {
     }
 
     localStorage.setItem("eventura_email", email);
-    document.cookie = `eventura_email=${encodeURIComponent(email)}; path=/; max-age=31536000; SameSite=Lax`;
+    document.cookie = `eventura_email=${encodeURIComponent(
+      email
+    )}; path=/; max-age=31536000; SameSite=Lax`;
 
     router.replace("/dashboard");
   }
@@ -44,8 +46,8 @@ export default function LoginPage() {
       style={{
         minHeight: "100vh",
         display: "flex",
-        alignItems: "center",
         justifyContent: "center",
+        alignItems: "center",
         fontFamily: "system-ui",
       }}
     >
