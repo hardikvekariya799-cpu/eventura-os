@@ -4,8 +4,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 
-/* ===== CONFIG ===== */
-
 const CEO_EMAIL = "hardikvekariya799@gmail.com";
 const STAFF_EMAIL = "eventurastaff@gmail.com";
 
@@ -13,8 +11,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
-
-/* ===== PAGE ===== */
 
 export default function LoginPage() {
   const router = useRouter();
@@ -26,17 +22,15 @@ export default function LoginPage() {
 
   const email = role === "CEO" ? CEO_EMAIL : STAFF_EMAIL;
 
-  /* Redirect if already logged in */
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase.auth.getUser();
+    supabase.auth.getUser().then(({ data }) => {
       if (data.user) router.replace("/dashboard");
-    })();
+    });
   }, [router]);
 
   async function signIn() {
-    setStatus("");
     setLoading(true);
+    setStatus("");
 
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -45,22 +39,20 @@ export default function LoginPage() {
 
     if (error || !data.user) {
       setLoading(false);
-      setStatus("❌ Invalid login credentials");
+      setStatus("Invalid login credentials");
       return;
     }
 
-    // 🔒 HARD BLOCK CROSS LOGIN
     if (
       (role === "CEO" && data.user.email !== CEO_EMAIL) ||
       (role === "Staff" && data.user.email !== STAFF_EMAIL)
     ) {
       await supabase.auth.signOut();
       setLoading(false);
-      setStatus("❌ Access denied");
+      setStatus("Access denied");
       return;
     }
 
-    // ✅ Store session email for Eventura OS
     localStorage.setItem("eventura_email", email);
     document.cookie = `eventura_email=${email}; path=/; max-age=31536000`;
 
@@ -80,7 +72,6 @@ export default function LoginPage() {
         <h2>Eventura OS Login</h2>
         <p style={{ color: "#6b7280" }}>Permanent CEO / Staff login</p>
 
-        {/* ROLE TABS */}
         <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
           <button
             onClick={() => setRole("CEO")}
@@ -105,45 +96,34 @@ export default function LoginPage() {
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          style={inputStyle}
+          style={{
+            width: "100%",
+            padding: 10,
+            borderRadius: 10,
+            border: "1px solid #e5e7eb",
+          }}
         />
 
         <button
           onClick={signIn}
           disabled={loading}
-          style={{ ...primaryBtn, marginTop: 12, width: "100%" }}
+          style={{
+            width: "100%",
+            marginTop: 12,
+            padding: "12px 14px",
+            borderRadius: 10,
+            border: "none",
+            cursor: "pointer",
+            fontWeight: 700,
+          }}
         >
           {loading ? "Signing in..." : "Sign In"}
         </button>
 
         {status && (
-          <div
-            style={{
-              marginTop: 12,
-              color: status.startsWith("❌") ? "red" : "green",
-            }}
-          >
-            {status}
-          </div>
+          <div style={{ marginTop: 12, color: "red" }}>{status}</div>
         )}
       </div>
     </main>
   );
 }
-
-/* ===== STYLES ===== */
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: 10,
-  borderRadius: 10,
-  border: "1px solid #e5e7eb",
-};
-
-const primaryBtn: React.CSSProperties = {
-  padding: "12px 14px",
-  borderRadius: 10,
-  border: "none",
-  cursor: "pointer",
-  fontWeight: 700,
-};
