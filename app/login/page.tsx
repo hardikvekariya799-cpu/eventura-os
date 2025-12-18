@@ -6,10 +6,9 @@ import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
   const router = useRouter();
-
   const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [status, setStatus] = useState<string>("");
+  const [password, setPassword] = useState("");
+  const [status, setStatus] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -21,131 +20,66 @@ export default function LoginPage() {
     })();
   }, [router]);
 
-  async function sendMagicLink() {
-    setStatus("Sending magic link...");
+  async function signIn() {
+    setStatus("Signing in...");
     try {
       const supabase = supabaseClient();
-      const redirectTo = `${window.location.origin}/auth/callback`;
-
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: { emailRedirectTo: redirectTo },
-      });
-
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      setStatus("✅ Magic link sent. Open it on the SAME device/browser you requested it.");
-    } catch (e: any) {
-      setStatus(`❌ ${e?.message || "Failed to send link"}`);
-    }
-  }
-
-  async function sendOTPCode() {
-    setStatus("Sending OTP code...");
-    try {
-      const supabase = supabaseClient();
-
-      // Supabase sends an email; if user opens on another device, OTP still works.
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: { shouldCreateUser: true },
-      });
-
-      if (error) throw error;
-
-      setStatus("✅ OTP sent. Check email and enter the code below, then Verify Code.");
-    } catch (e: any) {
-      setStatus(`❌ ${e?.message || "Failed to send OTP"}`);
-    }
-  }
-
-  async function verifyOTP() {
-    setStatus("Verifying code...");
-    try {
-      const supabase = supabaseClient();
-
-      const { error } = await supabase.auth.verifyOtp({
-        email,
-        token: code,
-        type: "email",
-      });
-
-      if (error) throw error;
-
-      setStatus("✅ Verified! Redirecting...");
       router.replace("/dashboard");
     } catch (e: any) {
-      setStatus(`❌ ${e?.message || "Verification failed"}`);
+      setStatus(`❌ ${e?.message || "Login failed"}`);
+    }
+  }
+
+  async function signUp() {
+    setStatus("Creating account...");
+    try {
+      const supabase = supabaseClient();
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) throw error;
+      setStatus("✅ Account created. Now click Sign In.");
+    } catch (e: any) {
+      setStatus(`❌ ${e?.message || "Signup failed"}`);
     }
   }
 
   return (
     <main style={{ padding: 24, fontFamily: "system-ui, Arial" }}>
-      <h1 style={{ fontSize: 28, margin: 0 }}>Login</h1>
-      <p style={{ color: "#6b7280", marginTop: 8 }}>
-        Use Magic Link (same device) OR OTP Code (works across devices).
+      <h1 style={{ fontSize: 28, margin: 0 }}>Eventura OS Login</h1>
+      <p style={{ color: "#6b7280", marginTop: 6 }}>
+        Email + Password (permanent login on any device)
       </p>
 
-      <div style={{ marginTop: 12, maxWidth: 480 }}>
+      <div style={{ marginTop: 14, maxWidth: 420 }}>
         <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>Email</div>
         <input
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="your@email.com"
-          style={{
-            width: "100%",
-            padding: 10,
-            borderRadius: 10,
-            border: "1px solid #e5e7eb",
-          }}
+          placeholder="email@eventura.com"
+          style={inputStyle}
         />
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
-          <button
-            onClick={sendMagicLink}
-            style={{ padding: "12px 14px", borderRadius: 10, border: "none", cursor: "pointer", fontWeight: 900 }}
-          >
-            Send magic link
+        <div style={{ fontSize: 12, color: "#6b7280", marginTop: 10, marginBottom: 6 }}>Password</div>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Enter password"
+          style={inputStyle}
+        />
+
+        <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+          <button onClick={signIn} style={primaryBtn}>
+            Sign In
           </button>
-
-          <button
-            onClick={sendOTPCode}
-            style={{
-              padding: "12px 14px",
-              borderRadius: 10,
-              border: "1px solid #e5e7eb",
-              background: "white",
-              cursor: "pointer",
-              fontWeight: 900,
-            }}
-          >
-            Send OTP code
-          </button>
-        </div>
-
-        <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid #e5e7eb" }}>
-          <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 6 }}>OTP Code</div>
-          <input
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            placeholder="Enter code from email"
-            style={{
-              width: "100%",
-              padding: 10,
-              borderRadius: 10,
-              border: "1px solid #e5e7eb",
-            }}
-          />
-
-          <button
-            onClick={verifyOTP}
-            style={{ marginTop: 10, padding: "12px 14px", borderRadius: 10, border: "none", cursor: "pointer", fontWeight: 900 }}
-          >
-            Verify Code
+          <button onClick={signUp} style={secondaryBtn}>
+            Create Account
           </button>
         </div>
 
         {status ? (
-          <pre
+          <div
             style={{
               marginTop: 12,
               padding: 12,
@@ -156,9 +90,30 @@ export default function LoginPage() {
             }}
           >
             {status}
-          </pre>
+          </div>
         ) : null}
       </div>
     </main>
   );
 }
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: 10,
+  borderRadius: 10,
+  border: "1px solid #e5e7eb",
+};
+
+const primaryBtn: React.CSSProperties = {
+  padding: "12px 14px",
+  borderRadius: 10,
+  border: "none",
+  cursor: "pointer",
+  fontWeight: 900,
+};
+
+const secondaryBtn: React.CSSProperties = {
+  ...primaryBtn,
+  background: "white",
+  border: "1px solid #e5e7eb",
+};
