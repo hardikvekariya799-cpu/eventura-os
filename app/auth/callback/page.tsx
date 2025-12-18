@@ -13,18 +13,21 @@ export default function AuthCallbackPage() {
       try {
         const supabase = supabaseClient();
 
-        // Exchange the "code" from the URL for a session cookie
         const { error } = await supabase.auth.exchangeCodeForSession(window.location.href);
+
         if (error) {
-          setMsg("❌ Login failed. Please request a new magic link.");
+          setMsg(
+            `❌ Login failed: ${error.message}\n\nMost common reason: you opened the email link on a different device/browser than the one where you requested it.\n\nFix: request the link and open it on the SAME device/browser, OR use OTP code login on /login.`
+          );
           return;
         }
 
-        // Clean URL and go to dashboard
-        window.history.replaceState({}, document.title, "/dashboard");
+        setMsg("✅ Signed in! Redirecting to dashboard...");
         router.replace("/dashboard");
-      } catch {
-        setMsg("❌ Login failed. Please request a new magic link.");
+      } catch (e: any) {
+        setMsg(
+          `❌ Login failed.\n\nTry again using the SAME device/browser, OR use OTP code login on /login.\n\nDetails: ${e?.message || "unknown error"}`
+        );
       }
     })();
   }, [router]);
@@ -32,7 +35,10 @@ export default function AuthCallbackPage() {
   return (
     <main style={{ padding: 24, fontFamily: "system-ui, Arial" }}>
       <h1 style={{ margin: 0, fontSize: 22 }}>Eventura OS</h1>
-      <p style={{ marginTop: 10, color: "#6b7280" }}>{msg}</p>
+      <pre style={{ marginTop: 12, whiteSpace: "pre-wrap", color: "#111827" }}>{msg}</pre>
+      <p style={{ marginTop: 12, color: "#6b7280" }}>
+        If this keeps failing, open /login and use OTP code login.
+      </p>
     </main>
   );
 }
