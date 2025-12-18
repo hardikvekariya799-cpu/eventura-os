@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -34,38 +34,22 @@ export default function LoginPage() {
     }
 
     localStorage.setItem("eventura_email", email);
-    document.cookie = `eventura_email=${encodeURIComponent(
-      email
-    )}; path=/; max-age=31536000; SameSite=Lax`;
+    document.cookie = `eventura_email=${encodeURIComponent(email)}; path=/; max-age=31536000; SameSite=Lax`;
 
     router.replace("/dashboard");
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        fontFamily: "system-ui",
-      }}
-    >
+    <main style={{ minHeight: "100vh", display: "flex", justifyContent: "center", alignItems: "center", fontFamily: "system-ui" }}>
       <div style={{ width: 360 }}>
         <h2>Eventura OS Login</h2>
         <p style={{ color: "#6b7280" }}>CEO / Staff Login</p>
 
         <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-          <button
-            onClick={() => setTab("CEO")}
-            style={{ flex: 1, fontWeight: tab === "CEO" ? 700 : 400, padding: 10 }}
-          >
+          <button onClick={() => setTab("CEO")} style={{ flex: 1, fontWeight: tab === "CEO" ? 700 : 400, padding: 10 }}>
             CEO
           </button>
-          <button
-            onClick={() => setTab("Staff")}
-            style={{ flex: 1, fontWeight: tab === "Staff" ? 700 : 400, padding: 10 }}
-          >
+          <button onClick={() => setTab("Staff")} style={{ flex: 1, fontWeight: tab === "Staff" ? 700 : 400, padding: 10 }}>
             Staff
           </button>
         </div>
@@ -75,7 +59,7 @@ export default function LoginPage() {
           placeholder={`${tab} Email`}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          style={inputStyle}
+          style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #d1d5db" }}
         />
 
         <input
@@ -83,19 +67,13 @@ export default function LoginPage() {
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          style={{ ...inputStyle, marginTop: 10 }}
+          style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #d1d5db", marginTop: 10 }}
         />
 
         <button
           onClick={login}
           disabled={loading}
-          style={{
-            width: "100%",
-            marginTop: 14,
-            padding: 12,
-            fontWeight: 700,
-            cursor: "pointer",
-          }}
+          style={{ width: "100%", marginTop: 14, padding: 12, fontWeight: 700, cursor: "pointer" }}
         >
           {loading ? "Signing in..." : "Login"}
         </button>
@@ -105,10 +83,3 @@ export default function LoginPage() {
     </main>
   );
 }
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: 10,
-  borderRadius: 8,
-  border: "1px solid #d1d5db",
-};
