@@ -33,9 +33,8 @@ export default function LoginPage() {
       return;
     }
 
-    // store email for Eventura OS role logic
     localStorage.setItem("eventura_email", email);
-    document.cookie = `eventura_email=${email}; path=/; max-age=31536000`;
+    document.cookie = `eventura_email=${encodeURIComponent(email)}; path=/; max-age=31536000; SameSite=Lax`;
 
     router.replace("/dashboard");
   }
@@ -45,8 +44,8 @@ export default function LoginPage() {
       style={{
         minHeight: "100vh",
         display: "flex",
-        justifyContent: "center",
         alignItems: "center",
+        justifyContent: "center",
         fontFamily: "system-ui",
       }}
     >
@@ -54,17 +53,16 @@ export default function LoginPage() {
         <h2>Eventura OS Login</h2>
         <p style={{ color: "#6b7280" }}>CEO / Staff Login</p>
 
-        {/* Tabs */}
         <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
           <button
             onClick={() => setTab("CEO")}
-            style={{ flex: 1, fontWeight: tab === "CEO" ? 700 : 400 }}
+            style={{ flex: 1, fontWeight: tab === "CEO" ? 700 : 400, padding: 10 }}
           >
             CEO
           </button>
           <button
             onClick={() => setTab("Staff")}
-            style={{ flex: 1, fontWeight: tab === "Staff" ? 700 : 400 }}
+            style={{ flex: 1, fontWeight: tab === "Staff" ? 700 : 400, padding: 10 }}
           >
             Staff
           </button>
