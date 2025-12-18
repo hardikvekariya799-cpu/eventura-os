@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 
-/* ================= CONFIG ================= */
+/* ===== CONFIG ===== */
 
 const CEO_EMAIL = "hardikvekariya799@gmail.com";
 const STAFF_EMAIL = "eventurastaff@gmail.com";
@@ -14,7 +14,7 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-/* ================= PAGE ================= */
+/* ===== PAGE ===== */
 
 export default function LoginPage() {
   const router = useRouter();
@@ -60,7 +60,7 @@ export default function LoginPage() {
       return;
     }
 
-    // ✅ Store role reference for OS
+    // ✅ Store session email for Eventura OS
     localStorage.setItem("eventura_email", email);
     document.cookie = `eventura_email=${email}; path=/; max-age=31536000`;
 
@@ -68,10 +68,17 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={{ minHeight: "100vh", display: "flex", justifyContent: "center", alignItems: "center" }}>
+    <main
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
       <div style={{ width: 360 }}>
         <h2>Eventura OS Login</h2>
-        <p style={{ color: "#6b7280" }}>Permanent login (CEO / Staff)</p>
+        <p style={{ color: "#6b7280" }}>Permanent CEO / Staff login</p>
 
         {/* ROLE TABS */}
         <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
@@ -110,7 +117,12 @@ export default function LoginPage() {
         </button>
 
         {status && (
-          <div style={{ marginTop: 12, color: status.startsWith("❌") ? "red" : "green" }}>
+          <div
+            style={{
+              marginTop: 12,
+              color: status.startsWith("❌") ? "red" : "green",
+            }}
+          >
             {status}
           </div>
         )}
@@ -119,7 +131,7 @@ export default function LoginPage() {
   );
 }
 
-/* ================= STYLES ================= */
+/* ===== STYLES ===== */
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
