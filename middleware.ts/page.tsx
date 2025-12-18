@@ -1,31 +1,27 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+export const config = {
+  matcher: ["/dashboard/:path*", "/events/:path*", "/finance/:path*", "/hr/:path*"],
+};
+
 export function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
+  const url = req.nextUrl.clone();
 
-  // Only protect these routes
-  const protectedRoutes = ["/dashboard", "/events", "/finance", "/hr"];
-  const isProtected = protectedRoutes.some((p) => pathname === p || pathname.startsWith(p + "/"));
-  if (!isProtected) return NextResponse.next();
+  // ✅ Supabase sets cookies like: sb-<project-ref>-auth-token
+  // Also sometimes: sb-access-token / sb-refresh-token
+  const cookies = req.cookies.getAll();
 
-  // Supabase auth stores session in cookies; if missing -> go login
-  // This is a simple guard (works well for your current setup).
-  const hasAnySupabaseCookie =
-    req.cookies.get("sb-access-token") ||
-    req.cookies.get("sb-refresh-token") ||
-    // some supabase projects use different cookie keys; this still catches many cases
-    req.cookies.get("supabase-auth-token");
+  const isLoggedIn =
+    cookies.some((c) => c.name.startsWith("sb-") && c.name.includes("auth-token") && c.value?.length) ||
+    cookies.some((c) => c.name === "sb-access-token" && c.value?.length) ||
+    cookies.some((c) => c.name === "sb-refresh-token" && c.value?.length) ||
+    cookies.some((c) => c.name === "supabase-auth-token" && c.value?.length);
 
-  if (!hasAnySupabaseCookie) {
-    const url = req.nextUrl.clone();
+  if (!isLoggedIn) {
     url.pathname = "/login";
+    url.searchParams.set("from", req.nextUrl.pathname);
     return NextResponse.redirect(url);
   }
 
   return NextResponse.next();
 }
-
-export const config = {
-  matcher: ["/dashboard/:path*", "/events/:path*", "/finance/:path*", "/hr/:path*"],
-};
-
