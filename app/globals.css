@@ -1,156 +1,422 @@
+/* =====================================================================
+   FILE 1/2
+   PATH: app/globals.css
+   ACTION: Replace the full file with this
+===================================================================== */
+
 :root{
-  --bg0:#070A12;
-  --bg1:#0B1020;
-  --card:#0E162B;
-  --stroke:rgba(255,255,255,.10);
-  --text:#EEF2FF;
-  --muted:rgba(238,242,255,.65);
-  --muted2:rgba(238,242,255,.45);
-  --gold:#D4AF37;
-  --gold2:#F5D77A;
-  --shadow: 0 18px 60px rgba(0,0,0,.45);
-  --r:18px;
-  --r2:22px;
+  --bg-0:#050510;
+  --bg-1:#080818;
+  --card:rgba(18,18,40,.66);
+  --card2:rgba(26,26,58,.55);
+  --border:rgba(180,140,255,.18);
+  --border2:rgba(255,255,255,.08);
+
+  --text:#f2f1ff;
+  --muted:rgba(242,241,255,.70);
+
+  --purple:#8b5cf6;
+  --purple2:#a78bfa;
+  --pink:#ec4899;
+  --cyan:#22d3ee;
+
+  --success:#34d399;
+  --warn:#fbbf24;
+  --danger:#fb7185;
+
+  --shadow:0 18px 60px rgba(0,0,0,.55);
+  --glass:blur(12px);
+  --radius:18px;
 }
 
-*{ box-sizing:border-box; }
-html,body{ height:100%; }
+*{box-sizing:border-box}
+html,body{height:100%}
+
 body{
   margin:0;
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
   color:var(--text);
-  background: radial-gradient(1100px 600px at 15% 10%, rgba(212,175,55,.18), transparent 55%),
-              radial-gradient(900px 500px at 90% 15%, rgba(99,102,241,.16), transparent 55%),
-              linear-gradient(180deg, var(--bg0), var(--bg1));
+  background:
+    radial-gradient(900px 500px at 20% 10%, rgba(139,92,246,.25), transparent 60%),
+    radial-gradient(700px 400px at 80% 20%, rgba(236,72,153,.14), transparent 60%),
+    radial-gradient(900px 600px at 60% 100%, rgba(34,211,238,.10), transparent 60%),
+    linear-gradient(180deg, var(--bg-0), var(--bg-1));
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+  overflow-x:hidden;
 }
 
-.os-bg{ min-height:100vh; }
-.os-shell{
-  display:grid;
-  grid-template-columns: 280px 1fr;
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{
+  background:rgba(167,139,250,.25);
+  border:1px solid rgba(167,139,250,.15);
+  border-radius:999px;
+}
+::-webkit-scrollbar-track{background:rgba(255,255,255,.04)}
+
+a{color:inherit;text-decoration:none}
+a:hover{opacity:.92}
+
+/* ============ OS LAYOUT ============ */
+.osShell{
   min-height:100vh;
+  display:grid;
+  grid-template-columns:270px 1fr;
+  gap:18px;
+  padding:18px;
+}
+@media (max-width:980px){
+  .osShell{grid-template-columns:1fr}
 }
 
-.os-sidebar{
-  border-right:1px solid var(--stroke);
-  background: linear-gradient(180deg, rgba(14,22,43,.95), rgba(11,16,32,.92));
-  padding:18px;
+.osPanel{
+  background:var(--card);
+  border:1px solid var(--border2);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  backdrop-filter:var(--glass);
+  -webkit-backdrop-filter:var(--glass);
+}
+
+.osSidebar{
+  padding:14px;
   position:sticky;
-  top:0;
-  height:100vh;
+  top:18px;
+  height:calc(100vh - 36px);
   overflow:auto;
 }
 
-.os-brand{
-  display:flex;
-  align-items:center;
-  gap:12px;
-  padding:12px;
-  border:1px solid var(--stroke);
-  border-radius: var(--r2);
-  background: rgba(255,255,255,.04);
-  box-shadow: var(--shadow);
+.osMain{
+  padding:14px;
+  overflow:hidden;
 }
 
-.os-logo{
-  width:44px;
-  height:44px;
-  border-radius:14px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  font-weight:900;
-  color:#111827;
-  background: linear-gradient(135deg, var(--gold), var(--gold2));
-}
-
-.os-brand-title{ font-weight:900; letter-spacing:.2px; }
-.os-brand-sub{ font-size:12px; color:var(--muted); margin-top:2px; }
-
-.os-nav{ margin-top:14px; display:flex; flex-direction:column; gap:8px; }
-.os-nav-item{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  padding:12px 12px;
-  border-radius: 14px;
-  border:1px solid transparent;
-  color:var(--text);
-  text-decoration:none;
-  background: rgba(255,255,255,.03);
-}
-.os-nav-item:hover{ border-color: var(--stroke); background: rgba(255,255,255,.05); }
-.os-nav-item.active{
-  border-color: rgba(212,175,55,.35);
-  background: linear-gradient(135deg, rgba(212,175,55,.14), rgba(255,255,255,.04));
-}
-.os-ic{ width:22px; display:inline-flex; justify-content:center; }
-
-.os-side-footer{ margin-top:14px; padding:12px; border:1px solid var(--stroke); border-radius: var(--r2); background: rgba(255,255,255,.03); }
-.os-user{ display:flex; align-items:center; gap:10px; }
-.os-user-dot{ width:10px; height:10px; border-radius:99px; background: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,.15); }
-.os-user-name{ font-weight:900; }
-.os-user-email{ font-size:12px; color:var(--muted); margin-top:2px; }
-.os-founders{ margin-top:10px; }
-.os-muted{ color:var(--muted); }
-.os-muted2{ color:var(--muted2); font-size:12px; margin-top:4px; }
-
-.os-main{ padding:18px; }
-.os-topbar{
+.osTopbar{
   display:flex;
   align-items:center;
   justify-content:space-between;
   gap:12px;
-  padding:12px 14px;
-  border:1px solid var(--stroke);
-  border-radius: var(--r2);
-  background: rgba(255,255,255,.03);
-  box-shadow: var(--shadow);
+  padding:14px;
+  margin-bottom:14px;
+  background:linear-gradient(135deg, rgba(139,92,246,.15), rgba(236,72,153,.07));
+  border:1px solid var(--border2);
+  border-radius:var(--radius);
+  backdrop-filter:var(--glass);
 }
-.os-pill{
+
+/* Sidebar nav */
+.navGroupTitle{
+  font-size:12px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin:14px 10px 8px;
+}
+
+.navItem{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 12px;
+  margin:6px 6px;
+  border-radius:14px;
+  border:1px solid transparent;
+  color:var(--text);
+  background:transparent;
+  cursor:pointer;
+  user-select:none;
+  transition:all .18s ease;
+}
+.navItem:hover{
+  background:rgba(167,139,250,.10);
+  border-color:rgba(167,139,250,.18);
+}
+.navItemActive{
+  background:linear-gradient(135deg, rgba(139,92,246,.22), rgba(236,72,153,.10));
+  border-color:rgba(167,139,250,.22);
+  box-shadow:0 10px 30px rgba(139,92,246,.18);
+}
+
+.badge{
+  margin-left:auto;
+  font-size:12px;
+  color:rgba(242,241,255,.85);
+  padding:2px 10px;
+  border-radius:999px;
+  border:1px solid rgba(167,139,250,.20);
+  background:rgba(167,139,250,.10);
+}
+
+/* Cards */
+.card{
+  background:var(--card);
+  border:1px solid var(--border2);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  backdrop-filter:var(--glass);
+  padding:14px;
+}
+.cardGlow{position:relative;overflow:hidden}
+.cardGlow::before{
+  content:"";
+  position:absolute;
+  inset:-2px;
+  background:
+    radial-gradient(400px 120px at 20% 0%, rgba(139,92,246,.22), transparent 60%),
+    radial-gradient(400px 120px at 80% 30%, rgba(236,72,153,.12), transparent 60%);
+  pointer-events:none;
+}
+
+/* Buttons */
+.btn{
+  border:1px solid rgba(167,139,250,.22);
+  background:rgba(167,139,250,.10);
+  color:var(--text);
+  padding:10px 12px;
+  border-radius:14px;
+  cursor:pointer;
+  transition:all .16s ease;
+}
+.btn:hover{transform:translateY(-1px);background:rgba(167,139,250,.14)}
+.btn:active{transform:translateY(0)}
+
+.btnPrimary{
+  border-color:rgba(139,92,246,.35);
+  background:linear-gradient(135deg, rgba(139,92,246,.85), rgba(236,72,153,.65));
+  box-shadow:0 16px 40px rgba(139,92,246,.25);
+}
+.btnPrimary:hover{filter:brightness(1.05)}
+
+.btnDanger{
+  border-color:rgba(251,113,133,.35);
+  background:rgba(251,113,133,.12);
+}
+.btnGhost{
+  border-color:transparent;
+  background:rgba(255,255,255,.06);
+}
+
+/* Inputs */
+.input, select, textarea{
+  width:100%;
+  padding:10px 12px;
+  border-radius:14px;
+  border:1px solid rgba(167,139,250,.18);
+  background:rgba(10,10,24,.55);
+  color:var(--text);
+  outline:none;
+}
+.input::placeholder, textarea::placeholder{color:rgba(242,241,255,.50)}
+.input:focus, select:focus, textarea:focus{
+  border-color:rgba(139,92,246,.45);
+  box-shadow:0 0 0 4px rgba(139,92,246,.18);
+}
+
+/* Tables */
+.table{
+  width:100%;
+  border-collapse:collapse;
+  overflow:hidden;
+  border-radius:16px;
+  border:1px solid rgba(255,255,255,.08);
+  background:rgba(10,10,24,.35);
+}
+.table th, .table td{
+  padding:12px 12px;
+  border-bottom:1px solid rgba(255,255,255,.06);
+  text-align:left;
+  vertical-align:middle;
+}
+.table th{
+  font-size:12px;
+  color:rgba(242,241,255,.75);
+  text-transform:uppercase;
+  letter-spacing:.10em;
+  background:rgba(167,139,250,.10);
+}
+.table tr:hover td{background:rgba(167,139,250,.06)}
+
+/* Chips */
+.chip{
   display:inline-flex;
   align-items:center;
   gap:8px;
-  padding:8px 12px;
-  border-radius: 999px;
-  border:1px solid rgba(212,175,55,.25);
-  background: rgba(212,175,55,.08);
-  color: var(--gold2);
-  font-weight:900;
+  padding:6px 10px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.10);
+  background:rgba(255,255,255,.06);
+  color:rgba(242,241,255,.90);
   font-size:12px;
 }
-.os-kpi-mini{ display:flex; align-items:center; gap:8px; color:var(--muted); font-weight:800; }
-.os-kpi-mini .dot{ width:10px; height:10px; border-radius:99px; background:#22c55e; }
+.chipSuccess{border-color:rgba(52,211,153,.35);background:rgba(52,211,153,.10)}
+.chipWarn{border-color:rgba(251,191,36,.35);background:rgba(251,191,36,.10)}
+.chipDanger{border-color:rgba(251,113,133,.35);background:rgba(251,113,133,.10)}
 
-.os-content{ margin-top:14px; }
+.h1{font-size:22px;font-weight:800;letter-spacing:.01em}
+.h2{font-size:16px;font-weight:800;color:rgba(242,241,255,.92)}
+.p{color:var(--muted);font-size:13px;line-height:1.5}
 
-.os-card{
-  border:1px solid var(--stroke);
-  background: rgba(255,255,255,.03);
-  border-radius: var(--r2);
-  padding:14px;
-  box-shadow: var(--shadow);
+
+/* =====================================================================
+   FILE 2/2
+   PATH: app/components/OsShell.tsx
+   ACTION: Replace the full file with this
+   NOTE: This is THEMED + fixes “white under tabs” by wrapping content.
+===================================================================== */
+
+"use client";
+
+import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+
+type Role = "CEO" | "Staff";
+
+const CEO_EMAIL = "hardikvekariya799@gmail.com";
+const STAFF_EMAIL = "eventurastaff@gmail.com";
+
+/**
+ * HOW ROLE IS DECIDED (simple + reliable):
+ * - Read email from: localStorage("eventura_email") OR cookie("eventura_email")
+ * - If email === CEO_EMAIL => CEO else Staff
+ *
+ * IMPORTANT:
+ * - Your login page should set:
+ *   localStorage.setItem("eventura_email", email)
+ *   document.cookie = `eventura_email=${encodeURIComponent(email)}; Path=/; Max-Age=31536000; SameSite=Lax`;
+ */
+
+function getCookie(name: string) {
+  if (typeof document === "undefined") return "";
+  const m = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
+  return m ? decodeURIComponent(m[2]) : "";
 }
 
-.os-title{ font-size:22px; font-weight:900; margin:0; }
-.os-sub{ color:var(--muted); margin-top:6px; }
+export default function OsShell({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const pathname = usePathname();
 
-.os-btn{
-  width:100%;
-  margin-top:10px;
-  padding:12px 12px;
-  border-radius: 14px;
-  font-weight:900;
-  cursor:pointer;
-  border:none;
-  background: linear-gradient(135deg, var(--gold), var(--gold2));
-  color:#111827;
-}
-.os-btn-outline{
-  background: transparent;
-  border: 1px solid var(--stroke);
-  color: var(--text);
-}
-.os-btn-outline:hover{ background: rgba(255,255,255,.05); }
+  const [email, setEmail] = useState<string>("");
+  const role: Role = useMemo(() => {
+    const e = (email || "").toLowerCase();
+    return e === CEO_EMAIL.toLowerCase() ? "CEO" : "Staff";
+  }, [email]);
 
-.os-center{ min-height:100vh; display:flex; align-items:center; justify-content:center; padding:18px; }
+  useEffect(() => {
+    const ls = typeof window !== "undefined" ? window.localStorage.getItem("eventura_email") : "";
+    const ck = getCookie("eventura_email");
+    const picked = (ls || ck || "").trim();
+    setEmail(picked);
+
+    // If no email stored, send to login (adjust if your login route differs)
+    if (!picked) router.push("/login");
+  }, [router]);
+
+  const nav = useMemo(() => {
+    const common = [
+      { href: "/dashboard", label: "Dashboard", group: "Core" },
+      { href: "/events", label: "Events", group: "Core" },
+      { href: "/tasks", label: "Tasks", group: "Core" },
+      { href: "/vendors", label: "Vendors", group: "Operations" },
+      { href: "/hr", label: "HR", group: "Operations" },
+    ];
+
+    const ceoOnly = [
+      { href: "/finance", label: "Finance", group: "CEO Only" },
+      { href: "/reports", label: "Reports", group: "CEO Only" },
+      { href: "/settings", label: "Settings", group: "CEO Only" },
+    ];
+
+    return role === "CEO" ? [...common, ...ceoOnly] : common;
+  }, [role]);
+
+  const grouped = useMemo(() => {
+    const map: Record<string, typeof nav> = {};
+    for (const item of nav) {
+      if (!map[item.group]) map[item.group] = [];
+      map[item.group].push(item);
+    }
+    return map;
+  }, [nav]);
+
+  function logout() {
+    try {
+      localStorage.removeItem("eventura_email");
+      document.cookie = "eventura_email=; Path=/; Max-Age=0; SameSite=Lax";
+    } catch {}
+    router.push("/login");
+  }
+
+  const userBadge = role === "CEO" ? "CEO" : "Staff";
+
+  return (
+    <div className="osShell">
+      {/* SIDEBAR */}
+      <aside className="osPanel osSidebar">
+        <div className="card cardGlow" style={{ marginBottom: 12 }}>
+          <div className="h2">Eventura OS</div>
+          <div className="p" style={{ marginTop: 6 }}>
+            Logged in: <span style={{ color: "rgba(242,241,255,.92)" }}>{email || "—"}</span>
+          </div>
+          <div style={{ marginTop: 10, display: "flex", gap: 10, alignItems: "center" }}>
+            <span className="chip">{userBadge}</span>
+            {role === "Staff" && <span className="chip chipWarn">Restricted</span>}
+          </div>
+        </div>
+
+        {Object.keys(grouped).map((g) => (
+          <div key={g}>
+            <div className="navGroupTitle">{g}</div>
+            {grouped[g].map((item) => {
+              const active =
+                pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href + "/"));
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={active ? "navItem navItemActive" : "navItem"}
+                >
+                  <span>{item.label}</span>
+                  {role === "CEO" && (item.href === "/finance" || item.href === "/settings") && (
+                    <span className="badge">CEO</span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
+
+        <div style={{ marginTop: 14, padding: 6 }}>
+          <button className="btn btnGhost" onClick={logout} style={{ width: "100%" }}>
+            Logout
+          </button>
+        </div>
+      </aside>
+
+      {/* MAIN */}
+      <main className="osMain">
+        <div className="osTopbar">
+          <div>
+            <div className="h1">Eventura OS</div>
+            <div className="p">
+              Theme: Purple/Black • Access: <span style={{ color: "rgba(242,241,255,.92)" }}>{role}</span>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            {role === "CEO" ? (
+              <button className="btn btnPrimary" onClick={() => router.push("/events/new")}>
+                + New Event
+              </button>
+            ) : (
+              <button className="btn" onClick={() => router.push("/tasks")}>
+                View Tasks
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* THIS WRAP FIXES “WHITE UNDER TABS” */}
+        <div className="card cardGlow">{children}</div>
+      </main>
+    </div>
+  );
+}
