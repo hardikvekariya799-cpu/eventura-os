@@ -529,8 +529,15 @@ function Th({ children }: { children: React.ReactNode }) {
   return <th style={{ padding: 12, fontSize: 12, color: "#6b7280" }}>{children}</th>;
 }
 
-function Td({ children }: { children: React.ReactNode }) {
-  return <td style={{ padding: 12 }}>{children}</td>;
+// ✅ FIX: allow style prop
+function Td({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+}) {
+  return <td style={{ padding: 12, ...style }}>{children}</td>;
 }
 
 const inputStyle: React.CSSProperties = {
