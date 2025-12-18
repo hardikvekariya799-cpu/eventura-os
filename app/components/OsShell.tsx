@@ -5,7 +5,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { supabaseClient } from "../../lib/supabaseClient";
 
-const CEO_EMAIL = "hardikvekariya799@gmail.com"; // ✅ put your CEO login email here
+/* ================== ROLE CONFIG ================== */
+/* CEO is decided ONLY by email (safe & simple) */
+const CEO_EMAIL = "hardikvekariya799@gmail.com";
+/* ================================================= */
 
 type NavItem = { label: string; href: string; icon: string; ceoOnly?: boolean };
 
@@ -16,8 +19,8 @@ const NAV: NavItem[] = [
   { label: "HR", href: "/hr", icon: "👥" },
   { label: "Reports", href: "/reports", icon: "📈" },
   { label: "AI", href: "/ai", icon: "✨" },
-  { label: "Finance", href: "/finance", icon: "💰", ceoOnly: true },   // ✅ CEO only
-  { label: "Settings", href: "/settings", icon: "⚙️", ceoOnly: true }, // ✅ CEO only
+  { label: "Finance", href: "/finance", icon: "💰", ceoOnly: true },
+  { label: "Settings", href: "/settings", icon: "⚙️", ceoOnly: true },
 ];
 
 export default function OsShell({ children }: { children: React.ReactNode }) {
@@ -28,7 +31,11 @@ export default function OsShell({ children }: { children: React.ReactNode }) {
   const [email, setEmail] = useState("");
 
   const isLogin = pathname === "/login";
-  const isCEO = useMemo(() => email.toLowerCase() === CEO_EMAIL.toLowerCase(), [email]);
+
+  const isCEO = useMemo(
+    () => email.toLowerCase() === CEO_EMAIL.toLowerCase(),
+    [email]
+  );
 
   useEffect(() => {
     (async () => {
@@ -61,60 +68,40 @@ export default function OsShell({ children }: { children: React.ReactNode }) {
 
   if (isLogin) return <>{children}</>;
 
-  if (!ready) return <div style={{ padding: 24 }}>Loading…</div>;
+  if (!ready) {
+    return <div style={{ padding: 24 }}>Loading Eventura OS…</div>;
+  }
 
   return (
-    <div className="os-bg">
-      <div className="os-shell">
-        <aside className="os-sidebar">
-          <div className="os-brand">
-            <div className="os-logo">E</div>
-            <div>
-              <div className="os-brand-title">Eventura OS</div>
-              <div className="os-brand-sub">Royal Ops Suite</div>
-            </div>
+    <div className="os-shell">
+      <aside className="os-sidebar">
+        <h2>Eventura OS</h2>
+
+        <nav>
+          {NAV.filter((i) => (i.ceoOnly ? isCEO : true)).map((i) => (
+            <Link
+              key={i.href}
+              href={i.href}
+              style={{ display: "block", padding: 8 }}
+            >
+              {i.icon} {i.label}
+            </Link>
+          ))}
+        </nav>
+
+        <div style={{ marginTop: 20 }}>
+          <div>
+            <strong>Role:</strong> {isCEO ? "CEO" : "Staff"}
           </div>
+          <div style={{ fontSize: 12 }}>{email}</div>
 
-          <nav className="os-nav">
-            {NAV.filter((i) => (i.ceoOnly ? isCEO : true)).map((i) => {
-              const active = pathname === i.href;
-              return (
-                <Link key={i.href} href={i.href} className={`os-nav-item ${active ? "active" : ""}`}>
-                  <span className="os-ic">{i.icon}</span>
-                  <span>{i.label}</span>
-                </Link>
-              );
-            })}
-          </nav>
+          <button onClick={logout} style={{ marginTop: 10 }}>
+            Logout
+          </button>
+        </div>
+      </aside>
 
-          <div className="os-side-footer">
-            <div className="os-user">
-              <div className="os-user-dot" />
-              <div>
-                <div className="os-user-name">{isCEO ? "CEO" : "Staff"}</div>
-                <div className="os-user-email">{email || "—"}</div>
-              </div>
-            </div>
-
-            <button className="os-btn os-btn-outline" onClick={logout}>
-              Logout
-            </button>
-
-            <div className="os-founders">
-              <div className="os-muted2">CEO: Hardik Vekariya</div>
-              <div className="os-muted2">Cofounder: Shubh Parekh</div>
-              <div className="os-muted2">Digital Head: Dixit Bhuva</div>
-            </div>
-          </div>
-        </aside>
-
-        <main className="os-main">
-          <div className="os-topbar">
-            <div className="os-pill">Events that speak your style</div>
-          </div>
-          <div className="os-content">{children}</div>
-        </main>
-      </div>
+      <main style={{ padding: 20, flex: 1 }}>{children}</main>
     </div>
   );
 }
