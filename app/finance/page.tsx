@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { supabaseClient } from "../../lib/supabaseClient";
 import { useRouter } from "next/navigation";
 
+// ✅ CEO email (Finance access only)
+const CEO_EMAIL = "hardikvekariya799@gmail.com";
+
 type EventRow = { id: number; title: string; event_date: string };
 type TxRow = {
   id: number;
@@ -35,6 +38,7 @@ export default function FinancePage() {
   const router = useRouter();
   const [checking, setChecking] = useState(true);
   const [userId, setUserId] = useState<string>("");
+  const [userEmail, setUserEmail] = useState<string>("");
 
   const [events, setEvents] = useState<EventRow[]>([]);
   const [rows, setRows] = useState<TxRow[]>([]);
@@ -57,6 +61,7 @@ export default function FinancePage() {
       try {
         const supabase = supabaseClient();
 
+        // If Supabase redirects here with ?code=... (rare), exchange it
         const url = new URL(window.location.href);
         const code = url.searchParams.get("code");
         if (code) {
@@ -70,9 +75,17 @@ export default function FinancePage() {
           return;
         }
 
+        const email = (data.user.email || "").toLowerCase();
+        setUserEmail(email);
         setUserId(data.user.id);
-        setChecking(false);
 
+        // ✅ CEO-only guard
+        if (email !== CEO_EMAIL.toLowerCase()) {
+          router.replace("/dashboard?err=finance_denied");
+          return;
+        }
+
+        setChecking(false);
         await loadEvents();
         await refresh();
       } catch {
@@ -157,10 +170,7 @@ export default function FinancePage() {
       };
 
       if (isEditing && editingId !== null) {
-        const { error } = await supabase
-          .from("finance_transactions")
-          .update(payload)
-          .eq("id", editingId);
+        const { error } = await supabase.from("finance_transactions").update(payload).eq("id", editingId);
         if (error) throw error;
         setMsg("✅ Transaction updated");
       } else {
@@ -202,16 +212,7 @@ export default function FinancePage() {
   }
 
   function downloadCSV() {
-    const headers = [
-      "id",
-      "tx_date",
-      "tx_type",
-      "category",
-      "amount",
-      "event_id",
-      "description",
-      "created_at",
-    ];
+    const headers = ["id", "tx_date", "tx_type", "category", "amount", "event_id", "description", "created_at"];
 
     const escape = (v: any) => {
       const s = v === null || v === undefined ? "" : String(v);
@@ -223,16 +224,9 @@ export default function FinancePage() {
     const lines = [
       headers.join(","),
       ...rows.map((r) =>
-        [
-          r.id,
-          r.tx_date,
-          r.tx_type,
-          r.category ?? "",
-          r.amount ?? "",
-          r.event_id ?? "",
-          r.description ?? "",
-          r.created_at ?? "",
-        ].map(escape).join(",")
+        [r.id, r.tx_date, r.tx_type, r.category ?? "", r.amount ?? "", r.event_id ?? "", r.description ?? "", r.created_at ?? ""]
+          .map(escape)
+          .join(",")
       ),
     ];
 
@@ -264,7 +258,17 @@ export default function FinancePage() {
   if (checking) {
     return (
       <main style={{ padding: 24, fontFamily: "system-ui, Arial" }}>
-        <h1 style={{ fontSize: 22 }}>Checking login…</h1>
+        <h1 style={{ fontSize: 22 }}>Checking access…</h1>
+      </main>
+    );
+  }
+
+  // extra safety (should never hit)
+  if (userEmail.toLowerCase() !== CEO_EMAIL.toLowerCase()) {
+    return (
+      <main style={{ padding: 24, fontFamily: "system-ui, Arial" }}>
+        <h1 style={{ fontSize: 24, margin: 0 }}>Access denied</h1>
+        <p style={{ color: "#6b7280", marginTop: 8 }}>Finance is CEO-only.</p>
       </main>
     );
   }
@@ -273,10 +277,8 @@ export default function FinancePage() {
     <main style={{ padding: 24, fontFamily: "system-ui, Arial" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <div>
-          <h1 style={{ fontSize: 28, margin: 0 }}>Finance</h1>
-          <p style={{ color: "#6b7280", marginTop: 6 }}>
-            Income / Expense tracking + Download CSV.
-          </p>
+          <h1 style={{ fontSize: 28, margin: 0 }}>Finance (CEO Only)</h1>
+          <p style={{ color: "#6b7280", marginTop: 6 }}>Income / Expense tracking + Download CSV.</p>
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -313,7 +315,6 @@ export default function FinancePage() {
         </div>
       </div>
 
-      {/* KPIs */}
       <div
         style={{
           marginTop: 12,
@@ -327,27 +328,10 @@ export default function FinancePage() {
         <Kpi title="Net Profit" value={`₹${totals.profit.toLocaleString("en-IN")}`} />
       </div>
 
-      {/* FORM */}
-      <div
-        style={{
-          marginTop: 14,
-          background: "white",
-          border: "1px solid #e5e7eb",
-          borderRadius: 14,
-          padding: 14,
-        }}
-      >
-        <div style={{ fontWeight: 900, marginBottom: 10 }}>
-          {isEditing ? `Edit Transaction #${editingId}` : "Add Transaction"}
-        </div>
+      <div style={{ marginTop: 14, background: "white", border: "1px solid #e5e7eb", borderRadius: 14, padding: 14 }}>
+        <div style={{ fontWeight: 900, marginBottom: 10 }}>{isEditing ? `Edit Transaction #${editingId}` : "Add Transaction"}</div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 10,
-          }}
-        >
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
           <Field label="Date">
             <input value={txDate} onChange={(e) => setTxDate(e.target.value)} type="date" style={inputStyle} />
           </Field>
@@ -395,65 +379,28 @@ export default function FinancePage() {
         </div>
 
         <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
-          <button
-            onClick={saveTx}
-            disabled={loading}
-            style={{
-              padding: "12px 14px",
-              borderRadius: 10,
-              border: "none",
-              cursor: "pointer",
-              fontWeight: 900,
-            }}
-          >
+          <button onClick={saveTx} disabled={loading} style={{ padding: "12px 14px", borderRadius: 10, border: "none", cursor: "pointer", fontWeight: 900 }}>
             {loading ? "Saving..." : isEditing ? "Update" : "Add"}
           </button>
 
           <button
             onClick={resetForm}
             disabled={loading}
-            style={{
-              padding: "12px 14px",
-              borderRadius: 10,
-              border: "1px solid #e5e7eb",
-              background: "white",
-              cursor: "pointer",
-              fontWeight: 900,
-            }}
+            style={{ padding: "12px 14px", borderRadius: 10, border: "1px solid #e5e7eb", background: "white", cursor: "pointer", fontWeight: 900 }}
           >
             Clear
           </button>
         </div>
 
         {msg ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: 12,
-              borderRadius: 10,
-              background: "#f9fafb",
-              border: "1px solid #e5e7eb",
-              whiteSpace: "pre-wrap",
-            }}
-          >
+          <div style={{ marginTop: 12, padding: 12, borderRadius: 10, background: "#f9fafb", border: "1px solid #e5e7eb", whiteSpace: "pre-wrap" }}>
             {msg}
           </div>
         ) : null}
       </div>
 
-      {/* TABLE */}
-      <div
-        style={{
-          marginTop: 14,
-          background: "white",
-          border: "1px solid #e5e7eb",
-          borderRadius: 14,
-          overflow: "hidden",
-        }}
-      >
-        <div style={{ padding: 12, fontWeight: 900, borderBottom: "1px solid #e5e7eb" }}>
-          Transactions ({rows.length})
-        </div>
+      <div style={{ marginTop: 14, background: "white", border: "1px solid #e5e7eb", borderRadius: 14, overflow: "hidden" }}>
+        <div style={{ padding: 12, fontWeight: 900, borderBottom: "1px solid #e5e7eb" }}>Transactions ({rows.length})</div>
 
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -529,14 +476,7 @@ function Th({ children }: { children: React.ReactNode }) {
   return <th style={{ padding: 12, fontSize: 12, color: "#6b7280" }}>{children}</th>;
 }
 
-// ✅ FIX: allow style prop
-function Td({
-  children,
-  style,
-}: {
-  children: React.ReactNode;
-  style?: React.CSSProperties;
-}) {
+function Td({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return <td style={{ padding: 12, ...style }}>{children}</td>;
 }
 
