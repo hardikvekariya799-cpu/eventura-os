@@ -4,13 +4,11 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 
-/* ===== SUPABASE CLIENT ===== */
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-/* ===== PAGE ===== */
 export default function LoginPage() {
   const router = useRouter();
 
@@ -20,7 +18,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleLogin() {
+  async function login() {
     setError("");
     setLoading(true);
 
@@ -35,7 +33,7 @@ export default function LoginPage() {
       return;
     }
 
-    // ✅ Store email for Eventura OS role check
+    // store email for Eventura OS role logic
     localStorage.setItem("eventura_email", email);
     document.cookie = `eventura_email=${email}; path=/; max-age=31536000`;
 
@@ -49,38 +47,29 @@ export default function LoginPage() {
         display: "flex",
         justifyContent: "center",
         alignItems: "center",
-        fontFamily: "system-ui, Arial",
+        fontFamily: "system-ui",
       }}
     >
       <div style={{ width: 360 }}>
         <h2>Eventura OS Login</h2>
-        <p style={{ color: "#6b7280" }}>Login as CEO or Staff</p>
+        <p style={{ color: "#6b7280" }}>CEO / Staff Login</p>
 
-        {/* TABS */}
-        <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+        {/* Tabs */}
+        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
           <button
             onClick={() => setTab("CEO")}
-            style={{
-              flex: 1,
-              padding: 10,
-              fontWeight: tab === "CEO" ? 700 : 400,
-            }}
+            style={{ flex: 1, fontWeight: tab === "CEO" ? 700 : 400 }}
           >
             CEO
           </button>
           <button
             onClick={() => setTab("Staff")}
-            style={{
-              flex: 1,
-              padding: 10,
-              fontWeight: tab === "Staff" ? 700 : 400,
-            }}
+            style={{ flex: 1, fontWeight: tab === "Staff" ? 700 : 400 }}
           >
             Staff
           </button>
         </div>
 
-        {/* EMAIL */}
         <input
           type="email"
           placeholder={`${tab} Email`}
@@ -89,7 +78,6 @@ export default function LoginPage() {
           style={inputStyle}
         />
 
-        {/* PASSWORD */}
         <input
           type="password"
           placeholder="Password"
@@ -99,7 +87,7 @@ export default function LoginPage() {
         />
 
         <button
-          onClick={handleLogin}
+          onClick={login}
           disabled={loading}
           style={{
             width: "100%",
@@ -112,15 +100,12 @@ export default function LoginPage() {
           {loading ? "Signing in..." : "Login"}
         </button>
 
-        {error && (
-          <div style={{ color: "red", marginTop: 12 }}>{error}</div>
-        )}
+        {error && <div style={{ color: "red", marginTop: 12 }}>{error}</div>}
       </div>
     </main>
   );
 }
 
-/* ===== STYLES ===== */
 const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: 10,
