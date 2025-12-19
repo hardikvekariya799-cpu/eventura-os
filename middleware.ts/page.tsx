@@ -23,11 +23,11 @@ export function middleware(req: NextRequest) {
       (c) =>
         c.name.startsWith("sb-") &&
         c.name.includes("auth-token") &&
-        c.value?.length
+        !!c.value?.length
     ) ||
-    cookies.some((c) => c.name === "sb-access-token" && c.value?.length) ||
-    cookies.some((c) => c.name === "sb-refresh-token" && c.value?.length) ||
-    cookies.some((c) => c.name === "supabase-auth-token" && c.value?.length);
+    cookies.some((c) => c.name === "sb-access-token" && !!c.value?.length) ||
+    cookies.some((c) => c.name === "sb-refresh-token" && !!c.value?.length) ||
+    cookies.some((c) => c.name === "supabase-auth-token" && !!c.value?.length);
 
   if (!isLoggedIn) {
     url.pathname = "/login";
