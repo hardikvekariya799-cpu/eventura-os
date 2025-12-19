@@ -17,6 +17,7 @@ const LS_SETTINGS = "eventura_os_settings_v3";
 // HR page will READ from any of these keys (first found), but will SAVE to the new key:
 const HR_READ_KEYS = ["eventura-hr-team", "eventura_os_hr_team_v2", "eventura_os_hr_v1", "eventura_hr_v1", "eventura-hr"];
 const HR_SAVE_KEY = "eventura_os_hr_team_v3"; // new safe key
+const HR_AUDIT_KEY = "eventura_os_hr_audit_v1";
 
 /* ================= NAV ================= */
 type NavItem = { label: string; href: string; icon: string };
@@ -204,9 +205,16 @@ function normalizeHR(raw: any): TeamMember[] {
     .filter((m) => m.name);
 }
 
-/* ================= AI (local, safe) =================
-   "AI" = smart rules + scoring. No external API => no deploy risk.
-*/
+/* ================= AI (local, safe) ================= */
+const MUST_HAVE_SKILLS = [
+  "Client Handling",
+  "Vendor Negotiation",
+  "Budgeting",
+  "Timeline Planning",
+  "Decor Design",
+  "Logistics",
+];
+
 function perfScore(m: TeamMember) {
   // 0-100 score based on rating, workload balance, and activity
   const ratingPart = (m.rating / 5) * 55; // up to 55
@@ -216,6 +224,7 @@ function perfScore(m: TeamMember) {
   const statusAdj = m.status === "Inactive" ? -25 : m.status === "Trainee" ? -5 : 0;
   return clamp(Math.round(ratingPart + activityPart - workloadPenalty + statusAdj), 0, 100);
 }
+
 function buildAIInsights(team: TeamMember[]) {
   const insights: { title: string; level: "OK" | "WARN" | "RISK"; detail: string }[] = [];
   if (!team.length) {
@@ -254,12 +263,11 @@ function buildAIInsights(team: TeamMember[]) {
     });
   }
 
-  // skill gaps (very useful for Eventura)
-  const mustHaveSkills = ["Client Handling", "Vendor Negotiation", "Budgeting", "Timeline Planning", "Decor Design", "Logistics"];
+  // skill gaps
   const skillCounts = new Map<string, number>();
   for (const m of active) for (const s of m.skills) skillCounts.set(s, (skillCounts.get(s) ?? 0) + 1);
 
-  const gaps = mustHaveSkills
+  const gaps = MUST_HAVE_SKILLS
     .map((s) => ({ s, c: skillCounts.get(s) ?? 0 }))
     .sort((a, b) => a.c - b.c)
     .slice(0, 3);
@@ -282,6 +290,135 @@ function buildAIInsights(team: TeamMember[]) {
   });
 
   return insights;
+}
+
+/* ================= AI PLANS (Assignment / Training / Hiring) ================= */
+function normalizeSkillList(text: string) {
+  return text
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+function skillMatchScore(member: TeamMember, reqSkills: string[]) {
+  if (!reqSkills.length) return 0;
+  const set = new Set((member.skills || []).map((s) => s.toLowerCase()));
+  let hit = 0;
+  for (const r of reqSkills) if (set.has(r.toLowerCase())) hit++;
+  return hit / reqSkills.length; // 0..1
+}
+function suggestAssignment(team: TeamMember[], args: {
+  reqSkills: string[];
+  city: string;
+  role: string;
+  maxWorkload: number;
+  minRating: number;
+  count: number;
+}) {
+  const active = team.filter((m) => m.status !== "Inactive");
+  const cityNeedle = args.city.trim().toLowerCase();
+  const roleNeedle = args.role.trim();
+
+  const candidates = active
+    .filter((m) => (args.minRating ? (m.rating ?? 0) >= args.minRating : true))
+    .filter((m) => (args.maxWorkload ? (m.workload ?? 0) <= args.maxWorkload : true))
+    .filter((m) => (roleNeedle && roleNeedle !== "Any" ? m.role === (roleNeedle as any) : true))
+    .map((m) => {
+      const match = skillMatchScore(m, args.reqSkills);
+      const cityBoost = cityNeedle && m.city?.toLowerCase() === cityNeedle ? 0.12 : 0;
+      const workloadBonus = (100 - (m.workload ?? 0)) / 100; // more free capacity => higher
+      const score = perfScore(m) / 100;
+      const final = (match * 0.55) + (score * 0.35) + (workloadBonus * 0.10) + cityBoost;
+      return { m, match, final };
+    })
+    .sort((a, b) => b.final - a.final)
+    .slice(0, Math.max(1, args.count));
+
+  return candidates;
+}
+
+function buildTrainingPlan(team: TeamMember[]) {
+  const active = team.filter((m) => m.status !== "Inactive");
+  const plan: { person: string; focus: string[]; reason: string }[] = [];
+
+  for (const m of active) {
+    const missing = MUST_HAVE_SKILLS.filter((s) => !(m.skills || []).some((x) => x.toLowerCase() === s.toLowerCase()));
+    const focus: string[] = [];
+    if (m.rating > 0 && m.rating < 3) focus.push("Performance coaching + checklist SOP");
+    if (m.workload >= 80) focus.push("Time management + delegation");
+    if (missing.length) focus.push(...missing.slice(0, 3).map((x) => `Skill: ${x}`));
+
+    if (focus.length) {
+      plan.push({
+        person: m.name,
+        focus: Array.from(new Set(focus)).slice(0, 5),
+        reason:
+          (m.rating > 0 && m.rating < 3 ? "Low rating" : "") +
+          (m.workload >= 80 ? (m.rating > 0 && m.rating < 3 ? ", high workload" : "High workload") : "") +
+          (missing.length ? ((m.rating > 0 && m.rating < 3) || (m.workload >= 80) ? ", skill gaps" : "Skill gaps") : ""),
+      });
+    }
+  }
+
+  // Sort: most urgent first
+  plan.sort((a, b) => b.focus.length - a.focus.length);
+  return plan;
+}
+
+function buildHiringPlan(team: TeamMember[]) {
+  const active = team.filter((m) => m.status !== "Inactive");
+  const byRole = new Map<string, TeamMember[]>();
+  for (const m of active) {
+    const k = m.role || "Other";
+    byRole.set(k, [...(byRole.get(k) ?? []), m]);
+  }
+
+  const needs: { role: string; priority: "Low" | "Medium" | "High"; suggestion: string; why: string }[] = [];
+
+  // role overload signal
+  for (const [role, arr] of byRole.entries()) {
+    const headcount = arr.length;
+    const overloadPeople = arr.filter((m) => (m.workload ?? 0) >= 80).length;
+    const avgWorkload = headcount ? arr.reduce((a, b) => a + (b.workload ?? 0), 0) / headcount : 0;
+
+    if (overloadPeople >= 2 || avgWorkload >= 75) {
+      needs.push({
+        role,
+        priority: overloadPeople >= 3 || avgWorkload >= 82 ? "High" : "Medium",
+        suggestion: `Add 1 Freelancer or 1 Junior (${role})`,
+        why: `Overload detected: ${overloadPeople} people at ≥80% workload • Avg workload ${Math.round(avgWorkload)}%`,
+      });
+    }
+  }
+
+  // missing must-have skills => hire to cover gaps
+  const skillCounts = new Map<string, number>();
+  for (const m of active) for (const s of m.skills) skillCounts.set(s.toLowerCase(), (skillCounts.get(s.toLowerCase()) ?? 0) + 1);
+
+  const missingSkills = MUST_HAVE_SKILLS.filter((s) => (skillCounts.get(s.toLowerCase()) ?? 0) === 0);
+
+  if (missingSkills.length) {
+    needs.push({
+      role: "Other",
+      priority: "High",
+      suggestion: `Hire / Contract specialist for: ${missingSkills.join(", ")}`,
+      why: "Zero coverage for key skills (business risk).",
+    });
+  }
+
+  // if no needs, still show guidance
+  if (!needs.length) {
+    needs.push({
+      role: "—",
+      priority: "Low",
+      suggestion: "No immediate hiring required",
+      why: "No major overload or skill coverage risk detected.",
+    });
+  }
+
+  // sort: High first
+  const pRank: Record<string, number> = { High: 3, Medium: 2, Low: 1 };
+  needs.sort((a, b) => pRank[b.priority] - pRank[a.priority]);
+  return needs;
 }
 
 /* ================= PAGE ================= */
@@ -321,6 +458,14 @@ export default function HRPage() {
   const [skillsText, setSkillsText] = useState<string>(""); // comma separated
   const [notes, setNotes] = useState<string>("");
 
+  // AI Planner states
+  const [planCity, setPlanCity] = useState("");
+  const [planRole, setPlanRole] = useState<string>("Any");
+  const [planSkills, setPlanSkills] = useState("Client Handling, Timeline Planning");
+  const [planMaxWorkload, setPlanMaxWorkload] = useState<number>(70);
+  const [planMinRating, setPlanMinRating] = useState<number>(3);
+  const [planCount, setPlanCount] = useState<number>(3);
+
   // load settings + hr data
   useEffect(() => {
     const s = safeLoad<AppSettings>(LS_SETTINGS, SETTINGS_DEFAULTS);
@@ -336,7 +481,7 @@ export default function HRPage() {
       setTeam(normalizeHR(loaded.data));
     }
 
-    setAudit(safeLoad<AuditLogItem[]>("eventura_os_hr_audit_v1", []));
+    setAudit(safeLoad<AuditLogItem[]>(HR_AUDIT_KEY, []));
   }, []);
 
   // session email
@@ -368,7 +513,7 @@ export default function HRPage() {
   }, [team]);
 
   useEffect(() => {
-    safeSave("eventura_os_hr_audit_v1", audit);
+    safeSave(HR_AUDIT_KEY, audit);
   }, [audit]);
 
   const cities = useMemo(() => {
@@ -409,7 +554,6 @@ export default function HRPage() {
       if (sortBy === "Workload") return (b.workload ?? 0) - (a.workload ?? 0);
       if (sortBy === "Rating") return (b.rating ?? 0) - (a.rating ?? 0);
       if (sortBy === "Score") return perfScore(b) - perfScore(a);
-      // Updated
       return (b.updatedAt || "").localeCompare(a.updatedAt || "");
     });
 
@@ -442,6 +586,21 @@ export default function HRPage() {
   }, [team]);
 
   const aiInsights = useMemo(() => buildAIInsights(team), [team]);
+
+  const trainingPlan = useMemo(() => buildTrainingPlan(team), [team]);
+  const hiringPlan = useMemo(() => buildHiringPlan(team), [team]);
+
+  const assignment = useMemo(() => {
+    const reqSkills = normalizeSkillList(planSkills);
+    return suggestAssignment(team, {
+      reqSkills,
+      city: planCity,
+      role: planRole,
+      maxWorkload: clamp(Number(planMaxWorkload) || 0, 0, 100),
+      minRating: clamp(Number(planMinRating) || 0, 0, 5),
+      count: clamp(Number(planCount) || 3, 1, 10),
+    });
+  }, [team, planSkills, planCity, planRole, planMaxWorkload, planMinRating, planCount]);
 
   function log(action: AuditLogItem["action"], target: string, detail?: string) {
     const item: AuditLogItem = {
@@ -570,6 +729,32 @@ export default function HRPage() {
     });
   }
 
+  function exportAIPlans() {
+    exportJSON(`eventura_hr_ai_plans_${new Date().toISOString().slice(0, 10)}.json`, {
+      version: "eventura-hr-ai-plans-v1",
+      exportedAt: new Date().toISOString(),
+      assignmentInputs: {
+        city: planCity,
+        role: planRole,
+        requiredSkills: normalizeSkillList(planSkills),
+        maxWorkload: planMaxWorkload,
+        minRating: planMinRating,
+        count: planCount,
+      },
+      assignment: assignment.map((x) => ({
+        name: x.m.name,
+        role: x.m.role,
+        city: x.m.city,
+        workload: x.m.workload,
+        rating: x.m.rating,
+        score: perfScore(x.m),
+        matchPct: Math.round(x.match * 100),
+      })),
+      trainingPlan,
+      hiringPlan,
+    });
+  }
+
   async function signOut() {
     try {
       if (supabase) await supabase.auth.signOut();
@@ -590,7 +775,7 @@ export default function HRPage() {
           {!sidebarIconsOnly ? (
             <div>
               <div style={S.brandName}>Eventura OS</div>
-              <div style={S.brandSub}>HR • Advanced</div>
+              <div style={S.brandSub}>HR • Advanced AI</div>
             </div>
           ) : null}
         </div>
@@ -626,7 +811,7 @@ export default function HRPage() {
           <div>
             <div style={S.h1}>HR Control Center</div>
             <div style={S.muted}>
-              Smart HR • Skills • Capacity • Payroll • Auto “AI” insights • Logged in as <b>{email || "Unknown"}</b>
+              Assignment AI • Training AI • Hiring AI (Local) • Logged in as <b>{email || "Unknown"}</b>
               <span style={S.rolePill}>{roleUser}</span>
             </div>
             <div style={{ marginTop: 8, ...S.smallMuted }}>
@@ -646,13 +831,16 @@ export default function HRPage() {
             <button style={S.secondaryBtn} onClick={exportHRJSON}>
               Export JSON
             </button>
+            <button style={S.secondaryBtn} onClick={exportAIPlans}>
+              Export AI Plans
+            </button>
           </div>
         </div>
 
         {loading ? <div style={S.loadingBar}>Loading session…</div> : null}
         {msg ? <div style={S.msg}>{msg}</div> : null}
 
-        {/* KPIs */}
+        {/* KPIs + Insights */}
         <div style={S.grid2}>
           <section style={S.panel}>
             <div style={S.panelTitle}>HR KPIs</div>
@@ -699,10 +887,121 @@ export default function HRPage() {
               ))}
             </div>
             <div style={S.smallNote}>
-              This “AI” is rule-based so deployment is safe (no API keys, no external calls).
+              No API calls, no external services → deploy safe.
             </div>
           </section>
         </div>
+
+        {/* AI Planner */}
+        <section style={S.panel}>
+          <div style={S.panelTitle}>AI Planner (Assignment • Training • Hiring)</div>
+
+          <div style={S.filters}>
+            <input
+              style={{ ...S.input, width: 220 }}
+              value={planCity}
+              onChange={(e) => setPlanCity(e.target.value)}
+              placeholder="Event City (optional)"
+            />
+            <select style={S.select} value={planRole} onChange={(e) => setPlanRole(e.target.value)}>
+              <option value="Any" style={S.option}>Role: Any</option>
+              {roles.filter((r) => r !== "All").map((r) => (
+                <option key={r} value={r} style={S.option}>{r}</option>
+              ))}
+            </select>
+            <input
+              style={{ ...S.input, width: 340 }}
+              value={planSkills}
+              onChange={(e) => setPlanSkills(e.target.value)}
+              placeholder="Required skills (comma separated)"
+            />
+            <input
+              style={{ ...S.input, width: 160 }}
+              type="number"
+              value={planMaxWorkload}
+              onChange={(e) => setPlanMaxWorkload(clamp(Number(e.target.value) || 0, 0, 100))}
+              placeholder="Max Workload"
+            />
+            <input
+              style={{ ...S.input, width: 150 }}
+              type="number"
+              value={planMinRating}
+              onChange={(e) => setPlanMinRating(clamp(Number(e.target.value) || 0, 0, 5))}
+              placeholder="Min Rating"
+            />
+            <input
+              style={{ ...S.input, width: 120 }}
+              type="number"
+              value={planCount}
+              onChange={(e) => setPlanCount(clamp(Number(e.target.value) || 3, 1, 10))}
+              placeholder="Top N"
+            />
+          </div>
+
+          <div style={S.grid2}>
+            <div style={S.box}>
+              <div style={S.boxTitle}>Suggested Assignment (Top {planCount})</div>
+              {!assignment.length ? (
+                <div style={S.empty}>No matches. Try lowering filters or adding more team data.</div>
+              ) : (
+                <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+                  {assignment.map((x) => (
+                    <div key={x.m.id} style={S.itemCard}>
+                      <div style={S.rowBetween}>
+                        <div style={{ fontWeight: 950 }}>{x.m.name}</div>
+                        <span style={S.scorePill}>Score {perfScore(x.m)}</span>
+                      </div>
+                      <div style={S.smallMuted}>
+                        {x.m.role} • {x.m.city || "—"} • Workload {x.m.workload}% • ⭐ {x.m.rating.toFixed(1)} • Match {Math.round(x.match * 100)}%
+                      </div>
+                      <div style={S.smallMuted}>
+                        Skills: {(x.m.skills || []).slice(0, 6).join(" • ") || "—"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={S.box}>
+              <div style={S.boxTitle}>Hiring Plan (Auto)</div>
+              <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+                {hiringPlan.map((h, idx) => (
+                  <div key={idx} style={S.itemCard}>
+                    <div style={S.rowBetween}>
+                      <div style={{ fontWeight: 950 }}>{h.suggestion}</div>
+                      <span style={S.pill}>Priority: {h.priority}</span>
+                    </div>
+                    <div style={S.smallMuted}>{h.why}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={S.smallNote}>
+                Hiring is suggested from overload + skill coverage risk.
+              </div>
+            </div>
+          </div>
+
+          <div style={{ ...S.box, marginTop: 12 }}>
+            <div style={S.boxTitle}>Training Plan (Auto)</div>
+            {!trainingPlan.length ? (
+              <div style={S.empty}>No training actions detected (good!).</div>
+            ) : (
+              <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+                {trainingPlan.slice(0, 10).map((t, idx) => (
+                  <div key={idx} style={S.itemCard}>
+                    <div style={S.rowBetween}>
+                      <div style={{ fontWeight: 950 }}>{t.person}</div>
+                      <span style={S.pill}>{t.reason}</span>
+                    </div>
+                    <div style={S.smallMuted}>{t.focus.join(" • ")}</div>
+                  </div>
+                ))}
+                {trainingPlan.length > 10 ? <div style={S.smallMuted}>… and {trainingPlan.length - 10} more</div> : null}
+              </div>
+            )}
+          </div>
+        </section>
 
         {/* Filters */}
         <section style={S.panel}>
@@ -901,7 +1200,7 @@ export default function HRPage() {
                   monthlySalary: Math.max(0, Number(monthlySalary) || 0),
                   eventsThisMonth: Math.max(0, Number(eventsThisMonth) || 0),
                   rating: clamp(Number(rating) || 0, 0, 5),
-                  skills: skillsText.split(",").map((x) => x.trim()).filter(Boolean),
+                  skills: normalizeSkillList(skillsText),
                   createdAt: new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
                   notes: notes || undefined
@@ -914,7 +1213,7 @@ export default function HRPage() {
           </div>
         ) : null}
 
-        <div style={S.footerNote}>✅ Advanced HR • ✅ Auto AI insights • ✅ No extra packages • ✅ Deploy safe</div>
+        <div style={S.footerNote}>✅ Assignment AI • ✅ Training AI • ✅ Hiring AI • ✅ No packages • ✅ Deploy safe</div>
       </main>
     </div>
   );
@@ -1093,6 +1392,11 @@ function makeStyles(T: any, settings: AppSettings): Record<string, CSSProperties
 
     miniBarWrap: { marginTop: 6, height: 8, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" },
     miniBarFill: { height: "100%", borderRadius: 999, background: T.accentTx, opacity: 0.9 },
+
+    box: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft, marginTop: 12 },
+    boxTitle: { fontWeight: 950, marginBottom: 6 },
+
+    itemCard: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: "rgba(255,255,255,0.03)" },
 
     empty: { color: T.muted, fontSize: 13, padding: 10 },
 
