@@ -1,73 +1,81 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
+
+/* ================= SUPABASE (safe) ================= */
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+const supabase =
+  supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
+
+/* ================= STORAGE KEYS ================= */
+const LS_SETTINGS = "eventura_os_settings_v3"; // keep same key (your working app)
+const LS_FIN = "eventura-finance-transactions"; // keep stable + simple
 
 /* ================= TYPES ================= */
+type Role = "CEO" | "Staff";
+type SidebarMode = "Icons + Text" | "Icons Only";
+type Theme =
+  | "Royal Gold"
+  | "Midnight Purple"
+  | "Emerald Night"
+  | "Ocean Blue"
+  | "Ruby Noir"
+  | "Carbon Black"
+  | "Ivory Light";
+
+type AppSettings = {
+  ceoEmail: string;
+  staffEmail: string;
+  theme: Theme;
+  sidebarMode: SidebarMode;
+  compactTables: boolean;
+  confirmDeletes: boolean;
+  reducedMotion?: boolean;
+  highContrast?: boolean;
+};
+
 type TxType = "Income" | "Expense";
-type PaymentMethod = "Cash" | "UPI" | "Card" | "Bank" | "Cheque" | "Other";
-
-type TxCategory =
-  | "Client Payment"
-  | "Advance"
-  | "Package"
-  | "Vendor Payment"
-  | "Decor"
-  | "Venue"
-  | "Food/Catering"
-  | "Logistics"
-  | "Marketing"
-  | "Salary"
-  | "Rent"
-  | "Utilities"
-  | "Tools/Software"
-  | "Misc";
-
 type FinanceTx = {
   id: string;
   date: string; // YYYY-MM-DD
   type: TxType;
   amount: number;
-  category: TxCategory;
-  method: PaymentMethod;
-  party: string; // client/vendor name
-  reference?: string; // invoice/UTR
-  notes?: string;
-  eventTag?: string; // optional event name/id
+  category: string;
+  vendor?: string;
+  note?: string;
   createdAt: string;
-  updatedAt: string;
 };
 
-type BudgetPlan = {
-  month: string; // YYYY-MM
-  targetRevenue?: number;
-  targetExpense?: number;
-  reserveTarget?: number;
+type NavItem = { label: string; href: string; icon: string };
+const NAV: NavItem[] = [
+  { label: "Dashboard", href: "/dashboard", icon: "📊" },
+  { label: "Events", href: "/events", icon: "📅" },
+  { label: "Finance", href: "/finance", icon: "💰" },
+  { label: "Vendors", href: "/vendors", icon: "🏷️" },
+  { label: "AI", href: "/ai", icon: "🤖" },
+  { label: "HR", href: "/hr", icon: "🧑‍🤝‍🧑" },
+  { label: "Reports", href: "/reports", icon: "📈" },
+  { label: "Settings", href: "/settings", icon: "⚙️" },
+];
+
+/* ================= DEFAULT SETTINGS (SAFE FALLBACK) ================= */
+const SETTINGS_DEFAULTS: AppSettings = {
+  ceoEmail: "hardikvekariya799@gmail.com",
+  staffEmail: "eventurastaff@gmail.com",
+  theme: "Royal Gold",
+  sidebarMode: "Icons + Text",
+  compactTables: false,
+  confirmDeletes: true,
+  reducedMotion: false,
+  highContrast: false,
 };
 
-const LS_TX = "eventura_os_finance_tx_v1";
-const LS_BUDGET = "eventura_os_finance_budget_v1";
-
-/* ================= HELPERS ================= */
-function uid() {
-  return Math.random().toString(16).slice(2) + "-" + Date.now().toString(16);
-}
-function todayISO() {
-  const d = new Date();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${mm}-${dd}`;
-}
-function monthKey(dateISO: string) {
-  return dateISO.slice(0, 7);
-}
-function inr(n: number) {
-  try {
-    return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(n);
-  } catch {
-    return String(Math.round(n));
-  }
-}
-function loadJSON<T>(key: string, fallback: T): T {
+/* ================= LOCAL HELPERS ================= */
+function safeLoad<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   try {
     const raw = localStorage.getItem(key);
@@ -76,748 +84,1244 @@ function loadJSON<T>(key: string, fallback: T): T {
     return fallback;
   }
 }
-function saveJSON(key: string, value: any) {
+function safeSave<T>(key: string, value: T) {
   if (typeof window === "undefined") return;
   localStorage.setItem(key, JSON.stringify(value));
 }
-function downloadJSON(filename: string, data: any) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+function uid() {
+  return Math.random().toString(16).slice(2) + "-" + Date.now().toString(16);
+}
+function roleFromSettings(email: string, s: AppSettings): Role {
+  if (!email) return "Staff";
+  return email.toLowerCase() === s.ceoEmail.toLowerCase() ? "CEO" : "Staff";
+}
+function clampMoney(n: number) {
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100) / 100;
+}
+function toYMD(d: Date) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+function formatCurrency(amount: number, currency = "INR") {
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
+  } catch {
+    return `${amount.toFixed(2)} ${currency}`;
+  }
 }
 
-/* ================= AI (LOCAL “SMART” INSIGHTS) =================
-   No API needed. Rules + heuristics based on your data.
-   Later we can replace with real AI when you want.
-*/
-function buildAIInsights(txs: FinanceTx[], budget?: BudgetPlan | null) {
-  const insights: { title: string; text: string; level: "ok" | "warn" | "bad" }[] = [];
+/* ================= “AI” AUTO-CATEGORY (LOCAL HEURISTICS) ================= */
+const CATEGORY_RULES: { category: string; words: string[] }[] = [
+  { category: "Venue / Farmhouse", words: ["venue", "farmhouse", "banquet", "hall", "resort"] },
+  { category: "Catering", words: ["cater", "food", "dinner", "lunch", "breakfast", "snacks"] },
+  { category: "Decor", words: ["decor", "decoration", "flowers", "floral", "mandap", "stage"] },
+  { category: "Photography", words: ["photo", "photography", "videography", "camera", "editor"] },
+  { category: "Sound & Lights", words: ["dj", "sound", "light", "lights", "speaker", "music"] },
+  { category: "Transport", words: ["transport", "cab", "bus", "tempo", "travel", "fuel", "petrol"] },
+  { category: "Marketing", words: ["ad", "ads", "meta", "facebook", "instagram", "google", "promo"] },
+  { category: "Staff / Payroll", words: ["salary", "payroll", "wages", "freelancer", "payment staff"] },
+  { category: "Office", words: ["rent", "office", "stationery", "internet", "wifi", "electric"] },
+  { category: "Client Payment", words: ["client", "booking", "advance", "deposit", "received"] },
+  { category: "Vendor Payment", words: ["vendor", "payout", "settlement", "paid"] },
+];
 
-  if (!txs.length) {
-    insights.push({
-      title: "Start tracking to unlock insights",
-      text: "Add income and expenses. This Finance AI will automatically detect profit, overspending, and cashflow issues.",
-      level: "ok",
-    });
-    return insights;
+function autoCategory(type: TxType, vendor?: string, note?: string) {
+  const text = `${vendor ?? ""} ${note ?? ""}`.toLowerCase();
+  for (const rule of CATEGORY_RULES) {
+    if (rule.words.some((w) => text.includes(w))) return rule.category;
+  }
+  return type === "Income" ? "Income (Other)" : "Expense (Other)";
+}
+
+/* ================= AI INSIGHTS ================= */
+function groupByMonth(txs: FinanceTx[]) {
+  const map = new Map<string, FinanceTx[]>();
+  for (const t of txs) {
+    const key = t.date.slice(0, 7); // YYYY-MM
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(t);
+  }
+  const months = Array.from(map.keys()).sort();
+  return { map, months };
+}
+
+function sumIncomeExpense(txs: FinanceTx[]) {
+  let income = 0;
+  let expense = 0;
+  for (const t of txs) {
+    if (t.type === "Income") income += t.amount;
+    else expense += t.amount;
+  }
+  return { income: clampMoney(income), expense: clampMoney(expense), net: clampMoney(income - expense) };
+}
+
+function topCategories(txs: FinanceTx[], type: TxType, topN = 5) {
+  const agg = new Map<string, number>();
+  for (const t of txs) {
+    if (t.type !== type) continue;
+    agg.set(t.category, (agg.get(t.category) ?? 0) + t.amount);
+  }
+  const arr = Array.from(agg.entries())
+    .map(([k, v]) => ({ category: k, amount: clampMoney(v) }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, topN);
+  return arr;
+}
+
+function detectAnomalies(txs: FinanceTx[]) {
+  // simple anomaly rules: large expense (top 5%), duplicate same amount+vendor same day, spike vs category average
+  const expenses = txs.filter((t) => t.type === "Expense").slice().sort((a, b) => a.amount - b.amount);
+  const threshold = expenses.length ? expenses[Math.floor(expenses.length * 0.95)].amount : Infinity;
+
+  const seen = new Set<string>();
+  const duplicates: FinanceTx[] = [];
+  for (const t of txs) {
+    const key = `${t.date}|${(t.vendor ?? "").toLowerCase()}|${t.amount}|${t.type}`;
+    if (seen.has(key)) duplicates.push(t);
+    seen.add(key);
   }
 
-  const now = new Date();
-  const curMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const large = txs.filter((t) => t.type === "Expense" && t.amount >= threshold);
 
-  const monthTx = txs.filter((t) => monthKey(t.date) === curMonth);
-  const monthIncome = monthTx.filter((t) => t.type === "Income").reduce((s, t) => s + t.amount, 0);
-  const monthExpense = monthTx.filter((t) => t.type === "Expense").reduce((s, t) => s + t.amount, 0);
-  const monthNet = monthIncome - monthExpense;
-
-  // Top expense categories this month
-  const expByCat = new Map<string, number>();
-  monthTx
-    .filter((t) => t.type === "Expense")
-    .forEach((t) => expByCat.set(t.category, (expByCat.get(t.category) || 0) + t.amount));
-  const topExp = [...expByCat.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
-
-  // Cashflow risk: consecutive expense streak > income streak in last 7 records
-  const last7 = [...txs].sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 7);
-  const expenseCount = last7.filter((t) => t.type === "Expense").length;
-
-  // Receivables hint: lots of "Advance" but few "Client Payment"
-  const adv = monthTx.filter((t) => t.type === "Income" && t.category === "Advance").reduce((s, t) => s + t.amount, 0);
-  const clientPay = monthTx
-    .filter((t) => t.type === "Income" && t.category === "Client Payment")
-    .reduce((s, t) => s + t.amount, 0);
-
-  // Insights
-  if (monthNet >= 0) {
-    insights.push({
-      title: "Profit is positive this month",
-      text: `Net profit is ₹${inr(monthNet)} for ${curMonth}. Keep controlling vendor + decor costs to protect margin.`,
-      level: "ok",
-    });
-  } else {
-    insights.push({
-      title: "You are negative this month",
-      text: `Net is -₹${inr(Math.abs(monthNet))} for ${curMonth}. Reduce non-essential expenses and push pending client payments.`,
-      level: "bad",
-    });
+  // category spike: expense > 2.5x category median
+  const catVals = new Map<string, number[]>();
+  for (const t of txs) {
+    if (t.type !== "Expense") continue;
+    const a = catVals.get(t.category) ?? [];
+    a.push(t.amount);
+    catVals.set(t.category, a);
+  }
+  const med = (arr: number[]) => {
+    const s = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(s.length / 2);
+    return s.length ? (s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2) : 0;
+  };
+  const spikes: FinanceTx[] = [];
+  for (const t of txs) {
+    if (t.type !== "Expense") continue;
+    const vals = catVals.get(t.category) ?? [];
+    const m = med(vals);
+    if (m > 0 && t.amount > 2.5 * m) spikes.push(t);
   }
 
-  if (topExp.length) {
-    insights.push({
-      title: "Top expense drivers (this month)",
-      text: `Highest spends: ${topExp.map(([c, v]) => `${c} ₹${inr(v)}`).join(" • ")}.`,
-      level: topExp[0][1] > Math.max(monthIncome * 0.4, 100000) ? "warn" : "ok",
-    });
-  }
+  return { large, duplicates, spikes };
+}
 
-  if (expenseCount >= 5) {
-    insights.push({
-      title: "Cashflow warning",
-      text: "Last 7 entries have many expenses. Try collecting advances before releasing vendor payments.",
-      level: "warn",
-    });
-  }
+function forecastNextMonthNet(monthKeys: string[], monthNet: Record<string, number>) {
+  // simple trend: average delta last 3 months
+  const last = monthKeys.slice(-4);
+  if (last.length < 2) return null;
+  const nets = last.map((k) => monthNet[k] ?? 0);
+  const deltas: number[] = [];
+  for (let i = 1; i < nets.length; i++) deltas.push(nets[i] - nets[i - 1]);
+  const avgDelta = deltas.reduce((a, b) => a + b, 0) / deltas.length;
+  const predicted = nets[nets.length - 1] + avgDelta;
+  return clampMoney(predicted);
+}
 
-  if (adv > 0 && clientPay === 0) {
-    insights.push({
-      title: "Collections suggestion",
-      text: "You received advances but no final client payments this month. Set reminders to convert advances into full payment on event completion.",
-      level: "warn",
-    });
-  }
+/* ================= THEME TOKENS (safe) ================= */
+function ThemeTokens(theme: Theme, highContrast?: boolean) {
+  const hc = !!highContrast;
+  const base = {
+    text: "#F9FAFB",
+    muted: "#9CA3AF",
+    bg: "#050816",
+    panel: "rgba(11,16,32,0.60)",
+    panel2: "rgba(11,16,32,0.85)",
+    border: hc ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.10)",
+    soft: hc ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)",
+    inputBg: hc ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
+    dangerBg: "rgba(248,113,113,0.10)",
+    dangerBd: hc ? "rgba(248,113,113,0.55)" : "rgba(248,113,113,0.30)",
+    dangerTx: "#FCA5A5",
+    okBg: "rgba(34,197,94,0.12)",
+    okBd: hc ? "rgba(34,197,94,0.45)" : "rgba(34,197,94,0.28)",
+    okTx: "#86EFAC",
+  };
 
-  if (budget?.targetRevenue) {
-    if (monthIncome < budget.targetRevenue) {
-      const gap = budget.targetRevenue - monthIncome;
-      insights.push({
-        title: "Revenue target gap",
-        text: `You are ₹${inr(gap)} below your revenue target for ${curMonth}. Focus on lead follow-ups and closing packages.`,
-        level: "warn",
-      });
-    } else {
-      insights.push({
-        title: "Revenue target achieved",
-        text: `Nice — revenue target met for ${curMonth}. Consider increasing reserve or reinvesting in marketing.`,
-        level: "ok",
-      });
-    }
+  switch (theme) {
+    case "Midnight Purple":
+      return {
+        ...base,
+        glow1: "rgba(139,92,246,0.22)",
+        glow2: "rgba(212,175,55,0.14)",
+        accentBg: "rgba(139,92,246,0.16)",
+        accentBd: hc ? "rgba(139,92,246,0.55)" : "rgba(139,92,246,0.30)",
+        accentTx: "#DDD6FE",
+      };
+    case "Emerald Night":
+      return {
+        ...base,
+        glow1: "rgba(16,185,129,0.18)",
+        glow2: "rgba(212,175,55,0.12)",
+        accentBg: "rgba(16,185,129,0.16)",
+        accentBd: hc ? "rgba(16,185,129,0.55)" : "rgba(16,185,129,0.30)",
+        accentTx: "#A7F3D0",
+      };
+    case "Ocean Blue":
+      return {
+        ...base,
+        glow1: "rgba(59,130,246,0.22)",
+        glow2: "rgba(34,211,238,0.14)",
+        accentBg: "rgba(59,130,246,0.16)",
+        accentBd: hc ? "rgba(59,130,246,0.55)" : "rgba(59,130,246,0.30)",
+        accentTx: "#BFDBFE",
+      };
+    case "Ruby Noir":
+      return {
+        ...base,
+        glow1: "rgba(244,63,94,0.18)",
+        glow2: "rgba(212,175,55,0.10)",
+        accentBg: "rgba(244,63,94,0.14)",
+        accentBd: hc ? "rgba(244,63,94,0.50)" : "rgba(244,63,94,0.26)",
+        accentTx: "#FDA4AF",
+      };
+    case "Carbon Black":
+      return {
+        ...base,
+        bg: "#03040A",
+        glow1: "rgba(255,255,255,0.10)",
+        glow2: "rgba(212,175,55,0.10)",
+        accentBg: "rgba(212,175,55,0.14)",
+        accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)",
+        accentTx: "#FDE68A",
+      };
+    case "Ivory Light":
+      return {
+        ...base,
+        text: "#111827",
+        muted: "#4B5563",
+        bg: "#F9FAFB",
+        panel: "rgba(255,255,255,0.78)",
+        panel2: "rgba(255,255,255,0.92)",
+        border: hc ? "rgba(17,24,39,0.22)" : "rgba(17,24,39,0.12)",
+        soft: hc ? "rgba(17,24,39,0.07)" : "rgba(17,24,39,0.04)",
+        inputBg: hc ? "rgba(17,24,39,0.08)" : "rgba(17,24,39,0.04)",
+        dangerTx: "#B91C1C",
+        glow1: "rgba(212,175,55,0.16)",
+        glow2: "rgba(59,130,246,0.14)",
+        accentBg: "rgba(212,175,55,0.16)",
+        accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)",
+        accentTx: "#92400E",
+        okTx: "#166534",
+      };
+    case "Royal Gold":
+    default:
+      return {
+        ...base,
+        glow1: "rgba(255,215,110,0.18)",
+        glow2: "rgba(120,70,255,0.18)",
+        accentBg: "rgba(212,175,55,0.12)",
+        accentBd: hc ? "rgba(212,175,55,0.50)" : "rgba(212,175,55,0.22)",
+        accentTx: "#FDE68A",
+      };
   }
-
-  return insights.slice(0, 8);
 }
 
 /* ================= PAGE ================= */
 export default function FinancePage() {
+  const router = useRouter();
+
+  const [settings, setSettings] = useState<AppSettings>(SETTINGS_DEFAULTS);
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(true);
+
   const [txs, setTxs] = useState<FinanceTx[]>([]);
-  const [budgetPlans, setBudgetPlans] = useState<BudgetPlan[]>([]);
-
-  // UI state
-  const [q, setQ] = useState("");
-  const [typeFilter, setTypeFilter] = useState<"All" | TxType>("All");
-  const [monthFilter, setMonthFilter] = useState<"All" | string>("All");
-  const [msg, setMsg] = useState<string>("");
-
-  // form
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [date, setDate] = useState(todayISO());
-  const [type, setType] = useState<TxType>("Income");
+  const [type, setType] = useState<TxType>("Expense");
+  const [date, setDate] = useState<string>(toYMD(new Date()));
   const [amount, setAmount] = useState<string>("");
-  const [category, setCategory] = useState<TxCategory>("Client Payment");
-  const [method, setMethod] = useState<PaymentMethod>("UPI");
-  const [party, setParty] = useState<string>("");
-  const [eventTag, setEventTag] = useState<string>("");
-  const [reference, setReference] = useState<string>("");
-  const [notes, setNotes] = useState<string>("");
+  const [vendor, setVendor] = useState<string>("");
+  const [note, setNote] = useState<string>("");
+  const [category, setCategory] = useState<string>("");
 
-  // budget form
-  const [budgetMonth, setBudgetMonth] = useState<string>(new Date().toISOString().slice(0, 7));
-  const [targetRevenue, setTargetRevenue] = useState<string>("");
-  const [targetExpense, setTargetExpense] = useState<string>("");
-  const [reserveTarget, setReserveTarget] = useState<string>("");
+  const [aiAsk, setAiAsk] = useState("");
+  const [aiAnswer, setAiAnswer] = useState<string>("");
+  const aiRef = useRef<HTMLDivElement | null>(null);
 
+  // load settings + data
   useEffect(() => {
-    setTxs(loadJSON<FinanceTx[]>(LS_TX, []));
-    setBudgetPlans(loadJSON<BudgetPlan[]>(LS_BUDGET, []));
+    const s = safeLoad<AppSettings>(LS_SETTINGS, SETTINGS_DEFAULTS);
+    setSettings({ ...SETTINGS_DEFAULTS, ...s });
+    setTxs(safeLoad<FinanceTx[]>(LS_FIN, []));
   }, []);
 
+  // persist txs
   useEffect(() => {
-    saveJSON(LS_TX, txs);
+    safeSave(LS_FIN, txs);
   }, [txs]);
 
+  // session email
   useEffect(() => {
-    saveJSON(LS_BUDGET, budgetPlans);
-  }, [budgetPlans]);
+    (async () => {
+      try {
+        if (!supabase) {
+          setEmail(safeLoad<string>("eventura_email", ""));
+          return;
+        }
+        const { data } = await supabase.auth.getSession();
+        setEmail(data.session?.user?.email || "");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
 
-  const months = useMemo(() => {
-    const set = new Set<string>();
-    txs.forEach((t) => set.add(monthKey(t.date)));
-    return ["All", ...[...set].sort((a, b) => (a < b ? 1 : -1))];
-  }, [txs]);
+  const role = useMemo(() => roleFromSettings(email, settings), [email, settings]);
+  const isCEO = role === "CEO";
+  const sidebarIconsOnly = settings.sidebarMode === "Icons Only";
 
-  const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    return txs
-      .filter((t) => (typeFilter === "All" ? true : t.type === typeFilter))
-      .filter((t) => (monthFilter === "All" ? true : monthKey(t.date) === monthFilter))
-      .filter((t) => {
-        if (!s) return true;
-        return (
-          t.party.toLowerCase().includes(s) ||
-          t.category.toLowerCase().includes(s) ||
-          t.method.toLowerCase().includes(s) ||
-          (t.reference || "").toLowerCase().includes(s) ||
-          (t.notes || "").toLowerCase().includes(s) ||
-          (t.eventTag || "").toLowerCase().includes(s)
-        );
-      })
-      .sort((a, b) => (a.date < b.date ? 1 : -1));
-  }, [txs, q, typeFilter, monthFilter]);
+  // tokens + styles
+  const T = ThemeTokens(settings.theme, settings.highContrast);
+  const S = makeStyles(T, settings);
 
-  const totals = useMemo(() => {
-    const income = filtered.filter((t) => t.type === "Income").reduce((s, t) => s + t.amount, 0);
-    const expense = filtered.filter((t) => t.type === "Expense").reduce((s, t) => s + t.amount, 0);
-    const net = income - expense;
-    return { income, expense, net };
-  }, [filtered]);
+  // auto category suggestion
+  useEffect(() => {
+    const suggested = autoCategory(type, vendor, note);
+    setCategory((prev) => (prev.trim() ? prev : suggested));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type, vendor, note]);
 
-  const monthSummary = useMemo(() => {
-    const map = new Map<string, { income: number; expense: number }>();
-    txs.forEach((t) => {
-      const m = monthKey(t.date);
-      if (!map.has(m)) map.set(m, { income: 0, expense: 0 });
-      const v = map.get(m)!;
-      if (t.type === "Income") v.income += t.amount;
-      else v.expense += t.amount;
-    });
-    return [...map.entries()]
-      .map(([m, v]) => ({ month: m, income: v.income, expense: v.expense, net: v.income - v.expense }))
-      .sort((a, b) => (a.month < b.month ? 1 : -1));
-  }, [txs]);
-
-  const activeBudget = useMemo(() => {
-    const b = budgetPlans.find((x) => x.month === (monthFilter === "All" ? new Date().toISOString().slice(0, 7) : monthFilter));
-    return b || null;
-  }, [budgetPlans, monthFilter]);
-
-  const aiInsights = useMemo(() => buildAIInsights(txs, activeBudget), [txs, activeBudget]);
-
-  function resetForm() {
-    setEditingId(null);
-    setDate(todayISO());
-    setType("Income");
-    setAmount("");
-    setCategory("Client Payment");
-    setMethod("UPI");
-    setParty("");
-    setEventTag("");
-    setReference("");
-    setNotes("");
-    setMsg("");
-  }
-
-  function startEdit(t: FinanceTx) {
-    setEditingId(t.id);
-    setDate(t.date);
-    setType(t.type);
-    setAmount(String(t.amount));
-    setCategory(t.category);
-    setMethod(t.method);
-    setParty(t.party);
-    setEventTag(t.eventTag || "");
-    setReference(t.reference || "");
-    setNotes(t.notes || "");
-    setMsg("");
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  function remove(id: string) {
-    setTxs((prev) => prev.filter((t) => t.id !== id));
-    setMsg("✅ Transaction deleted");
-    if (editingId === id) resetForm();
-  }
-
-  function upsert() {
-    setMsg("");
+  function addTx() {
     const a = Number(amount);
-    if (!date) return setMsg("❌ Date required");
-    if (!party.trim()) return setMsg("❌ Party (Client/Vendor name) required");
-    if (!amount.trim() || Number.isNaN(a) || a <= 0) return setMsg("❌ Amount must be a positive number");
+    if (!date || !Number.isFinite(a) || a <= 0) return alert("Enter valid Date + Amount.");
+    const finalCategory = (category || "").trim() || autoCategory(type, vendor, note);
 
-    const now = new Date().toISOString();
-    if (!editingId) {
-      const tx: FinanceTx = {
-        id: uid(),
-        date,
-        type,
-        amount: a,
-        category,
-        method,
-        party: party.trim(),
-        eventTag: eventTag.trim() || undefined,
-        reference: reference.trim() || undefined,
-        notes: notes.trim() || undefined,
-        createdAt: now,
-        updatedAt: now,
-      };
-      setTxs((prev) => [tx, ...prev]);
-      setMsg("✅ Transaction added");
-      resetForm();
+    const tx: FinanceTx = {
+      id: uid(),
+      date,
+      type,
+      amount: clampMoney(a),
+      category: finalCategory,
+      vendor: vendor.trim() || undefined,
+      note: note.trim() || undefined,
+      createdAt: new Date().toISOString(),
+    };
+    setTxs((prev) => [tx, ...prev]);
+
+    setAmount("");
+    setVendor("");
+    setNote("");
+    setCategory("");
+  }
+
+  function updateTx(id: string, patch: Partial<FinanceTx>) {
+    setTxs((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  }
+
+  function deleteTx(id: string) {
+    const ok = !settings.confirmDeletes || confirm("Delete this transaction?");
+    if (!ok) return;
+    setTxs((prev) => prev.filter((t) => t.id !== id));
+  }
+
+  async function signOut() {
+    try {
+      if (supabase) await supabase.auth.signOut();
+    } finally {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("eventura_email");
+        document.cookie = `eventura_email=; Path=/; Max-Age=0`;
+      }
+      router.push("/login");
+    }
+  }
+
+  // INSIGHTS
+  const totals = useMemo(() => sumIncomeExpense(txs), [txs]);
+  const expenseTop = useMemo(() => topCategories(txs, "Expense", 5), [txs]);
+  const incomeTop = useMemo(() => topCategories(txs, "Income", 5), [txs]);
+  const { map: byMonth, months } = useMemo(() => groupByMonth(txs), [txs]);
+
+  const monthNet = useMemo(() => {
+    const obj: Record<string, number> = {};
+    for (const m of months) {
+      const t = byMonth.get(m) ?? [];
+      obj[m] = sumIncomeExpense(t).net;
+    }
+    return obj;
+  }, [months, byMonth]);
+
+  const forecast = useMemo(() => forecastNextMonthNet(months, monthNet), [months, monthNet]);
+
+  const anomalies = useMemo(() => detectAnomalies(txs), [txs]);
+
+  const currency = "INR"; // keep simple; later can read from settings.region if you add it globally
+
+  function exportFinance() {
+    const payload = {
+      version: "eventura-finance-export-v1",
+      exportedAt: new Date().toISOString(),
+      transactions: txs,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `eventura_finance_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function importFinance(file: File) {
+    try {
+      const json = JSON.parse(await file.text());
+      const list = (json?.transactions ?? json) as FinanceTx[];
+      if (!Array.isArray(list)) return alert("Invalid file.");
+      // basic sanitize
+      const clean = list
+        .filter((x) => x && typeof x === "object")
+        .map((x) => ({
+          id: String((x as any).id ?? uid()),
+          date: String((x as any).date ?? toYMD(new Date())),
+          type: ((x as any).type === "Income" ? "Income" : "Expense") as TxType,
+          amount: clampMoney(Number((x as any).amount ?? 0)),
+          category: String((x as any).category ?? "Other"),
+          vendor: (x as any).vendor ? String((x as any).vendor) : undefined,
+          note: (x as any).note ? String((x as any).note) : undefined,
+          createdAt: String((x as any).createdAt ?? new Date().toISOString()),
+        }))
+        .filter((x) => x.amount > 0);
+      setTxs(clean);
+      alert("Imported ✅");
+    } catch {
+      alert("Import failed.");
+    }
+  }
+
+  function resetFinance() {
+    const ok = confirm("Reset all Finance transactions? (This will delete local finance data)");
+    if (!ok) return;
+    setTxs([]);
+  }
+
+  function askFinanceAI(question: string) {
+    const q = question.trim().toLowerCase();
+    if (!q) return;
+
+    const last30 = (() => {
+      const now = new Date();
+      const from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      return txs.filter((t) => new Date(t.date) >= from);
+    })();
+
+    const last7 = (() => {
+      const now = new Date();
+      const from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      return txs.filter((t) => new Date(t.date) >= from);
+    })();
+
+    const topExpenseVendor = () => {
+      const m = new Map<string, number>();
+      for (const t of txs) {
+        if (t.type !== "Expense") continue;
+        const v = (t.vendor ?? "Unknown").trim() || "Unknown";
+        m.set(v, (m.get(v) ?? 0) + t.amount);
+      }
+      const arr = Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
+      return arr.length ? { vendor: arr[0][0], amount: clampMoney(arr[0][1]) } : null;
+    };
+
+    const contains = (s: string) => q.includes(s);
+
+    // quick answers
+    if (contains("profit") || contains("net")) {
+      setAiAnswer(`Net (Income - Expense) overall is ${formatCurrency(totals.net, currency)}.`);
+      return;
+    }
+    if (contains("income")) {
+      setAiAnswer(`Total Income overall is ${formatCurrency(totals.income, currency)}.`);
+      return;
+    }
+    if (contains("expense") || contains("spend") || contains("spent")) {
+      setAiAnswer(`Total Expense overall is ${formatCurrency(totals.expense, currency)}.`);
+      return;
+    }
+    if (contains("last 30") || contains("last 30 days")) {
+      const t = sumIncomeExpense(last30);
+      setAiAnswer(
+        `Last 30 days: Income ${formatCurrency(t.income, currency)}, Expense ${formatCurrency(
+          t.expense,
+          currency
+        )}, Net ${formatCurrency(t.net, currency)}.`
+      );
+      return;
+    }
+    if (contains("last 7") || contains("last 7 days") || contains("weekly")) {
+      const t = sumIncomeExpense(last7);
+      setAiAnswer(
+        `Last 7 days: Income ${formatCurrency(t.income, currency)}, Expense ${formatCurrency(
+          t.expense,
+          currency
+        )}, Net ${formatCurrency(t.net, currency)}.`
+      );
+      return;
+    }
+    if (contains("top expense") || contains("biggest expense") || contains("largest expense")) {
+      const best = topCategories(txs, "Expense", 1)[0];
+      if (!best) return setAiAnswer("No expense data yet.");
+      setAiAnswer(`Top Expense category is "${best.category}" = ${formatCurrency(best.amount, currency)}.`);
+      return;
+    }
+    if (contains("top income") || contains("biggest income")) {
+      const best = topCategories(txs, "Income", 1)[0];
+      if (!best) return setAiAnswer("No income data yet.");
+      setAiAnswer(`Top Income category is "${best.category}" = ${formatCurrency(best.amount, currency)}.`);
+      return;
+    }
+    if (contains("vendor")) {
+      const bestV = topExpenseVendor();
+      if (!bestV) return setAiAnswer("No vendor expense data yet.");
+      setAiAnswer(`Highest paid vendor is "${bestV.vendor}" = ${formatCurrency(bestV.amount, currency)}.`);
+      return;
+    }
+    if (contains("forecast") || contains("predict") || contains("next month")) {
+      if (forecast === null) return setAiAnswer("Not enough monthly history to forecast yet.");
+      const lastM = months.length ? months[months.length - 1] : "N/A";
+      setAiAnswer(
+        `Forecast (simple trend): Next month net ≈ ${formatCurrency(forecast, currency)} (based on recent months, last is ${lastM}).`
+      );
+      return;
+    }
+    if (contains("alert") || contains("anomaly") || contains("risk")) {
+      const parts = [
+        `Large expenses: ${anomalies.large.length}`,
+        `Duplicates: ${anomalies.duplicates.length}`,
+        `Spikes vs category median: ${anomalies.spikes.length}`,
+      ];
+      setAiAnswer(`Alerts summary → ${parts.join(" • ")}. Check the Alerts panel below.`);
       return;
     }
 
-    setTxs((prev) =>
-      prev.map((t) =>
-        t.id === editingId
-          ? {
-              ...t,
-              date,
-              type,
-              amount: a,
-              category,
-              method,
-              party: party.trim(),
-              eventTag: eventTag.trim() || undefined,
-              reference: reference.trim() || undefined,
-              notes: notes.trim() || undefined,
-              updatedAt: now,
-            }
-          : t
-      )
+    setAiAnswer(
+      `Try: "profit", "total income", "total expense", "last 30 days", "largest expense", "top vendor", "forecast next month", "alerts".`
     );
-    setMsg("✅ Transaction updated");
-    resetForm();
   }
 
-  function saveBudget() {
-    setMsg("");
-    if (!budgetMonth) return setMsg("❌ Month required");
-    const tr = targetRevenue.trim() ? Number(targetRevenue) : undefined;
-    const te = targetExpense.trim() ? Number(targetExpense) : undefined;
-    const rr = reserveTarget.trim() ? Number(reserveTarget) : undefined;
-
-    if (targetRevenue.trim() && (Number.isNaN(tr) || (tr || 0) < 0)) return setMsg("❌ Target revenue invalid");
-    if (targetExpense.trim() && (Number.isNaN(te) || (te || 0) < 0)) return setMsg("❌ Target expense invalid");
-    if (reserveTarget.trim() && (Number.isNaN(rr) || (rr || 0) < 0)) return setMsg("❌ Reserve target invalid");
-
-    setBudgetPlans((prev) => {
-      const exists = prev.find((b) => b.month === budgetMonth);
-      if (!exists) return [{ month: budgetMonth, targetRevenue: tr, targetExpense: te, reserveTarget: rr }, ...prev];
-      return prev.map((b) => (b.month === budgetMonth ? { ...b, targetRevenue: tr, targetExpense: te, reserveTarget: rr } : b));
-    });
-
-    setMsg("✅ Budget saved");
-  }
+  useEffect(() => {
+    if (!aiRef.current) return;
+    aiRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [aiAnswer]);
 
   return (
-    <div style={S.page}>
-      <div style={S.shell}>
-        <div style={S.topRow}>
+    <div style={S.app}>
+      <aside style={{ ...S.sidebar, width: sidebarIconsOnly ? 76 : 280 }}>
+        <div style={S.brandRow}>
+          <div style={S.logoCircle}>E</div>
+          {!sidebarIconsOnly ? (
+            <div>
+              <div style={S.brandName}>Eventura OS</div>
+              <div style={S.brandSub}>{settings.theme}</div>
+            </div>
+          ) : null}
+        </div>
+
+        <nav style={S.nav}>
+          {NAV.map((item) => (
+            <Link key={item.href} href={item.href} style={S.navItem as any}>
+              <span style={S.navIcon}>{item.icon}</span>
+              {!sidebarIconsOnly ? <span style={S.navLabel}>{item.label}</span> : null}
+            </Link>
+          ))}
+        </nav>
+
+        <div style={S.sidebarFooter}>
+          {!sidebarIconsOnly ? (
+            <div style={S.userBox}>
+              <div style={S.userLabel}>Signed in</div>
+              <div style={S.userEmail}>{email || "Unknown"}</div>
+              <div style={S.roleBadge}>{role}</div>
+            </div>
+          ) : (
+            <div style={S.roleBadgeSmall}>{role}</div>
+          )}
+
+          <button style={S.signOutBtn} onClick={signOut}>
+            {sidebarIconsOnly ? "⎋" : "Sign Out"}
+          </button>
+        </div>
+      </aside>
+
+      <main style={S.main}>
+        <div style={S.header}>
           <div>
             <div style={S.h1}>Finance</div>
-            <div style={S.muted}>Income • Expense • Cashflow • Budget targets • AI insights (local)</div>
+            <div style={S.muted}>
+              AI Finance insights • Logged in as <b>{email || "Unknown"}</b> • Role:{" "}
+              <span style={S.rolePill}>{role}</span>
+            </div>
           </div>
-          <div style={S.row}>
-            <button
-              style={S.ghostBtn}
-              onClick={() => downloadJSON(`eventura_finance_${new Date().toISOString().slice(0, 10)}.json`, { txs, budgetPlans })}
-              title="Download data as JSON"
-            >
+
+          <div style={S.headerRight}>
+            <div style={S.kpiMini}>
+              <div style={S.kpiMiniLabel}>Net</div>
+              <div style={S.kpiMiniValue}>{formatCurrency(totals.net, currency)}</div>
+            </div>
+            <div style={S.kpiMini}>
+              <div style={S.kpiMiniLabel}>Transactions</div>
+              <div style={S.kpiMiniValue}>{txs.length}</div>
+            </div>
+
+            <button style={S.secondaryBtn} onClick={exportFinance}>
               Export
             </button>
-            <button style={S.ghostBtn} onClick={resetForm}>
-              Clear Form
-            </button>
+
+            <label style={S.secondaryBtn as any}>
+              Import
+              <input
+                type="file"
+                accept="application/json"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) importFinance(f);
+                  e.currentTarget.value = "";
+                }}
+              />
+            </label>
+
+            {isCEO ? (
+              <button style={S.dangerBtn} onClick={resetFinance}>
+                Reset
+              </button>
+            ) : null}
           </div>
         </div>
 
-        {msg ? <div style={S.msg}>{msg}</div> : null}
+        {loading ? <div style={S.loadingBar}>Loading session…</div> : null}
 
-        {/* KPI */}
-        <div style={S.kpiRow}>
-          <KPI label="Revenue" value={`₹${inr(totals.income)}`} />
-          <KPI label="Expense" value={`₹${inr(totals.expense)}`} />
-          <KPI label="Net Profit" value={`${totals.net >= 0 ? "" : "-"}₹${inr(Math.abs(totals.net))}`} highlight={totals.net < 0 ? "bad" : "ok"} />
-        </div>
+        <div style={S.grid}>
+          {/* Add Transaction */}
+          <section style={S.panel}>
+            <div style={S.panelTitle}>Add Transaction</div>
+            <div style={S.smallNote}>
+              Auto “AI” suggests category based on Vendor/Note. (No external API — safe deploy.)
+            </div>
 
-        {/* AI INSIGHTS */}
-        <div style={S.panel}>
-          <div style={S.panelTitle}>AI Insights</div>
-          <div style={S.aiGrid}>
-            {aiInsights.map((i, idx) => (
-              <div key={idx} style={{ ...S.aiCard, ...(i.level === "bad" ? S.aiBad : i.level === "warn" ? S.aiWarn : S.aiOk) }}>
-                <div style={{ fontWeight: 950 }}>{i.title}</div>
-                <div style={S.aiText}>{i.text}</div>
+            <div style={S.formGrid}>
+              <Field label="Type" S={S}>
+                <select style={S.select} value={type} onChange={(e) => setType(e.target.value as TxType)}>
+                  <option style={S.option}>Expense</option>
+                  <option style={S.option}>Income</option>
+                </select>
+              </Field>
+
+              <Field label="Date" S={S}>
+                <input style={S.input} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              </Field>
+
+              <Field label="Amount" S={S}>
+                <input
+                  style={S.input}
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))}
+                  placeholder="e.g. 25000"
+                />
+              </Field>
+
+              <Field label="Vendor (optional)" S={S}>
+                <input style={S.input} value={vendor} onChange={(e) => setVendor(e.target.value)} placeholder="e.g. ABC Decor" />
+              </Field>
+
+              <Field label="Note (optional)" S={S}>
+                <input style={S.input} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. stage flowers advance" />
+              </Field>
+
+              <Field label="Category (auto)" S={S}>
+                <input
+                  style={S.input}
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  placeholder="Auto suggested..."
+                />
+              </Field>
+            </div>
+
+            <div style={S.rowBetween}>
+              <div style={S.smallNote}>
+                Tip: Put keywords in Note like <b>decor</b>, <b>catering</b>, <b>dj</b> to auto-categorize.
               </div>
-            ))}
-          </div>
-          <div style={S.smallNote}>
-            This is “local AI” (fast, no API). When you want real AI, we can connect OpenAI later for forecasting + invoice summaries.
-          </div>
-        </div>
-
-        {/* ADD / EDIT */}
-        <div style={S.panel}>
-          <div style={S.panelTitle}>{editingId ? "Edit Transaction" : "Add Transaction"}</div>
-
-          <div style={S.grid2}>
-            <Field label="Date">
-              <input style={S.input} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-            </Field>
-
-            <Field label="Type">
-              <select style={S.select} value={type} onChange={(e) => setType(e.target.value as TxType)}>
-                <option style={S.option}>Income</option>
-                <option style={S.option}>Expense</option>
-              </select>
-            </Field>
-
-            <Field label="Amount (₹)">
-              <input style={S.input} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="e.g. 250000" />
-            </Field>
-
-            <Field label="Category">
-              <select style={S.select} value={category} onChange={(e) => setCategory(e.target.value as TxCategory)}>
-                {[
-                  "Client Payment",
-                  "Advance",
-                  "Package",
-                  "Vendor Payment",
-                  "Decor",
-                  "Venue",
-                  "Food/Catering",
-                  "Logistics",
-                  "Marketing",
-                  "Salary",
-                  "Rent",
-                  "Utilities",
-                  "Tools/Software",
-                  "Misc",
-                ].map((c) => (
-                  <option key={c} style={S.option}>
-                    {c}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Payment Method">
-              <select style={S.select} value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
-                {["Cash", "UPI", "Card", "Bank", "Cheque", "Other"].map((m) => (
-                  <option key={m} style={S.option}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Party (Client/Vendor)">
-              <input style={S.input} value={party} onChange={(e) => setParty(e.target.value)} placeholder="Client name / Vendor name" />
-            </Field>
-
-            <Field label="Event Tag (optional)">
-              <input style={S.input} value={eventTag} onChange={(e) => setEventTag(e.target.value)} placeholder="e.g. Patel Wedding 2026" />
-            </Field>
-
-            <Field label="Reference (optional)">
-              <input style={S.input} value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Invoice/UTR/Receipt no." />
-            </Field>
-
-            <Field label="Notes (optional)" full>
-              <textarea style={S.textarea} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Extra details…" />
-            </Field>
-          </div>
-
-          <div style={S.rowBetween}>
-            <div style={S.smallMuted}>Saved locally so it never breaks deploy. Later we’ll sync to Supabase.</div>
-            <div style={S.row}>
-              {editingId ? (
-                <button style={S.dangerBtn} onClick={() => remove(editingId)}>
-                  Delete
-                </button>
-              ) : null}
-              <button style={S.primaryBtn} onClick={upsert}>
-                {editingId ? "Save Changes" : "Add Transaction"}
+              <button style={S.primaryBtn} onClick={addTx}>
+                Add
               </button>
             </div>
-          </div>
-        </div>
+          </section>
 
-        {/* BUDGET */}
-        <div style={S.panel}>
-          <div style={S.panelTitle}>Monthly Budget Targets</div>
-          <div style={S.budgetGrid}>
-            <Field label="Month (YYYY-MM)">
-              <input style={S.input} value={budgetMonth} onChange={(e) => setBudgetMonth(e.target.value)} placeholder="2026-04" />
-            </Field>
-            <Field label="Target Revenue (₹)">
-              <input style={S.input} value={targetRevenue} onChange={(e) => setTargetRevenue(e.target.value)} placeholder="e.g. 800000" />
-            </Field>
-            <Field label="Target Expense (₹)">
-              <input style={S.input} value={targetExpense} onChange={(e) => setTargetExpense(e.target.value)} placeholder="e.g. 450000" />
-            </Field>
-            <Field label="Reserve Target (₹)">
-              <input style={S.input} value={reserveTarget} onChange={(e) => setReserveTarget(e.target.value)} placeholder="e.g. 150000" />
-            </Field>
-          </div>
+          {/* AI Insights */}
+          <section style={S.panel}>
+            <div style={S.panelTitle}>Auto AI Insights</div>
 
-          <div style={S.rowBetween}>
-            <div style={S.smallMuted}>Budget helps Finance AI warn you early.</div>
-            <button style={S.primaryBtn} onClick={saveBudget}>
-              Save Budget
-            </button>
-          </div>
+            <div style={S.kpiRow}>
+              <KPI label="Income" value={formatCurrency(totals.income, currency)} S={S} />
+              <KPI label="Expense" value={formatCurrency(totals.expense, currency)} S={S} />
+              <KPI label="Net" value={formatCurrency(totals.net, currency)} S={S} />
+            </div>
 
-          {activeBudget ? (
+            <div style={S.sectionTitle}>Top categories</div>
+            <div style={S.split2}>
+              <div style={S.softBox}>
+                <div style={S.softTitle}>Top Expenses</div>
+                {expenseTop.length ? (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {expenseTop.map((x) => (
+                      <div key={x.category} style={S.rowBetween}>
+                        <div style={{ fontWeight: 950 }}>{x.category}</div>
+                        <div style={S.muted}>{formatCurrency(x.amount, currency)}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={S.muted}>No expense data yet.</div>
+                )}
+              </div>
+
+              <div style={S.softBox}>
+                <div style={S.softTitle}>Top Income</div>
+                {incomeTop.length ? (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {incomeTop.map((x) => (
+                      <div key={x.category} style={S.rowBetween}>
+                        <div style={{ fontWeight: 950 }}>{x.category}</div>
+                        <div style={S.muted}>{formatCurrency(x.amount, currency)}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={S.muted}>No income data yet.</div>
+                )}
+              </div>
+            </div>
+
+            <div style={S.sectionTitle}>Forecast</div>
+            <div style={S.noteBox}>
+              {forecast === null
+                ? "Add a few months of data to enable forecast."
+                : `Next month net (trend forecast): ~ ${formatCurrency(forecast, currency)}.`}
+            </div>
+          </section>
+
+          {/* Alerts */}
+          <section style={S.panel}>
+            <div style={S.panelTitle}>AI Alerts (Auto)</div>
+            <div style={S.smallNote}>Detects large expenses, duplicates, and category spikes.</div>
+
+            <div style={S.alertGrid}>
+              <AlertCard title="Large expenses" count={anomalies.large.length} S={S} />
+              <AlertCard title="Duplicates" count={anomalies.duplicates.length} S={S} />
+              <AlertCard title="Spikes" count={anomalies.spikes.length} S={S} />
+            </div>
+
+            <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+              {renderAlertList("Large expenses", anomalies.large, S, currency)}
+              {renderAlertList("Duplicates", anomalies.duplicates, S, currency)}
+              {renderAlertList("Spikes", anomalies.spikes, S, currency)}
+            </div>
+          </section>
+
+          {/* Finance AI Assistant */}
+          <section style={S.panel} ref={aiRef}>
+            <div style={S.panelTitle}>Finance AI Assistant (Local)</div>
             <div style={S.smallNote}>
-              Active budget: <b>{activeBudget.month}</b> • Revenue target:{" "}
-              <b>{activeBudget.targetRevenue ? `₹${inr(activeBudget.targetRevenue)}` : "—"}</b> • Expense target:{" "}
-              <b>{activeBudget.targetExpense ? `₹${inr(activeBudget.targetExpense)}` : "—"}</b>
+              Ask questions like: <b>profit</b>, <b>last 30 days</b>, <b>largest expense</b>, <b>top vendor</b>, <b>forecast next month</b>.
             </div>
-          ) : (
-            <div style={S.smallNote}>No active budget for this month filter.</div>
-          )}
-        </div>
 
-        {/* FILTERS + LIST */}
-        <div style={S.panel}>
-          <div style={S.panelTitle}>Transactions</div>
+            <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <input
+                style={{ ...S.input, flex: 1, minWidth: 240 }}
+                value={aiAsk}
+                onChange={(e) => setAiAsk(e.target.value)}
+                placeholder='Try: "profit", "last 30 days", "top expense", "forecast next month"'
+              />
+              <button
+                style={S.primaryBtn}
+                onClick={() => {
+                  askFinanceAI(aiAsk);
+                }}
+              >
+                Ask
+              </button>
+              <button
+                style={S.secondaryBtn}
+                onClick={() => {
+                  setAiAsk("");
+                  setAiAnswer("");
+                }}
+              >
+                Clear
+              </button>
+            </div>
 
-          <div style={S.filters}>
-            <input style={S.input} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search: party / category / method / reference / notes / event" />
-            <select style={S.select} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as any)}>
-              <option style={S.option} value="All">
-                All Types
-              </option>
-              <option style={S.option}>Income</option>
-              <option style={S.option}>Expense</option>
-            </select>
-            <select style={S.select} value={monthFilter} onChange={(e) => setMonthFilter(e.target.value as any)}>
-              {months.map((m) => (
-                <option key={m} style={S.option} value={m}>
-                  {m === "All" ? "All Months" : m}
-                </option>
-              ))}
-            </select>
-          </div>
+            {aiAnswer ? (
+              <div style={S.aiBox}>
+                <div style={{ fontWeight: 950 }}>Answer</div>
+                <div style={{ marginTop: 8, color: T.text, lineHeight: 1.4 }}>{aiAnswer}</div>
+              </div>
+            ) : null}
+          </section>
 
-          {!filtered.length ? (
-            <div style={S.empty}>No transactions found.</div>
-          ) : (
-            <div style={{ display: "grid", gap: 10 }}>
-              {filtered.map((t) => (
-                <div key={t.id} style={S.card}>
-                  <div style={S.rowBetween}>
-                    <div>
-                      <div style={S.cardTitle}>
-                        {t.type === "Income" ? "⬆️" : "⬇️"} {t.party} • ₹{inr(t.amount)}
+          {/* Transactions */}
+          <section style={S.panel}>
+            <div style={S.panelTitle}>Transactions</div>
+            <div style={S.smallNote}>
+              {isCEO ? "CEO can edit + delete." : "Staff can view only (safe)."}
+            </div>
+
+            {!txs.length ? (
+              <div style={S.muted}>No transactions yet.</div>
+            ) : (
+              <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                {txs.map((t) => (
+                  <div key={t.id} style={S.txCard}>
+                    <div style={S.rowBetween}>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                        <span style={t.type === "Income" ? S.pillOk : S.pillWarn}>{t.type}</span>
+                        <span style={{ fontWeight: 950 }}>{formatCurrency(t.amount, currency)}</span>
+                        <span style={S.smallMuted}>{t.date}</span>
                       </div>
-                      <div style={S.cardSub}>
-                        {t.date} • {t.category} • {t.method}
-                        {t.eventTag ? ` • ${t.eventTag}` : ""}
-                        {t.reference ? ` • Ref: ${t.reference}` : ""}
-                      </div>
-                      {t.notes ? <div style={S.note}>{t.notes}</div> : null}
+
+                      {isCEO ? (
+                        <button style={S.dltBtn} onClick={() => deleteTx(t.id)}>
+                          Delete
+                        </button>
+                      ) : null}
                     </div>
-                    <div style={S.row}>
-                      <button style={S.ghostBtn} onClick={() => startEdit(t)}>
-                        Edit
-                      </button>
-                      <button style={S.dangerBtn} onClick={() => remove(t.id)}>
-                        Delete
-                      </button>
+
+                    <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
+                      <div style={S.rowBetween}>
+                        <span style={S.smallMuted}>Category</span>
+                        {isCEO ? (
+                          <input
+                            style={S.inputSmall}
+                            value={t.category}
+                            onChange={(e) => updateTx(t.id, { category: e.target.value })}
+                          />
+                        ) : (
+                          <span style={{ fontWeight: 900 }}>{t.category}</span>
+                        )}
+                      </div>
+
+                      <div style={S.rowBetween}>
+                        <span style={S.smallMuted}>Vendor</span>
+                        {isCEO ? (
+                          <input
+                            style={S.inputSmall}
+                            value={t.vendor ?? ""}
+                            onChange={(e) => updateTx(t.id, { vendor: e.target.value || undefined })}
+                          />
+                        ) : (
+                          <span style={{ fontWeight: 900 }}>{t.vendor || "—"}</span>
+                        )}
+                      </div>
+
+                      <div style={S.rowBetween}>
+                        <span style={S.smallMuted}>Note</span>
+                        {isCEO ? (
+                          <input
+                            style={S.inputSmall}
+                            value={t.note ?? ""}
+                            onChange={(e) => updateTx(t.id, { note: e.target.value || undefined })}
+                          />
+                        ) : (
+                          <span style={{ fontWeight: 900 }}>{t.note || "—"}</span>
+                        )}
+                      </div>
                     </div>
                   </div>
-
-                  <div style={S.smallMuted}>Updated: {new Date(t.updatedAt).toLocaleString()}</div>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
+          </section>
         </div>
-
-        {/* MONTH SUMMARY */}
-        <div style={S.panel}>
-          <div style={S.panelTitle}>Monthly Summary</div>
-          {!monthSummary.length ? (
-            <div style={S.empty}>No monthly summary yet.</div>
-          ) : (
-            <div style={S.summaryGrid}>
-              {monthSummary.slice(0, 12).map((m) => (
-                <div key={m.month} style={S.summaryCard}>
-                  <div style={{ fontWeight: 950 }}>{m.month}</div>
-                  <div style={S.smallMuted}>Revenue: ₹{inr(m.income)}</div>
-                  <div style={S.smallMuted}>Expense: ₹{inr(m.expense)}</div>
-                  <div style={{ marginTop: 6, fontWeight: 950, color: m.net >= 0 ? "#FDE68A" : "#FCA5A5" }}>
-                    Net: {m.net >= 0 ? "" : "-"}₹{inr(Math.abs(m.net))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div style={S.footerNote}>✅ Hover fixed on dropdown/options. ✅ Data saves instantly (localStorage).</div>
-      </div>
+      </main>
     </div>
   );
 }
 
-/* ================= UI HELPERS ================= */
-function Field({ label, full, children }: { label: string; full?: boolean; children: React.ReactNode }) {
+/* ================= SMALL UI ================= */
+function Field({
+  label,
+  children,
+  S,
+}: {
+  label: string;
+  children: React.ReactNode;
+  S: Record<string, CSSProperties>;
+}) {
   return (
-    <div style={{ ...S.field, gridColumn: full ? "1 / -1" : undefined }}>
-      <div style={S.label}>{label}</div>
+    <div style={{ display: "grid", gap: 6 }}>
+      <div style={{ fontSize: 12, fontWeight: 950, opacity: 0.9 }}>{label}</div>
       {children}
     </div>
   );
 }
-function KPI({ label, value, highlight }: { label: string; value: string; highlight?: "ok" | "bad" }) {
+
+function KPI({ label, value, S }: { label: string; value: string; S: Record<string, CSSProperties> }) {
   return (
-    <div style={{ ...S.kpi, ...(highlight === "bad" ? S.kpiBad : null) }}>
+    <div style={S.kpi}>
       <div style={S.kpiLabel}>{label}</div>
       <div style={S.kpiValue}>{value}</div>
     </div>
   );
 }
 
+function AlertCard({
+  title,
+  count,
+  S,
+}: {
+  title: string;
+  count: number;
+  S: Record<string, CSSProperties>;
+}) {
+  return (
+    <div style={S.alertCard}>
+      <div style={{ fontWeight: 950 }}>{title}</div>
+      <div style={S.alertCount}>{count}</div>
+    </div>
+  );
+}
+
+function renderAlertList(title: string, list: FinanceTx[], S: Record<string, CSSProperties>, currency: string) {
+  if (!list.length) return null;
+  return (
+    <div style={S.softBox}>
+      <div style={S.softTitle}>{title}</div>
+      <div style={{ display: "grid", gap: 8 }}>
+        {list.slice(0, 6).map((t) => (
+          <div key={t.id} style={S.rowBetween}>
+            <div style={{ display: "grid", gap: 2 }}>
+              <div style={{ fontWeight: 950 }}>
+                {t.category} • {t.vendor || "—"}
+              </div>
+              <div style={S.smallMuted}>
+                {t.date} • {t.note || "—"}
+              </div>
+            </div>
+            <div style={{ fontWeight: 950 }}>{formatCurrency(t.amount, currency)}</div>
+          </div>
+        ))}
+      </div>
+      {list.length > 6 ? <div style={{ marginTop: 10, ...S.smallMuted }}>+ {list.length - 6} more…</div> : null}
+    </div>
+  );
+}
+
 /* ================= STYLES ================= */
-const S: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    padding: 16,
-    background:
-      "radial-gradient(1200px 800px at 20% 10%, rgba(255,215,110,0.18), transparent 60%), radial-gradient(900px 700px at 80% 20%, rgba(120,70,255,0.18), transparent 55%), #050816",
-    color: "#F9FAFB",
-    fontFamily:
-      'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
-  },
-  shell: { maxWidth: 1100, margin: "0 auto", display: "grid", gap: 12 },
-  topRow: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 },
-  h1: { fontSize: 26, fontWeight: 950 },
-  muted: { color: "#9CA3AF", fontSize: 13, marginTop: 6 },
-  smallMuted: { color: "#9CA3AF", fontSize: 12 },
-  smallNote: { marginTop: 8, color: "#A7B0C0", fontSize: 12 },
+function makeStyles(T: any, settings: AppSettings): Record<string, CSSProperties> {
+  const compact = !!settings.compactTables;
 
-  panel: {
-    background: "rgba(11,16,32,0.78)",
-    border: "1px solid rgba(255,255,255,0.10)",
-    borderRadius: 18,
-    padding: 14,
-    backdropFilter: "blur(10px)",
-  },
-  panelTitle: { fontWeight: 950, color: "#FDE68A", marginBottom: 10 },
+  return {
+    app: {
+      minHeight: "100vh",
+      display: "flex",
+      background: `radial-gradient(1200px 800px at 20% 10%, ${T.glow1}, transparent 60%),
+                   radial-gradient(900px 700px at 80% 20%, ${T.glow2}, transparent 55%),
+                   ${T.bg}`,
+      color: T.text,
+      fontFamily:
+        'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
+    },
 
-  msg: {
-    padding: 10,
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.05)",
-    color: "#E5E7EB",
-    fontSize: 13,
-  },
+    sidebar: {
+      position: "sticky",
+      top: 0,
+      height: "100vh",
+      padding: 12,
+      borderRight: `1px solid ${T.border}`,
+      background: T.panel2,
+      backdropFilter: "blur(10px)",
+      display: "flex",
+      flexDirection: "column",
+      gap: 12,
+    },
+    brandRow: { display: "flex", alignItems: "center", gap: 10, padding: "8px 8px" },
+    logoCircle: {
+      width: 38,
+      height: 38,
+      borderRadius: 12,
+      display: "grid",
+      placeItems: "center",
+      fontWeight: 950,
+      background: `linear-gradient(135deg, ${T.accentBg}, rgba(255,255,255,0.06))`,
+      border: `1px solid ${T.accentBd}`,
+      color: T.accentTx,
+    },
+    brandName: { fontWeight: 950, lineHeight: 1.1 },
+    brandSub: { color: T.muted, fontSize: 12, marginTop: 2 },
 
-  kpiRow: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 },
-  kpi: {
-    padding: 12,
-    borderRadius: 16,
-    background: "rgba(255,255,255,0.05)",
-    border: "1px solid rgba(255,255,255,0.10)",
-  },
-  kpiBad: {
-    background: "rgba(248,113,113,0.10)",
-    border: "1px solid rgba(248,113,113,0.28)",
-  },
-  kpiLabel: { color: "#9CA3AF", fontSize: 12, fontWeight: 900 },
-  kpiValue: { marginTop: 6, fontSize: 22, fontWeight: 950 },
+    nav: { display: "grid", gap: 8 },
+    navItem: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      padding: "10px 10px",
+      borderRadius: 14,
+      textDecoration: "none",
+      color: T.text,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+    },
+    navIcon: { fontSize: 18, width: 22, textAlign: "center" },
+    navLabel: { fontWeight: 900, fontSize: 13 },
 
-  aiGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 6 },
-  aiCard: { padding: 12, borderRadius: 16, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.04)" },
-  aiOk: { border: "1px solid rgba(212,175,55,0.22)", background: "rgba(212,175,55,0.06)" },
-  aiWarn: { border: "1px solid rgba(96,165,250,0.22)", background: "rgba(96,165,250,0.06)" },
-  aiBad: { border: "1px solid rgba(248,113,113,0.28)", background: "rgba(248,113,113,0.08)" },
-  aiText: { marginTop: 6, color: "#C7CFDD", fontSize: 13, lineHeight: 1.35 },
+    sidebarFooter: { marginTop: "auto", display: "grid", gap: 10 },
+    userBox: {
+      padding: 12,
+      borderRadius: 16,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+    },
+    userLabel: { fontSize: 12, color: T.muted, fontWeight: 900 },
+    userEmail: { fontSize: 13, fontWeight: 900, marginTop: 6, wordBreak: "break-word" },
+    roleBadge: {
+      marginTop: 10,
+      display: "inline-flex",
+      alignItems: "center",
+      padding: "5px 10px",
+      borderRadius: 999,
+      background: T.accentBg,
+      border: `1px solid ${T.accentBd}`,
+      color: T.accentTx,
+      fontWeight: 950,
+      width: "fit-content",
+    },
+    roleBadgeSmall: {
+      display: "inline-flex",
+      justifyContent: "center",
+      padding: "6px 8px",
+      borderRadius: 999,
+      background: T.accentBg,
+      border: `1px solid ${T.accentBd}`,
+      color: T.accentTx,
+      fontWeight: 950,
+    },
+    signOutBtn: {
+      padding: "10px 12px",
+      borderRadius: 14,
+      border: `1px solid ${T.dangerBd}`,
+      background: T.dangerBg,
+      color: T.dangerTx,
+      fontWeight: 950,
+      cursor: "pointer",
+    },
 
-  grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
-  budgetGrid: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12 },
-  field: { display: "grid", gap: 8 },
-  label: { fontSize: 12, color: "#A7B0C0", fontWeight: 900 },
+    main: { flex: 1, padding: 16, maxWidth: 1400, margin: "0 auto", width: "100%" },
+    header: {
+      display: "flex",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: 12,
+      padding: 12,
+      borderRadius: 18,
+      border: `1px solid ${T.border}`,
+      background: T.panel,
+      backdropFilter: "blur(10px)",
+    },
+    headerRight: { display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" },
+    h1: { fontSize: 26, fontWeight: 950 },
+    muted: { color: T.muted, fontSize: 13, marginTop: 6 },
 
-  input: {
-    width: "100%",
-    padding: "12px 12px",
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "rgba(255,255,255,0.06)",
-    color: "#F9FAFB",
-    outline: "none",
-    fontSize: 14,
-  },
+    rolePill: {
+      display: "inline-block",
+      padding: "4px 10px",
+      borderRadius: 999,
+      fontWeight: 950,
+      background: T.accentBg,
+      border: `1px solid ${T.accentBd}`,
+      color: T.accentTx,
+      marginLeft: 6,
+    },
 
-  /* ✅ HOVER FIX: dark select + dark options (no white unreadable dropdown) */
-  select: {
-    width: "100%",
-    padding: "12px 12px",
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "rgba(255,255,255,0.06)",
-    color: "#F9FAFB",
-    outline: "none",
-    fontSize: 14,
-    fontWeight: 900,
-    appearance: "none",
-    WebkitAppearance: "none",
-    MozAppearance: "none",
-  },
-  option: { backgroundColor: "#0B1020", color: "#F9FAFB" },
+    kpiMini: {
+      minWidth: 140,
+      padding: 10,
+      borderRadius: 16,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+    },
+    kpiMiniLabel: { color: T.muted, fontSize: 12, fontWeight: 900 },
+    kpiMiniValue: { marginTop: 6, fontWeight: 950 },
 
-  textarea: {
-    width: "100%",
-    minHeight: 90,
-    padding: "12px 12px",
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "rgba(255,255,255,0.06)",
-    color: "#F9FAFB",
-    outline: "none",
-    fontSize: 14,
-    resize: "vertical",
-  },
+    grid: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
+    panel: {
+      padding: 14,
+      borderRadius: 18,
+      border: `1px solid ${T.border}`,
+      background: T.panel,
+      backdropFilter: "blur(10px)",
+    },
+    panelTitle: { fontWeight: 950, color: T.accentTx },
 
-  row: { display: "flex", gap: 10, alignItems: "center" },
-  rowBetween: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 },
+    formGrid: {
+      marginTop: 12,
+      display: "grid",
+      gap: 12,
+      gridTemplateColumns: "1fr 1fr",
+    },
 
-  primaryBtn: {
-    padding: "10px 14px",
-    borderRadius: 14,
-    border: "1px solid rgba(212,175,55,0.35)",
-    background: "linear-gradient(135deg, rgba(212,175,55,0.32), rgba(139,92,246,0.22))",
-    color: "#FFF",
-    fontWeight: 950,
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-  },
-  ghostBtn: {
-    padding: "10px 14px",
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.16)",
-    background: "rgba(255,255,255,0.06)",
-    color: "#E5E7EB",
-    fontWeight: 950,
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-  },
-  dangerBtn: {
-    padding: "10px 14px",
-    borderRadius: 14,
-    border: "1px solid rgba(248,113,113,0.30)",
-    background: "rgba(248,113,113,0.10)",
-    color: "#FCA5A5",
-    fontWeight: 950,
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-  },
+    input: {
+      width: "100%",
+      padding: compact ? "10px 10px" : "12px 12px",
+      borderRadius: 14,
+      border: `1px solid ${T.border}`,
+      background: T.inputBg,
+      color: T.text,
+      outline: "none",
+      fontSize: 14,
+    },
+    inputSmall: {
+      width: "60%",
+      minWidth: 220,
+      padding: compact ? "8px 10px" : "10px 10px",
+      borderRadius: 12,
+      border: `1px solid ${T.border}`,
+      background: T.inputBg,
+      color: T.text,
+      outline: "none",
+      fontSize: 13,
+    },
+    select: {
+      width: "100%",
+      padding: compact ? "8px 10px" : "10px 10px",
+      borderRadius: 14,
+      border: `1px solid ${T.border}`,
+      background: T.inputBg,
+      color: T.text,
+      outline: "none",
+      fontWeight: 900,
+    },
+    option: { backgroundColor: "#0B1020", color: "#F9FAFB" },
 
-  filters: { display: "grid", gridTemplateColumns: "1fr 220px 220px", gap: 10, marginBottom: 10 },
-  empty: { color: "#A7B0C0", fontSize: 13, padding: 10 },
+    rowBetween: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 },
+    smallMuted: { color: T.muted, fontSize: 12 },
+    smallNote: { color: T.muted, fontSize: 12, lineHeight: 1.35 },
 
-  card: {
-    padding: 12,
-    borderRadius: 16,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.04)",
-  },
-  cardTitle: { fontWeight: 950, fontSize: 15 },
-  cardSub: { marginTop: 4, color: "#A7B0C0", fontSize: 12 },
-  note: { marginTop: 8, color: "#C7CFDD", fontSize: 13, lineHeight: 1.35 },
+    primaryBtn: {
+      padding: "10px 14px",
+      borderRadius: 14,
+      border: `1px solid ${T.accentBd}`,
+      background: `linear-gradient(135deg, ${T.accentBg}, rgba(255,255,255,0.06))`,
+      color: T.text,
+      fontWeight: 950,
+      cursor: "pointer",
+    },
+    secondaryBtn: {
+      padding: "10px 12px",
+      borderRadius: 14,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+      color: T.text,
+      fontWeight: 950,
+      cursor: "pointer",
+    },
+    dangerBtn: {
+      padding: "10px 12px",
+      borderRadius: 14,
+      border: `1px solid ${T.dangerBd}`,
+      background: T.dangerBg,
+      color: T.dangerTx,
+      fontWeight: 950,
+      cursor: "pointer",
+    },
+    dltBtn: {
+      fontSize: 12,
+      padding: "9px 12px",
+      borderRadius: 14,
+      border: `1px solid ${T.dangerBd}`,
+      background: T.dangerBg,
+      color: T.dangerTx,
+      fontWeight: 950,
+      cursor: "pointer",
+      height: "fit-content",
+    },
 
-  summaryGrid: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 },
-  summaryCard: { padding: 12, borderRadius: 16, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.04)" },
+    kpiRow: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 },
+    kpi: {
+      padding: 12,
+      borderRadius: 16,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+    },
+    kpiLabel: { color: T.muted, fontSize: 12, fontWeight: 900 },
+    kpiValue: { marginTop: 6, fontSize: 18, fontWeight: 950 },
 
-  footerNote: { color: "#A7B0C0", fontSize: 12, textAlign: "center", padding: 6 },
-};
+    sectionTitle: { marginTop: 14, fontWeight: 950, fontSize: 13, color: T.text },
 
-/* ================= END ================= */
+    split2: { marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
+    softBox: {
+      padding: 12,
+      borderRadius: 16,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+    },
+    softTitle: { fontWeight: 950, marginBottom: 10 },
+
+    noteBox: {
+      marginTop: 12,
+      padding: 12,
+      borderRadius: 16,
+      border: `1px solid ${T.accentBd}`,
+      background: T.accentBg,
+      color: T.text,
+      fontSize: 13,
+      lineHeight: 1.35,
+    },
+
+    alertGrid: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 },
+    alertCard: {
+      padding: 12,
+      borderRadius: 16,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+      display: "grid",
+      gap: 6,
+    },
+    alertCount: { fontWeight: 950, fontSize: 22 },
+
+    aiBox: {
+      marginTop: 12,
+      padding: 12,
+      borderRadius: 16,
+      border: `1px solid ${T.okBd}`,
+      background: T.okBg,
+    },
+
+    txCard: {
+      padding: 12,
+      borderRadius: 16,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+    },
+
+    pillOk: {
+      padding: "5px 10px",
+      borderRadius: 999,
+      border: `1px solid ${T.okBd}`,
+      background: T.okBg,
+      color: T.okTx,
+      fontWeight: 950,
+      fontSize: 12,
+    },
+    pillWarn: {
+      padding: "5px 10px",
+      borderRadius: 999,
+      border: `1px solid ${T.accentBd}`,
+      background: T.accentBg,
+      color: T.accentTx,
+      fontWeight: 950,
+      fontSize: 12,
+    },
+
+    loadingBar: {
+      marginTop: 12,
+      padding: 10,
+      borderRadius: 14,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+      color: T.muted,
+      fontSize: 12,
+    },
+  };
+}
