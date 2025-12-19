@@ -15,7 +15,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // If already logged in, go to dashboard or where user came from
+  // ✅ If already logged in, redirect into software
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
@@ -41,9 +41,11 @@ export default function LoginPage() {
       return;
     }
 
-    // store email for your OsShell role check
+    // ✅ REQUIRED FOR MIDDLEWARE (DO NOT REMOVE)
     localStorage.setItem("eventura_email", email);
-    document.cookie = `eventura_email=${encodeURIComponent(email)}; path=/; max-age=31536000; SameSite=Lax`;
+    document.cookie = `eventura_email=${encodeURIComponent(
+      email
+    )}; path=/; max-age=31536000; SameSite=Lax`;
 
     const from = params.get("from") || "/dashboard";
     router.replace(from);
@@ -63,49 +65,80 @@ export default function LoginPage() {
         <h2>Eventura OS Login</h2>
         <p style={{ color: "#6b7280" }}>Login once to access whole software</p>
 
+        {/* ROLE TABS */}
         <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
           <button
-            onClick={() => setTab("CEO")}
-            style={{ flex: 1, fontWeight: tab === "CEO" ? 700 : 400, padding: 10 }}
             type="button"
+            onClick={() => setTab("CEO")}
+            style={{
+              flex: 1,
+              padding: 10,
+              fontWeight: tab === "CEO" ? 700 : 400,
+            }}
           >
             CEO
           </button>
           <button
-            onClick={() => setTab("Staff")}
-            style={{ flex: 1, fontWeight: tab === "Staff" ? 700 : 400, padding: 10 }}
             type="button"
+            onClick={() => setTab("Staff")}
+            style={{
+              flex: 1,
+              padding: 10,
+              fontWeight: tab === "Staff" ? 700 : 400,
+            }}
           >
             Staff
           </button>
         </div>
 
+        {/* EMAIL */}
         <input
           type="email"
           placeholder={`${tab} Email`}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #d1d5db" }}
+          style={{
+            width: "100%",
+            padding: 10,
+            borderRadius: 8,
+            border: "1px solid #d1d5db",
+          }}
         />
 
+        {/* PASSWORD */}
         <input
           type="password"
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #d1d5db", marginTop: 10 }}
+          style={{
+            width: "100%",
+            padding: 10,
+            borderRadius: 8,
+            border: "1px solid #d1d5db",
+            marginTop: 10,
+          }}
         />
 
+        {/* LOGIN BUTTON */}
         <button
+          type="button"
           onClick={login}
           disabled={loading}
-          style={{ width: "100%", marginTop: 14, padding: 12, fontWeight: 700, cursor: "pointer" }}
-          type="button"
+          style={{
+            width: "100%",
+            marginTop: 14,
+            padding: 12,
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
         >
           {loading ? "Signing in..." : "Login"}
         </button>
 
-        {error && <div style={{ color: "red", marginTop: 12 }}>{error}</div>}
+        {error && (
+          <div style={{ color: "red", marginTop: 12 }}>{error}</div>
+        )}
       </div>
     </main>
   );
