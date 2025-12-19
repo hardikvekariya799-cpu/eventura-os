@@ -41,9 +41,20 @@ function saveTasks(tasks: TaskItem[]) {
   localStorage.setItem(LS_TASKS, JSON.stringify(tasks));
 }
 
+const NAV = [
+  { label: "Dashboard", href: "/dashboard" },
+  { label: "Events", href: "/events" },
+  { label: "Finance", href: "/finance" },
+  { label: "Vendors", href: "/vendors" },
+  { label: "AI", href: "/ai" },
+  { label: "HR", href: "/hr" },
+  { label: "Reports", href: "/reports" },
+  { label: "Settings", href: "/settings" },
+];
+
 export default function DashboardPage() {
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
-  const [email, setEmail] = useState("hardikvekariya799@gmail.com");
+  const [emailInput, setEmailInput] = useState("hardikvekariya799@gmail.com");
   const [password, setPassword] = useState("");
 
   const [loading, setLoading] = useState(true);
@@ -144,20 +155,20 @@ export default function DashboardPage() {
     setBusy(true);
     try {
       if (!supabase) throw new Error("Supabase not configured.");
-      if (!email.trim() || !password.trim()) throw new Error("Email and password required.");
+      if (!emailInput.trim() || !password.trim()) throw new Error("Email and password required.");
 
       if (authMode === "signup") {
-        const { error } = await supabase.auth.signUp({ email: email.trim(), password });
+        const { error } = await supabase.auth.signUp({ email: emailInput.trim(), password });
         if (error) throw error;
 
         const { error: e2 } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
+          email: emailInput.trim(),
           password,
         });
         if (e2) throw e2;
       } else {
         const { error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
+          email: emailInput.trim(),
           password,
         });
         if (error) throw error;
@@ -175,8 +186,6 @@ export default function DashboardPage() {
     try {
       if (!supabase) return;
       await supabase.auth.signOut();
-      setUser(null);
-      setProfile(null);
       window.location.href = "/login";
     } finally {
       setBusy(false);
@@ -222,7 +231,7 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div style={styles.page}>
-        <div style={styles.card}>
+        <div style={styles.centerCard}>
           <div style={styles.h1}>Eventura OS</div>
           <div style={styles.muted}>Loading…</div>
         </div>
@@ -230,11 +239,11 @@ export default function DashboardPage() {
     );
   }
 
-  // AUTH SCREEN (IF YOU EVER LAND HERE)
+  // Auth screen (if someone lands here not logged)
   if (!user) {
     return (
       <div style={styles.page}>
-        <div style={styles.card}>
+        <div style={styles.centerCard}>
           <div style={styles.h1}>Eventura OS</div>
           <div style={styles.muted}>Sign in to continue</div>
           {err ? <div style={styles.err}>{err}</div> : null}
@@ -256,18 +265,18 @@ export default function DashboardPage() {
             </button>
           </div>
 
-          <div style={styles.field}>
-            <label style={styles.label}>Email</label>
+          <div style={{ marginTop: 12 }}>
+            <div style={styles.label}>Email</div>
             <input
               style={styles.input}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={emailInput}
+              onChange={(e) => setEmailInput(e.target.value)}
               autoComplete="email"
             />
           </div>
 
-          <div style={styles.field}>
-            <label style={styles.label}>Password</label>
+          <div style={{ marginTop: 12 }}>
+            <div style={styles.label}>Password</div>
             <input
               style={styles.input}
               type="password"
@@ -285,59 +294,67 @@ export default function DashboardPage() {
     );
   }
 
-  // LOGGED IN
+  // Main layout with LEFT SIDEBAR
   return (
-    <div style={styles.page}>
-      <div style={{ ...styles.card, maxWidth: 1100 }}>
-        <div style={styles.topRow}>
+    <div style={styles.shellPage}>
+      {/* LEFT SIDEBAR */}
+      <aside style={styles.sidebar}>
+        <div style={styles.brandBox}>
+          <div style={styles.brandTitle}>Eventura OS</div>
+          <div style={styles.brandSub}>
+            <span style={styles.dot} />
+            {profile?.role || "Staff"} • {profile?.email || user.email}
+          </div>
+        </div>
+
+        <div style={styles.nav}>
+          {NAV.map((item) => (
+            <Link key={item.href} href={item.href} style={styles.navItem}>
+              {item.label}
+            </Link>
+          ))}
+        </div>
+
+        <div style={{ marginTop: "auto" }}>
+          <button style={styles.signoutBtn} onClick={signOut} disabled={busy}>
+            {busy ? "Signing out…" : "Sign Out"}
+          </button>
+        </div>
+      </aside>
+
+      {/* RIGHT CONTENT */}
+      <main style={styles.main}>
+        <div style={styles.headerCard}>
           <div>
-            <div style={styles.h1}>Eventura OS Dashboard</div>
+            <div style={styles.h1}>Dashboard</div>
             <div style={styles.muted}>
-              Logged in as <b>{profile?.email || email}</b> • Role:{" "}
+              Logged in as <b>{profile?.email || user.email}</b> • Role:{" "}
               <span style={styles.rolePill}>{profile?.role || "Staff"}</span>
             </div>
           </div>
-          <button style={styles.ghostBtn} onClick={signOut} disabled={busy}>
-            Sign Out
-          </button>
         </div>
 
         {err ? <div style={styles.err}>{err}</div> : null}
 
-        {/* ✅ NEW: QUICK NAV TABS */}
-        <div style={styles.navGrid}>
-          <Link style={styles.navBtn} href="/events">Events</Link>
-          <Link style={styles.navBtn} href="/vendors">Vendors</Link>
-          <Link style={styles.navBtn} href="/finance">Finance</Link>
-          <Link style={styles.navBtn} href="/ai">AI</Link>
-          <Link style={styles.navBtn} href="/hr">HR</Link>
-          <Link style={styles.navBtn} href="/reports">Reports</Link>
-          <Link style={styles.navBtn} href="/settings">Settings</Link>
-        </div>
-
         <div style={styles.grid2}>
-          {/* LEFT: TASKS */}
+          {/* TASKS */}
           <div style={styles.panel}>
             <div style={styles.panelTitle}>Tasks</div>
 
             {role === "CEO" ? (
               <div style={styles.addBox}>
-                <div style={styles.row}>
-                  <input
-                    style={{ ...styles.input, marginBottom: 0 }}
-                    value={newTitle}
-                    onChange={(e) => setNewTitle(e.target.value)}
-                    placeholder="Add a task (Follow up leads, vendor booking, budget review)"
-                  />
-                </div>
-                <div style={styles.row}>
-                  <textarea
-                    style={styles.textarea}
-                    value={newNote}
-                    onChange={(e) => setNewNote(e.target.value)}
-                    placeholder="Notes (optional)"
-                  />
-                </div>
+                <input
+                  style={styles.input}
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  placeholder="Add a task (Follow up leads, vendor booking, budget review)"
+                />
+                <textarea
+                  style={styles.textarea}
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  placeholder="Notes (optional)"
+                />
                 <div style={styles.rowBetween}>
                   <div style={styles.inline}>
                     <span style={styles.muted}>Assign to:</span>
@@ -354,9 +371,8 @@ export default function DashboardPage() {
                     Add Task
                   </button>
                 </div>
-                <div style={styles.smallNote}>
-                  CEO can create tasks for Staff (saved locally for now).
-                </div>
+
+                <div style={styles.smallNote}>CEO can create tasks for Staff (saved locally).</div>
               </div>
             ) : (
               <div style={styles.smallNote}>Staff can update status and delete their tasks.</div>
@@ -370,7 +386,7 @@ export default function DashboardPage() {
             />
           </div>
 
-          {/* RIGHT: CEO / STAFF */}
+          {/* KPI */}
           <div style={styles.panel}>
             {role === "CEO" ? (
               <>
@@ -380,10 +396,9 @@ export default function DashboardPage() {
                   <KPI label="Staff Tasks" value={staffTasks.length} />
                   <KPI label="CEO Tasks" value={ceoTasks.length} />
                 </div>
-
                 <div style={styles.sectionTitle}>Next Modules</div>
                 <div style={styles.noteBox}>
-                  Leads • Finance • HR • Vendors — we can add them now (same style).
+                  Open the left sidebar and go to <b>Events</b>. We’ll build one tab at a time.
                 </div>
               </>
             ) : (
@@ -397,14 +412,13 @@ export default function DashboardPage() {
                     value={myTasks.filter((t) => t.status === "In progress").length}
                   />
                 </div>
-
                 <div style={styles.sectionTitle}>Today Focus</div>
-                <div style={styles.noteBox}>Update your tasks and ask CEO for new work.</div>
+                <div style={styles.noteBox}>Update tasks and check Events tab for new bookings.</div>
               </>
             )}
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
@@ -423,7 +437,7 @@ function TaskList({
   if (!tasks.length) return <div style={styles.muted}>No tasks yet.</div>;
 
   return (
-    <div style={{ display: "grid", gap: 10 }}>
+    <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
       {tasks.map((t) => (
         <div key={t.id} style={styles.taskCard}>
           <div style={styles.rowBetween}>
@@ -468,30 +482,69 @@ function KPI({ label, value }: { label: string; value: any }) {
   );
 }
 
+/* ================= STYLES ================= */
 const styles: Record<string, React.CSSProperties> = {
-  page: {
+  shellPage: {
     minHeight: "100vh",
-    padding: 18,
+    display: "grid",
+    gridTemplateColumns: "280px 1fr",
     background:
       "radial-gradient(1200px 800px at 20% 10%, rgba(255,215,110,0.18), transparent 60%), radial-gradient(900px 700px at 80% 20%, rgba(120,70,255,0.18), transparent 55%), #050816",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
     color: "#F9FAFB",
     fontFamily:
       'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
   },
-  card: {
-    width: "100%",
-    maxWidth: 520,
-    background: "rgba(11,16,32,0.92)",
-    border: "1px solid rgba(255,255,255,0.10)",
-    borderRadius: 18,
-    padding: 18,
-    boxShadow: "0 18px 50px rgba(0,0,0,0.45)",
+  sidebar: {
+    padding: 14,
+    borderRight: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(11,16,32,0.80)",
     backdropFilter: "blur(10px)",
+    display: "flex",
+    flexDirection: "column",
+    gap: 12,
   },
-  topRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  brandBox: {
+    padding: 12,
+    borderRadius: 16,
+    border: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(255,255,255,0.04)",
+  },
+  brandTitle: { fontSize: 18, fontWeight: 950, color: "#FDE68A" },
+  brandSub: { marginTop: 8, fontSize: 12, color: "#A7B0C0", display: "flex", gap: 8, alignItems: "center" },
+  dot: { width: 8, height: 8, borderRadius: 999, background: "rgba(34,197,94,0.8)" },
+
+  nav: { display: "grid", gap: 10 },
+  navItem: {
+    textDecoration: "none",
+    padding: "12px 12px",
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(255,255,255,0.04)",
+    color: "#E5E7EB",
+    fontWeight: 900,
+  },
+
+  signoutBtn: {
+    width: "100%",
+    padding: "12px 12px",
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.16)",
+    background: "rgba(255,255,255,0.06)",
+    color: "#E5E7EB",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+
+  main: { padding: 16 },
+  headerCard: {
+    padding: 14,
+    borderRadius: 18,
+    border: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(11,16,32,0.60)",
+    backdropFilter: "blur(10px)",
+    marginBottom: 12,
+  },
+
   h1: { fontSize: 24, fontWeight: 950 },
   muted: { color: "#9CA3AF", fontSize: 13, marginTop: 6 },
   smallMuted: { color: "#9CA3AF", fontSize: 12 },
@@ -506,6 +559,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   err: {
     marginTop: 12,
+    marginBottom: 12,
     padding: 10,
     borderRadius: 12,
     background: "rgba(248,113,113,0.12)",
@@ -515,28 +569,11 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.4,
   },
 
-  navGrid: {
-    marginTop: 14,
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr 1fr",
-    gap: 10,
-  },
-  navBtn: {
-    textDecoration: "none",
-    textAlign: "center",
-    padding: "10px 12px",
-    borderRadius: 14,
-    border: "1px solid rgba(212,175,55,0.35)",
-    background: "linear-gradient(135deg, rgba(212,175,55,0.32), rgba(139,92,246,0.22))",
-    color: "#FFF",
-    fontWeight: 950,
-  },
-
-  grid2: { marginTop: 14, display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 12 },
+  grid2: { display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 12 },
   panel: {
     background: "rgba(255,255,255,0.04)",
     border: "1px solid rgba(255,255,255,0.10)",
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 14,
   },
   panelTitle: { fontSize: 14, fontWeight: 950, marginBottom: 10, color: "#FDE68A" },
@@ -547,11 +584,14 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(212,175,55,0.07)",
     border: "1px solid rgba(212,175,55,0.18)",
     marginBottom: 12,
+    display: "grid",
+    gap: 10,
   },
-  row: { display: "flex", gap: 10, marginTop: 10 },
+
   rowBetween: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 },
   inline: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" },
-  label: { display: "block", fontSize: 12, color: "#9CA3AF", marginBottom: 8, fontWeight: 800 },
+
+  label: { fontSize: 12, color: "#9CA3AF", fontWeight: 800, marginBottom: 8 },
   input: {
     width: "100%",
     padding: "12px 12px",
@@ -583,6 +623,7 @@ const styles: Record<string, React.CSSProperties> = {
     outline: "none",
     fontWeight: 800,
   },
+
   primaryBtnSmall: {
     padding: "10px 12px",
     borderRadius: 14,
@@ -592,17 +633,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 950,
     cursor: "pointer",
   },
-  ghostBtn: {
-    padding: "10px 12px",
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.16)",
-    background: "rgba(255,255,255,0.06)",
-    color: "#E5E7EB",
-    fontWeight: 900,
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-  },
-  smallNote: { marginTop: 12, fontSize: 12, color: "#A7B0C0", lineHeight: 1.35 },
 
   taskCard: {
     padding: 12,
@@ -611,6 +641,7 @@ const styles: Record<string, React.CSSProperties> = {
     border: "1px solid rgba(255,255,255,0.10)",
   },
   taskNote: { marginTop: 8, color: "#C7CFDD", fontSize: 13, lineHeight: 1.35 },
+
   assignedPill: {
     fontSize: 12,
     padding: "5px 10px",
@@ -651,5 +682,46 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#E9D5FF",
     fontSize: 13,
     lineHeight: 1.35,
+  },
+
+  // fallback
+  page: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" },
+  centerCard: {
+    width: "100%",
+    maxWidth: 520,
+    background: "rgba(11,16,32,0.92)",
+    border: "1px solid rgba(255,255,255,0.10)",
+    borderRadius: 18,
+    padding: 18,
+  },
+  segment: {
+    marginTop: 14,
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    background: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(255,255,255,0.10)",
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  segBtn: {
+    padding: "10px 12px",
+    fontWeight: 900,
+    fontSize: 13,
+    background: "transparent",
+    color: "#E5E7EB",
+    border: "none",
+    cursor: "pointer",
+  },
+  segActive: { background: "rgba(212,175,55,0.18)", color: "#FDE68A" },
+  primaryBtn: {
+    width: "100%",
+    marginTop: 14,
+    padding: "12px 12px",
+    borderRadius: 14,
+    border: "1px solid rgba(212,175,55,0.35)",
+    background: "linear-gradient(135deg, rgba(212,175,55,0.32), rgba(139,92,246,0.22))",
+    color: "#FFF",
+    fontWeight: 950,
+    cursor: "pointer",
   },
 };
