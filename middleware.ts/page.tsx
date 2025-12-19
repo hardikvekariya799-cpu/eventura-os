@@ -1,18 +1,30 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/events/:path*", "/finance/:path*", "/hr/:path*"],
+  matcher: [
+    "/dashboard/:path*",
+    "/events/:path*",
+    "/tasks/:path*",
+    "/vendors/:path*",
+    "/hr/:path*",
+    "/finance/:path*",
+    "/reports/:path*",
+    "/settings/:path*",
+  ],
 };
 
 export function middleware(req: NextRequest) {
   const url = req.nextUrl.clone();
 
-  // ✅ Supabase sets cookies like: sb-<project-ref>-auth-token
-  // Also sometimes: sb-access-token / sb-refresh-token
   const cookies = req.cookies.getAll();
 
   const isLoggedIn =
-    cookies.some((c) => c.name.startsWith("sb-") && c.name.includes("auth-token") && c.value?.length) ||
+    cookies.some(
+      (c) =>
+        c.name.startsWith("sb-") &&
+        c.name.includes("auth-token") &&
+        c.value?.length
+    ) ||
     cookies.some((c) => c.name === "sb-access-token" && c.value?.length) ||
     cookies.some((c) => c.name === "sb-refresh-token" && c.value?.length) ||
     cookies.some((c) => c.name === "supabase-auth-token" && c.value?.length);
