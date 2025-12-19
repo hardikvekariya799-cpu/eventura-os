@@ -1,20 +1,22 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { createClient, User } from "@supabase/supabase-js";
+import React, { useMemo, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 
-type Role = "CEO" | "Staff";
-type Profile = { id: string; email: string | null; role: Role };
+type RoleTab = "CEO" | "Staff";
 
 const CEO_EMAIL = "hardikvekariya799@gmail.com";
 const STAFF_EMAIL = "eventurastaff@gmail.com";
 
-// Put your passwords here (you can change anytime)
+// ✅ Set your passwords here (change anytime)
 const DEFAULT_CEO_PASSWORD = "Hardik@9727";
 const DEFAULT_STAFF_PASSWORD = "Eventura@79";
 
+// Supabase env
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+
+// Create client ONLY if env exists (prevents runtime crash)
 const supabase =
   supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
@@ -26,19 +28,21 @@ function setSessionEmail(email: string) {
   )}; Path=/; Max-Age=31536000; SameSite=Lax`;
 }
 
-type RoleTab = "CEO" | "Staff";
+function hardBlockCrossLogin(selectedTab: RoleTab, usedEmail: string) {
+  const ok =
+    (selectedTab === "CEO" && usedEmail.toLowerCase() === CEO_EMAIL.toLowerCase()) ||
+    (selectedTab === "Staff" && usedEmail.toLowerCase() === STAFF_EMAIL.toLowerCase());
+  return ok;
+}
 
 export default function LoginPage() {
   const [tab, setTab] = useState<RoleTab>("CEO");
+  const email = useMemo(() => (tab === "CEO" ? CEO_EMAIL : STAFF_EMAIL), [tab]);
+
   const [password, setPassword] = useState<string>(DEFAULT_CEO_PASSWORD);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string>("");
   const [err, setErr] = useState<string>("");
-
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-
-  const email = useMemo(() => (tab === "CEO" ? CEO_EMAIL : STAFF_EMAIL), [tab]);
 
   function switchTab(next: RoleTab) {
     setTab(next);
@@ -47,54 +51,14 @@ export default function LoginPage() {
     setPassword(next === "CEO" ? DEFAULT_CEO_PASSWORD : DEFAULT_STAFF_PASSWORD);
   }
 
-  function hardBlockCrossLogin(selectedTab: RoleTab, usedEmail: string) {
-    const ok =
-      (selectedTab === "CEO" && usedEmail.toLowerCase() === CEO_EMAIL.toLowerCase()) ||
-      (selectedTab === "Staff" && usedEmail.toLowerCase() === STAFF_EMAIL.toLowerCase());
-    return ok;
-  }
-
-  useEffect(() => {
-    (async () => {
-      if (!supabase) return;
-
-      const { data } = await supabase.auth.getSession();
-      setUser(data.session?.user ?? null);
-
-      const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
-        setUser(session?.user ?? null);
-        setProfile(null);
-        if (session?.user?.id) await fetchProfile(session.user.id);
-      });
-
-      if (data.session?.user?.id) await fetchProfile(data.session.user.id);
-
-      return () => sub.subscription.unsubscribe();
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function fetchProfile(uid: string) {
-    if (!supabase) return;
-
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id,email,role")
-      .eq("id", uid)
-      .maybeSingle();
-
-    if (error) {
-      setErr(error.message);
-      return;
-    }
-    if (data) setProfile(data as Profile);
-  }
-
   async function createAccount() {
     setMsg("");
     setErr("");
+
     if (!supabase) {
-      setErr("Supabase env missing on Vercel. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.");
+      setErr(
+        "Supabase env missing on Vercel. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY."
+      );
       return;
     }
     if (!password || password.length < 6) {
@@ -104,8 +68,16 @@ export default function LoginPage() {
 
     setBusy(true);
     try {
+      // Hard prevent cross login by design (email locked)
+      if (!hardBlockCrossLogin(tab, email)) {
+        setErr("Cross-login blocked. Use the correct tab.");
+        return;
+      }
+
       const { error } = await supabase.auth.signUp({ email, password });
+
       if (error) {
+        // Common: already registered
         setMsg(`⚠️ ${error.message}`);
       } else {
         setMsg("✅ Account created. Now click Sign In.");
@@ -120,8 +92,11 @@ export default function LoginPage() {
   async function signIn() {
     setMsg("");
     setErr("");
+
     if (!supabase) {
-      setErr("Supabase env missing on Vercel. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.");
+      setErr(
+        "Supabase env missing on Vercel. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY."
+      );
       return;
     }
     if (!password) {
@@ -138,6 +113,7 @@ export default function LoginPage() {
       }
 
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
       if (error) {
         setErr(error.message);
         return;
@@ -152,7 +128,9 @@ export default function LoginPage() {
         return;
       }
 
+      // ✅ Fix “always staff view” by setting session email
       setSessionEmail(signedEmail);
+
       setMsg("✅ Signed in. Opening Dashboard…");
       window.location.href = "/dashboard";
     } catch (e: any) {
@@ -179,6 +157,7 @@ export default function LoginPage() {
           </div>
         ) : null}
 
+        {/* Tabs */}
         <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
           <button
             style={{ ...styles.tabBtn, ...(tab === "CEO" ? styles.tabActive : null) }}
@@ -196,11 +175,13 @@ export default function LoginPage() {
           </button>
         </div>
 
+        {/* Email locked */}
         <div style={styles.field}>
           <label style={styles.label}>Email (locked)</label>
           <input style={styles.input} value={email} readOnly />
         </div>
 
+        {/* Password */}
         <div style={styles.field}>
           <label style={styles.label}>Password</label>
           <input
@@ -212,6 +193,7 @@ export default function LoginPage() {
           />
         </div>
 
+        {/* Actions */}
         <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
           <button style={styles.ghostBtn} onClick={createAccount} disabled={busy}>
             {busy ? "Working…" : "Create/Recreate Account"}
@@ -231,18 +213,6 @@ export default function LoginPage() {
           <br />
           <b>Staff:</b> {STAFF_EMAIL}
         </div>
-
-        {user ? (
-          <div style={styles.smallNote}>
-            Logged in user: <b>{user.email}</b>
-            {profile?.role ? (
-              <>
-                {" "}
-                • Role: <b>{profile.role}</b>
-              </>
-            ) : null}
-          </div>
-        ) : null}
       </div>
     </div>
   );
