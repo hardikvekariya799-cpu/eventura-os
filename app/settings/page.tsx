@@ -1,22 +1,19 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 
 /* ================= SUPABASE (safe) ================= */
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 const supabase =
   supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
-/* ================= STORAGE KEYS ================= */
-const LS_SETTINGS = "eventura_os_settings_v4";
-const LS_ACL = "eventura_os_acl_v1";
-const LS_COMPANY = "eventura_os_company_v1";
+/* ================= SETTINGS (LOCAL) ================= */
+const LS_SETTINGS = "eventura_os_settings_v3"; // keep SAME key to avoid breaking your working app
 
-/* ================= TYPES ================= */
 type SidebarMode = "Icons + Text" | "Icons Only";
 type Theme =
   | "Royal Gold"
@@ -27,41 +24,11 @@ type Theme =
   | "Carbon Black"
   | "Ivory Light";
 
-type Density = "Comfort" | "Compact";
-type FontScale = 90 | 100 | 110 | 120;
-
-type Role = "CEO" | "Staff";
-
-type Permission =
-  | "events.read"
-  | "events.create"
-  | "events.edit"
-  | "events.delete"
-  | "finance.read"
-  | "finance.create"
-  | "finance.edit"
-  | "finance.delete"
-  | "vendors.read"
-  | "vendors.create"
-  | "vendors.edit"
-  | "vendors.delete"
-  | "hr.read"
-  | "hr.create"
-  | "hr.edit"
-  | "hr.delete"
-  | "reports.read"
-  | "reports.export"
-  | "settings.view";
-
 type AppSettings = {
   ceoEmail: string;
   staffEmail: string;
-
   theme: Theme;
   sidebarMode: SidebarMode;
-
-  density: Density;
-  fontScale: FontScale;
 
   compactTables: boolean;
   confirmDeletes: boolean;
@@ -69,156 +36,39 @@ type AppSettings = {
   reducedMotion: boolean;
   highContrast: boolean;
 
-  modules: {
-    dashboard: boolean;
-    events: boolean;
-    finance: boolean;
-    vendors: boolean;
-    ai: boolean;
-    hr: boolean;
-    reports: boolean;
-    settings: boolean;
-  };
-
-  sessionTimeoutMin: 15 | 30 | 60 | 120;
-  rememberDevice: boolean;
-
-  notifications: {
-    inApp: boolean;
-    email: boolean;
-    whatsapp: boolean;
-    dailySummary: boolean;
-    eventReminders: boolean;
-    financeAlerts: boolean;
-  };
-
-  region: {
-    timezone: string;
-    currency: "INR" | "CAD" | "USD";
-    language: "English" | "Gujarati" | "Hindi";
-    dateFormat: "DD/MM/YYYY" | "MM/DD/YYYY" | "YYYY-MM-DD";
-  };
+  // extra safe features
+  quickActions: boolean;
+  autoSaveLabel: boolean;
 };
 
-type ACLState = {
-  Staff: Record<Permission, boolean>;
-};
-
-type CompanyProfile = {
-  brandName: string;
-  tagline: string;
-  phone: string;
-  city: string;
-  website: string;
-  founders: { name: string; title: string }[];
-};
-
-/* ================= DEFAULTS ================= */
 const SETTINGS_DEFAULTS: AppSettings = {
   ceoEmail: "hardikvekariya799@gmail.com",
   staffEmail: "eventurastaff@gmail.com",
-
   theme: "Royal Gold",
   sidebarMode: "Icons + Text",
-
-  density: "Comfort",
-  fontScale: 100,
-
   compactTables: false,
   confirmDeletes: true,
-
   reducedMotion: false,
   highContrast: false,
-
-  modules: {
-    dashboard: true,
-    events: true,
-    finance: true,
-    vendors: true,
-    ai: true,
-    hr: true,
-    reports: true,
-    settings: true,
-  },
-
-  sessionTimeoutMin: 60,
-  rememberDevice: true,
-
-  notifications: {
-    inApp: true,
-    email: false,
-    whatsapp: false,
-    dailySummary: true,
-    eventReminders: true,
-    financeAlerts: true,
-  },
-
-  region: {
-    timezone: "America/Toronto",
-    currency: "INR",
-    language: "English",
-    dateFormat: "DD/MM/YYYY",
-  },
+  quickActions: true,
+  autoSaveLabel: true,
 };
 
-const ALL_PERMS: Permission[] = [
-  "events.read",
-  "events.create",
-  "events.edit",
-  "events.delete",
-  "finance.read",
-  "finance.create",
-  "finance.edit",
-  "finance.delete",
-  "vendors.read",
-  "vendors.create",
-  "vendors.edit",
-  "vendors.delete",
-  "hr.read",
-  "hr.create",
-  "hr.edit",
-  "hr.delete",
-  "reports.read",
-  "reports.export",
-  "settings.view",
-];
+type Role = "CEO" | "Staff";
 
-const ACL_DEFAULTS: ACLState = {
-  Staff: Object.fromEntries(
-    ALL_PERMS.map((p) => [
-      p,
-      p.endsWith(".read") || p === "reports.export" || p === "settings.view",
-    ])
-  ) as Record<Permission, boolean>,
-};
-
-const COMPANY_DEFAULTS: CompanyProfile = {
-  brandName: "Eventura",
-  tagline: "Events that Speak Your Style",
-  phone: "",
-  city: "Surat",
-  website: "",
-  founders: [
-    { name: "Hardik Vekariya", title: "Founder & CEO" },
-    { name: "Shubh Parekh", title: "Co-Founder" },
-    { name: "Dixit Bhuva", title: "Digital Head" },
-  ],
-};
-
-/* ================= NAV ================= */
-type NavItem = { label: string; href: string; icon: string; key: keyof AppSettings["modules"] };
+type NavItem = { label: string; href: string; icon: string };
 const NAV: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: "📊", key: "dashboard" },
-  { label: "Events", href: "/events", icon: "📅", key: "events" },
-  { label: "Finance", href: "/finance", icon: "💰", key: "finance" },
-  { label: "Vendors", href: "/vendors", icon: "🏷️", key: "vendors" },
-  { label: "AI", href: "/ai", icon: "🤖", key: "ai" },
-  { label: "HR", href: "/hr", icon: "🧑‍🤝‍🧑", key: "hr" },
-  { label: "Reports", href: "/reports", icon: "📈", key: "reports" },
-  { label: "Settings", href: "/settings", icon: "⚙️", key: "settings" },
+  { label: "Dashboard", href: "/dashboard", icon: "📊" },
+  { label: "Events", href: "/events", icon: "📅" },
+  { label: "Finance", href: "/finance", icon: "💰" },
+  { label: "Vendors", href: "/vendors", icon: "🏷️" },
+  { label: "AI", href: "/ai", icon: "🤖" },
+  { label: "HR", href: "/hr", icon: "🧑‍🤝‍🧑" },
+  { label: "Reports", href: "/reports", icon: "📈" },
+  { label: "Settings", href: "/settings", icon: "⚙️" },
 ];
 
-/* ================= HELPERS ================= */
+/* ================= LOCAL HELPERS ================= */
 function safeLoad<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   try {
@@ -238,16 +88,15 @@ function roleFromSettings(email: string, s: AppSettings): Role {
   return email.toLowerCase() === s.ceoEmail.toLowerCase() ? "CEO" : "Staff";
 }
 
-function applyThemeToDom(settings: AppSettings) {
+function applyThemeToDom(s: AppSettings) {
   if (typeof document === "undefined") return;
-  document.documentElement.setAttribute("data-ev-theme", settings.theme);
-  document.documentElement.setAttribute("data-ev-density", settings.density);
-  document.documentElement.setAttribute("data-ev-sidebar", settings.sidebarMode);
-  document.documentElement.setAttribute("data-ev-font", String(settings.fontScale));
-  document.documentElement.setAttribute("data-ev-contrast", settings.highContrast ? "high" : "normal");
-  document.documentElement.style.fontSize = `${settings.fontScale}%`;
+  document.documentElement.setAttribute("data-ev-theme", s.theme);
+  document.documentElement.setAttribute("data-ev-sidebar", s.sidebarMode);
+  document.documentElement.setAttribute("data-ev-contrast", s.highContrast ? "high" : "normal");
+  document.documentElement.setAttribute("data-ev-motion", s.reducedMotion ? "reduced" : "normal");
 }
 
+/* ================= THEME TOKENS ================= */
 function ThemeTokens(theme: Theme, highContrast: boolean) {
   const base = {
     text: "#F9FAFB",
@@ -345,50 +194,20 @@ function ThemeTokens(theme: Theme, highContrast: boolean) {
   }
 }
 
-function groupPerms(staff: Record<Permission, boolean>) {
-  const byPrefix = (prefix: string) =>
-    (Object.keys(staff) as Permission[]).filter((p) => p.startsWith(prefix));
-  return [
-    { title: "Events", items: byPrefix("events.") },
-    { title: "Finance", items: byPrefix("finance.") },
-    { title: "Vendors", items: byPrefix("vendors.") },
-    { title: "HR", items: byPrefix("hr.") },
-    { title: "Reports", items: byPrefix("reports.") },
-    { title: "Settings", items: ["settings.view" as Permission] },
-  ];
-}
-function prettyPerm(p: Permission) {
-  const [m, a] = p.split(".");
-  return `${cap(m)} ${cap(a)}`;
-}
-function cap(s: string) {
-  return s ? s[0].toUpperCase() + s.slice(1) : s;
-}
-
 /* ================= PAGE ================= */
 export default function SettingsPage() {
   const router = useRouter();
 
   const [settings, setSettings] = useState<AppSettings>(SETTINGS_DEFAULTS);
-  const [acl, setAcl] = useState<ACLState>(ACL_DEFAULTS);
-  const [company, setCompany] = useState<CompanyProfile>(COMPANY_DEFAULTS);
-
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(true);
+  const [savedPulse, setSavedPulse] = useState(0);
 
-  // load
+  // load once
   useEffect(() => {
     const s = safeLoad<AppSettings>(LS_SETTINGS, SETTINGS_DEFAULTS);
-    const merged: AppSettings = {
-      ...SETTINGS_DEFAULTS,
-      ...s,
-      modules: { ...SETTINGS_DEFAULTS.modules, ...(s as any).modules },
-      notifications: { ...SETTINGS_DEFAULTS.notifications, ...(s as any).notifications },
-      region: { ...SETTINGS_DEFAULTS.region, ...(s as any).region },
-    };
+    const merged: AppSettings = { ...SETTINGS_DEFAULTS, ...s };
     setSettings(merged);
-    setAcl(safeLoad<ACLState>(LS_ACL, ACL_DEFAULTS));
-    setCompany(safeLoad<CompanyProfile>(LS_COMPANY, COMPANY_DEFAULTS));
     applyThemeToDom(merged);
   }, []);
 
@@ -396,21 +215,15 @@ export default function SettingsPage() {
   useEffect(() => {
     safeSave(LS_SETTINGS, settings);
     applyThemeToDom(settings);
+    if (settings.autoSaveLabel) setSavedPulse((x) => x + 1);
   }, [settings]);
-
-  useEffect(() => safeSave(LS_ACL, acl), [acl]);
-  useEffect(() => safeSave(LS_COMPANY, company), [company]);
 
   // session email
   useEffect(() => {
     (async () => {
       try {
         if (!supabase) {
-          const e =
-            safeLoad<string>("eventura_email", "") ||
-            safeLoad<string>("eventura_email_session", "");
-          setEmail(e);
-          setLoading(false);
+          setEmail(safeLoad<string>("eventura_email", ""));
           return;
         }
         const { data } = await supabase.auth.getSession();
@@ -425,101 +238,52 @@ export default function SettingsPage() {
   const isCEO = role === "CEO";
   const sidebarIconsOnly = settings.sidebarMode === "Icons Only";
 
+  const T = ThemeTokens(settings.theme, settings.highContrast);
+  const S = makeStyles(T);
+
   async function signOut() {
     try {
       if (supabase) await supabase.auth.signOut();
     } finally {
       if (typeof window !== "undefined") {
         localStorage.removeItem("eventura_email");
-        sessionStorage.removeItem("eventura_email_session");
         document.cookie = `eventura_email=; Path=/; Max-Age=0`;
       }
       router.push("/login");
     }
   }
 
-  function exportBackup() {
+  function exportSettings() {
     const payload = {
       version: "eventura-settings-backup-v1",
       exportedAt: new Date().toISOString(),
       settings,
-      acl,
-      company,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `eventura_settings_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `eventura_settings_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  async function importBackup(file: File) {
+  async function importSettings(file: File) {
     try {
       const json = JSON.parse(await file.text());
-      if (!json?.settings) return alert("Invalid backup file.");
-      const s = json.settings as AppSettings;
-      const merged: AppSettings = {
-        ...SETTINGS_DEFAULTS,
-        ...s,
-        modules: { ...SETTINGS_DEFAULTS.modules, ...(s as any).modules },
-        notifications: { ...SETTINGS_DEFAULTS.notifications, ...(s as any).notifications },
-        region: { ...SETTINGS_DEFAULTS.region, ...(s as any).region },
-      };
+      const incoming = (json?.settings ?? json) as Partial<AppSettings>;
+      const merged: AppSettings = { ...SETTINGS_DEFAULTS, ...incoming };
       setSettings(merged);
-      setAcl(json.acl ? (json.acl as ACLState) : ACL_DEFAULTS);
-      setCompany(json.company ? (json.company as CompanyProfile) : COMPANY_DEFAULTS);
       alert("Imported ✅");
     } catch {
       alert("Import failed.");
     }
   }
 
-  function resetAll() {
-    if (!confirm("Reset Settings + Access Control + Company Profile to defaults?")) return;
+  function resetDefaults() {
+    if (!confirm("Reset Settings to defaults?")) return;
     setSettings(SETTINGS_DEFAULTS);
-    setAcl(ACL_DEFAULTS);
-    setCompany(COMPANY_DEFAULTS);
   }
-
-  function toggleStaffPreset(preset: "ReadOnly" | "Standard" | "Full") {
-    if (!isCEO) return;
-
-    const next: Record<Permission, boolean> = { ...acl.Staff };
-
-    if (preset === "ReadOnly") {
-      ALL_PERMS.forEach((perm) => (next[perm] = perm.endsWith(".read") || perm === "settings.view"));
-      next["reports.export"] = false;
-    } else if (preset === "Standard") {
-      ALL_PERMS.forEach((perm) => (next[perm] = false));
-      const allow: Permission[] = [
-        "events.read",
-        "events.create",
-        "events.edit",
-        "finance.read",
-        "finance.create",
-        "finance.edit",
-        "vendors.read",
-        "vendors.create",
-        "vendors.edit",
-        "hr.read",
-        "hr.create",
-        "hr.edit",
-        "reports.read",
-        "reports.export",
-        "settings.view",
-      ];
-      allow.forEach((perm) => (next[perm] = true));
-    } else {
-      ALL_PERMS.forEach((perm) => (next[perm] = true));
-    }
-
-    setAcl({ Staff: next });
-  }
-
-  const T = ThemeTokens(settings.theme, settings.highContrast);
-  const S = makeStyles(T);
 
   return (
     <div style={S.app}>
@@ -535,7 +299,7 @@ export default function SettingsPage() {
         </div>
 
         <nav style={S.nav}>
-          {NAV.filter((n) => settings.modules[n.key]).map((item) => (
+          {NAV.map((item) => (
             <Link key={item.href} href={item.href} style={S.navItem as any}>
               <span style={S.navIcon}>{item.icon}</span>
               {!sidebarIconsOnly ? <span style={S.navLabel}>{item.label}</span> : null}
@@ -565,31 +329,37 @@ export default function SettingsPage() {
           <div>
             <div style={S.h1}>Settings</div>
             <div style={S.muted}>
-              Logged in as <b>{email || "Unknown"}</b> • Role: <span style={S.rolePill}>{role}</span>
+              Logged in as <b>{email || "Unknown"}</b> • Role:{" "}
+              <span style={S.rolePill}>{role}</span>
+              {settings.autoSaveLabel ? (
+                <span key={savedPulse} style={S.savedPill}>
+                  Saved
+                </span>
+              ) : null}
             </div>
           </div>
 
           <div style={S.headerRight}>
-            <button style={S.secondaryBtn} onClick={exportBackup}>
-              Export Backup
+            <button style={S.secondaryBtn} onClick={exportSettings}>
+              Export
             </button>
 
             <label style={S.secondaryBtn as any}>
-              Import Backup
+              Import
               <input
                 type="file"
                 accept="application/json"
                 style={{ display: "none" }}
                 onChange={(e) => {
                   const f = e.target.files?.[0];
-                  if (f) importBackup(f);
+                  if (f) importSettings(f);
                   e.currentTarget.value = "";
                 }}
               />
             </label>
 
-            <button style={S.dangerBtn} onClick={resetAll}>
-              Reset All
+            <button style={S.dangerBtn} onClick={resetDefaults}>
+              Reset
             </button>
           </div>
         </div>
@@ -602,7 +372,7 @@ export default function SettingsPage() {
             <div style={S.panelTitle}>Appearance</div>
 
             <div style={S.formGrid}>
-              <Field label="Theme">
+              <Field label="Theme" S={S}>
                 <select
                   style={S.select}
                   value={settings.theme}
@@ -626,7 +396,7 @@ export default function SettingsPage() {
                 </select>
               </Field>
 
-              <Field label="Sidebar mode">
+              <Field label="Sidebar mode" S={S}>
                 <select
                   style={S.select}
                   value={settings.sidebarMode}
@@ -636,40 +406,6 @@ export default function SettingsPage() {
                 >
                   <option style={S.option}>Icons + Text</option>
                   <option style={S.option}>Icons Only</option>
-                </select>
-              </Field>
-
-              <Field label="Density">
-                <select
-                  style={S.select}
-                  value={settings.density}
-                  onChange={(e) => setSettings((p) => ({ ...p, density: e.target.value as Density }))}
-                >
-                  <option style={S.option}>Comfort</option>
-                  <option style={S.option}>Compact</option>
-                </select>
-              </Field>
-
-              <Field label="Font scale">
-                <select
-                  style={S.select}
-                  value={settings.fontScale}
-                  onChange={(e) =>
-                    setSettings((p) => ({ ...p, fontScale: Number(e.target.value) as FontScale }))
-                  }
-                >
-                  <option style={S.option} value={90}>
-                    90%
-                  </option>
-                  <option style={S.option} value={100}>
-                    100%
-                  </option>
-                  <option style={S.option} value={110}>
-                    110%
-                  </option>
-                  <option style={S.option} value={120}>
-                    120%
-                  </option>
                 </select>
               </Field>
             </div>
@@ -701,341 +437,108 @@ export default function SettingsPage() {
               />
             </div>
 
-            <div style={S.smallNote}>Theme applies instantly ✅</div>
+            <div style={S.smallNote}>
+              Theme applies instantly across app pages that read DOM tokens.
+            </div>
           </section>
 
-          {/* Company */}
+          {/* Access */}
           <section style={S.panel}>
-            <div style={S.panelTitle}>Company Profile</div>
-
-            {!isCEO ? (
-              <div style={S.noteBox}>Only CEO can edit Company Profile.</div>
-            ) : null}
+            <div style={S.panelTitle}>Access</div>
 
             <div style={S.formGrid}>
-              <Field label="Brand name">
+              <Field label="CEO email" S={S}>
                 <input
                   style={S.input}
-                  value={company.brandName}
+                  value={settings.ceoEmail}
                   disabled={!isCEO}
-                  onChange={(e) => setCompany((p) => ({ ...p, brandName: e.target.value }))}
+                  onChange={(e) => setSettings((p) => ({ ...p, ceoEmail: e.target.value }))}
                 />
               </Field>
 
-              <Field label="Tagline">
+              <Field label="Staff email" S={S}>
                 <input
                   style={S.input}
-                  value={company.tagline}
+                  value={settings.staffEmail}
                   disabled={!isCEO}
-                  onChange={(e) => setCompany((p) => ({ ...p, tagline: e.target.value }))}
-                />
-              </Field>
-
-              <Field label="City">
-                <input
-                  style={S.input}
-                  value={company.city}
-                  disabled={!isCEO}
-                  onChange={(e) => setCompany((p) => ({ ...p, city: e.target.value }))}
-                />
-              </Field>
-
-              <Field label="Phone">
-                <input
-                  style={S.input}
-                  value={company.phone}
-                  disabled={!isCEO}
-                  onChange={(e) => setCompany((p) => ({ ...p, phone: e.target.value }))}
-                />
-              </Field>
-
-              <Field label="Website">
-                <input
-                  style={S.input}
-                  value={company.website}
-                  disabled={!isCEO}
-                  onChange={(e) => setCompany((p) => ({ ...p, website: e.target.value }))}
+                  onChange={(e) => setSettings((p) => ({ ...p, staffEmail: e.target.value }))}
                 />
               </Field>
             </div>
-
-            <div style={S.sectionTitle}>Founders</div>
-            <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
-              {company.founders.map((f, idx) => (
-                <div key={idx} style={S.founderRow}>
-                  <div style={{ display: "grid", gap: 8, flex: 1 }}>
-                    <input
-                      style={S.input}
-                      value={f.name}
-                      disabled={!isCEO}
-                      onChange={(e) =>
-                        setCompany((p) => {
-                          const next = [...p.founders];
-                          next[idx] = { ...next[idx], name: e.target.value };
-                          return { ...p, founders: next };
-                        })
-                      }
-                      placeholder="Name"
-                    />
-                    <input
-                      style={S.input}
-                      value={f.title}
-                      disabled={!isCEO}
-                      onChange={(e) =>
-                        setCompany((p) => {
-                          const next = [...p.founders];
-                          next[idx] = { ...next[idx], title: e.target.value };
-                          return { ...p, founders: next };
-                        })
-                      }
-                      placeholder="Title"
-                    />
-                  </div>
-
-                  {isCEO ? (
-                    <button
-                      style={S.dangerMini}
-                      onClick={() =>
-                        setCompany((p) => ({
-                          ...p,
-                          founders: p.founders.filter((_, i) => i !== idx),
-                        }))
-                      }
-                    >
-                      Remove
-                    </button>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-
-            {isCEO ? (
-              <div style={S.rowBetween}>
-                <div style={S.smallNote}>Shown on future reports/invoices.</div>
-                <button
-                  style={S.primaryBtnSmall}
-                  onClick={() =>
-                    setCompany((p) => ({
-                      ...p,
-                      founders: [...p.founders, { name: "", title: "" }],
-                    }))
-                  }
-                >
-                  Add Founder
-                </button>
-              </div>
-            ) : null}
-          </section>
-
-          {/* Region & Notifications */}
-          <section style={S.panel}>
-            <div style={S.panelTitle}>Region & Notifications</div>
-
-            <div style={S.formGrid}>
-              <Field label="Timezone">
-                <input
-                  style={S.input}
-                  value={settings.region.timezone}
-                  onChange={(e) =>
-                    setSettings((p) => ({
-                      ...p,
-                      region: { ...p.region, timezone: e.target.value },
-                    }))
-                  }
-                />
-              </Field>
-
-              <Field label="Currency">
-                <select
-                  style={S.select}
-                  value={settings.region.currency}
-                  onChange={(e) =>
-                    setSettings((p) => ({
-                      ...p,
-                      region: { ...p.region, currency: e.target.value as any },
-                    }))
-                  }
-                >
-                  <option style={S.option}>INR</option>
-                  <option style={S.option}>CAD</option>
-                  <option style={S.option}>USD</option>
-                </select>
-              </Field>
-
-              <Field label="Language">
-                <select
-                  style={S.select}
-                  value={settings.region.language}
-                  onChange={(e) =>
-                    setSettings((p) => ({
-                      ...p,
-                      region: { ...p.region, language: e.target.value as any },
-                    }))
-                  }
-                >
-                  <option style={S.option}>English</option>
-                  <option style={S.option}>Gujarati</option>
-                  <option style={S.option}>Hindi</option>
-                </select>
-              </Field>
-
-              <Field label="Date format">
-                <select
-                  style={S.select}
-                  value={settings.region.dateFormat}
-                  onChange={(e) =>
-                    setSettings((p) => ({
-                      ...p,
-                      region: { ...p.region, dateFormat: e.target.value as any },
-                    }))
-                  }
-                >
-                  <option style={S.option}>DD/MM/YYYY</option>
-                  <option style={S.option}>MM/DD/YYYY</option>
-                  <option style={S.option}>YYYY-MM-DD</option>
-                </select>
-              </Field>
-            </div>
-
-            <div style={S.sectionTitle}>Notifications</div>
-            <div style={S.toggleRow}>
-              <Toggle
-                label="In-app"
-                value={settings.notifications.inApp}
-                onChange={(v) =>
-                  setSettings((p) => ({ ...p, notifications: { ...p.notifications, inApp: v } }))
-                }
-                S={S}
-              />
-              <Toggle
-                label="Email"
-                value={settings.notifications.email}
-                onChange={(v) =>
-                  setSettings((p) => ({ ...p, notifications: { ...p.notifications, email: v } }))
-                }
-                S={S}
-              />
-              <Toggle
-                label="WhatsApp"
-                value={settings.notifications.whatsapp}
-                onChange={(v) =>
-                  setSettings((p) => ({ ...p, notifications: { ...p.notifications, whatsapp: v } }))
-                }
-                S={S}
-              />
-              <Toggle
-                label="Daily summary"
-                value={settings.notifications.dailySummary}
-                onChange={(v) =>
-                  setSettings((p) => ({
-                    ...p,
-                    notifications: { ...p.notifications, dailySummary: v },
-                  }))
-                }
-                S={S}
-              />
-              <Toggle
-                label="Event reminders"
-                value={settings.notifications.eventReminders}
-                onChange={(v) =>
-                  setSettings((p) => ({
-                    ...p,
-                    notifications: { ...p.notifications, eventReminders: v },
-                  }))
-                }
-                S={S}
-              />
-              <Toggle
-                label="Finance alerts"
-                value={settings.notifications.financeAlerts}
-                onChange={(v) =>
-                  setSettings((p) => ({
-                    ...p,
-                    notifications: { ...p.notifications, financeAlerts: v },
-                  }))
-                }
-                S={S}
-              />
-            </div>
-          </section>
-
-          {/* Modules */}
-          <section style={S.panel}>
-            <div style={S.panelTitle}>Modules (Sidebar visibility)</div>
-            {!isCEO ? <div style={S.noteBox}>Only CEO can change modules visibility.</div> : null}
-
-            <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-              {Object.entries(settings.modules).map(([k, v]) => (
-                <div key={k} style={S.rowBetween}>
-                  <div style={{ fontWeight: 950, textTransform: "capitalize" }}>{k}</div>
-                  <button
-                    style={v ? S.toggleOnBtn : S.toggleOffBtn}
-                    disabled={!isCEO}
-                    onClick={() =>
-                      setSettings((p) => ({
-                        ...p,
-                        modules: { ...p.modules, [k]: !p.modules[k as any] },
-                      }))
-                    }
-                  >
-                    {v ? "Enabled" : "Disabled"}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {/* Access Control */}
-          <section style={S.panel}>
-            <div style={S.panelTitle}>Access Control (Staff)</div>
 
             {!isCEO ? (
-              <div style={S.noteBox}>Only CEO can edit permissions.</div>
+              <div style={S.noteBox}>Only CEO can edit access emails.</div>
             ) : (
-              <div style={S.rowBetween}>
-                <div style={S.smallNote}>Quick presets:</div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                  <button style={S.secondaryBtn} onClick={() => toggleStaffPreset("ReadOnly")}>
-                    Read-Only
-                  </button>
-                  <button style={S.secondaryBtn} onClick={() => toggleStaffPreset("Standard")}>
-                    Standard
-                  </button>
-                  <button style={S.secondaryBtn} onClick={() => toggleStaffPreset("Full")}>
-                    Full
-                  </button>
-                </div>
+              <div style={S.noteBox}>
+                Tip: Keep CEO email exactly same as your login email.
               </div>
             )}
 
-            <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-              {groupPerms(acl.Staff).map((group) => (
-                <div key={group.title} style={S.permGroup}>
-                  <div style={S.permGroupTitle}>{group.title}</div>
-                  <div style={S.permGrid}>
-                    {group.items.map((perm) => {
-                      const enabled = acl.Staff[perm];
-                      return (
-                        <button
-                          key={perm}
-                          style={enabled ? S.permOn : S.permOff}
-                          disabled={!isCEO}
-                          onClick={() => {
-                            if (!isCEO) return;
-                            setAcl((p) => ({ Staff: { ...p.Staff, [perm]: !p.Staff[perm] } }));
-                          }}
-                        >
-                          {prettyPerm(perm)}: {enabled ? "ON" : "OFF"}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
+            <div style={S.sectionTitle}>Extra Settings</div>
+            <div style={S.toggleRow}>
+              <Toggle
+                label="Show quick actions"
+                value={settings.quickActions}
+                onChange={(v) => setSettings((p) => ({ ...p, quickActions: v }))}
+                S={S}
+              />
+              <Toggle
+                label="Show auto-save label"
+                value={settings.autoSaveLabel}
+                onChange={(v) => setSettings((p) => ({ ...p, autoSaveLabel: v }))}
+                S={S}
+              />
             </div>
+          </section>
 
-            <div style={S.smallNote}>
-              (Next step later: enforce these permissions inside each module page.)
+          {/* Data Tools */}
+          <section style={S.panel}>
+            <div style={S.panelTitle}>Data Tools</div>
+            <div style={S.smallNote}>Export/import settings backup anytime.</div>
+            <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+              <button style={S.secondaryBtnFull} onClick={exportSettings}>
+                Download Settings Backup (JSON)
+              </button>
+
+              <label style={S.secondaryBtnFull as any}>
+                Import Backup (JSON)
+                <input
+                  type="file"
+                  accept="application/json"
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) importSettings(f);
+                    e.currentTarget.value = "";
+                  }}
+                />
+              </label>
+
+              <button style={S.dangerBtnFull} onClick={resetDefaults}>
+                Reset Settings to Defaults
+              </button>
+            </div>
+          </section>
+
+          {/* Status */}
+          <section style={S.panel}>
+            <div style={S.panelTitle}>System Status</div>
+            <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+              <div style={S.statusRow}>
+                <span style={S.smallMuted}>Role</span>
+                <span style={S.statusPill}>{role}</span>
+              </div>
+              <div style={S.statusRow}>
+                <span style={S.smallMuted}>Theme</span>
+                <span style={S.statusPill}>{settings.theme}</span>
+              </div>
+              <div style={S.statusRow}>
+                <span style={S.smallMuted}>Storage Key</span>
+                <span style={S.statusPill}>{LS_SETTINGS}</span>
+              </div>
+              <div style={S.smallNote}>
+                This Settings page only touches localStorage and DOM theme tokens.
+              </div>
             </div>
           </section>
         </div>
@@ -1044,8 +547,16 @@ export default function SettingsPage() {
   );
 }
 
-/* ================= UI BITS ================= */
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+/* ================= SMALL UI ================= */
+function Field({
+  label,
+  children,
+  S,
+}: {
+  label: string;
+  children: React.ReactNode;
+  S: Record<string, CSSProperties>;
+}) {
   return (
     <div style={{ display: "grid", gap: 6 }}>
       <div style={{ fontSize: 12, fontWeight: 950, opacity: 0.9 }}>{label}</div>
@@ -1063,7 +574,7 @@ function Toggle({
   label: string;
   value: boolean;
   onChange: (v: boolean) => void;
-  S: Record<string, React.CSSProperties>;
+  S: Record<string, CSSProperties>;
 }) {
   return (
     <button
@@ -1077,7 +588,7 @@ function Toggle({
 }
 
 /* ================= STYLES ================= */
-function makeStyles(T: any): Record<string, React.CSSProperties> {
+function makeStyles(T: any): Record<string, CSSProperties> {
   return {
     app: {
       minHeight: "100vh",
@@ -1188,6 +699,7 @@ function makeStyles(T: any): Record<string, React.CSSProperties> {
     headerRight: { display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" },
     h1: { fontSize: 26, fontWeight: 950 },
     muted: { color: T.muted, fontSize: 13, marginTop: 6 },
+
     rolePill: {
       display: "inline-block",
       padding: "4px 10px",
@@ -1196,10 +708,20 @@ function makeStyles(T: any): Record<string, React.CSSProperties> {
       background: T.accentBg,
       border: `1px solid ${T.accentBd}`,
       color: T.accentTx,
+      marginLeft: 8,
+    },
+    savedPill: {
+      display: "inline-block",
+      padding: "4px 10px",
+      borderRadius: 999,
+      fontWeight: 950,
+      background: T.okBg,
+      border: `1px solid ${T.okBd}`,
+      color: T.okTx,
+      marginLeft: 8,
     },
 
     grid: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
-
     panel: {
       padding: 14,
       borderRadius: 18,
@@ -1234,8 +756,9 @@ function makeStyles(T: any): Record<string, React.CSSProperties> {
     option: { backgroundColor: "#0B1020", color: "#F9FAFB" },
 
     toggleRow: { marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" },
+    sectionTitle: { marginTop: 14, fontWeight: 950, fontSize: 13, color: T.text },
 
-    rowBetween: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 },
+    smallMuted: { color: T.muted, fontSize: 12 },
     smallNote: { color: T.muted, fontSize: 12, lineHeight: 1.35 },
 
     secondaryBtn: {
@@ -1247,14 +770,16 @@ function makeStyles(T: any): Record<string, React.CSSProperties> {
       fontWeight: 950,
       cursor: "pointer",
     },
-    primaryBtnSmall: {
-      padding: "10px 12px",
+    secondaryBtnFull: {
+      width: "100%",
+      padding: "12px 12px",
       borderRadius: 14,
-      border: `1px solid ${T.accentBd}`,
-      background: `linear-gradient(135deg, ${T.accentBg}, rgba(255,255,255,0.06))`,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
       color: T.text,
       fontWeight: 950,
       cursor: "pointer",
+      textAlign: "center",
     },
     dangerBtn: {
       padding: "10px 12px",
@@ -1264,6 +789,17 @@ function makeStyles(T: any): Record<string, React.CSSProperties> {
       color: T.dangerTx,
       fontWeight: 950,
       cursor: "pointer",
+    },
+    dangerBtnFull: {
+      width: "100%",
+      padding: "12px 12px",
+      borderRadius: 14,
+      border: `1px solid ${T.dangerBd}`,
+      background: T.dangerBg,
+      color: T.dangerTx,
+      fontWeight: 950,
+      cursor: "pointer",
+      textAlign: "center",
     },
 
     toggleOnBtn: {
@@ -1298,48 +834,24 @@ function makeStyles(T: any): Record<string, React.CSSProperties> {
       lineHeight: 1.35,
     },
 
-    sectionTitle: { marginTop: 14, fontWeight: 950, fontSize: 13, color: T.text },
-
-    permGroup: {
+    statusRow: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 10,
       padding: 12,
       borderRadius: 16,
       border: `1px solid ${T.border}`,
       background: T.soft,
     },
-    permGroupTitle: { fontWeight: 950, marginBottom: 10 },
-    permGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 },
-    permOn: {
-      padding: "10px 10px",
-      borderRadius: 14,
-      border: `1px solid ${T.okBd}`,
-      background: T.okBg,
-      color: T.okTx,
+    statusPill: {
+      padding: "5px 10px",
+      borderRadius: 999,
+      border: `1px solid ${T.accentBd}`,
+      background: T.accentBg,
+      color: T.accentTx,
       fontWeight: 950,
-      cursor: "pointer",
-      textAlign: "left",
-    },
-    permOff: {
-      padding: "10px 10px",
-      borderRadius: 14,
-      border: `1px solid ${T.border}`,
-      background: "rgba(0,0,0,0.05)",
-      color: T.text,
-      fontWeight: 950,
-      cursor: "pointer",
-      textAlign: "left",
-    },
-
-    founderRow: { display: "flex", gap: 10, alignItems: "flex-start" },
-    dangerMini: {
-      padding: "10px 12px",
-      borderRadius: 14,
-      border: `1px solid ${T.dangerBd}`,
-      background: T.dangerBg,
-      color: T.dangerTx,
-      fontWeight: 950,
-      cursor: "pointer",
-      height: "fit-content",
-      marginTop: 2,
+      fontSize: 12,
     },
 
     loadingBar: {
