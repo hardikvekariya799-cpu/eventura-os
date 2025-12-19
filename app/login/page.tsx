@@ -1,112 +1,344 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
+import React, { useEffect, useMemo, useState } from "react";
+import { createClient, User } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+type Role = "CEO" | "Staff";
+type Profile = { id: string; email: string | null; role: Role };
+
+const CEO_EMAIL = "hardikvekariya799@gmail.com";
+const STAFF_EMAIL = "eventurastaff@gmail.com";
+
+// Put your passwords here (you can change anytime)
+const DEFAULT_CEO_PASSWORD = "Hardik@9727";
+const DEFAULT_STAFF_PASSWORD = "Eventura@79";
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+const supabase =
+  supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
+
+function setSessionEmail(email: string) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem("eventura_email", email);
+  document.cookie = `eventura_email=${encodeURIComponent(
+    email
+  )}; Path=/; Max-Age=31536000; SameSite=Lax`;
+}
+
+type RoleTab = "CEO" | "Staff";
 
 export default function LoginPage() {
-  const router = useRouter();
+  const [tab, setTab] = useState<RoleTab>("CEO");
+  const [password, setPassword] = useState<string>(DEFAULT_CEO_PASSWORD);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string>("");
+  const [err, setErr] = useState<string>("");
 
-  const [tab, setTab] = useState<"CEO" | "Staff">("CEO");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
 
-  async function login() {
-    setError("");
-    setLoading(true);
+  const email = useMemo(() => (tab === "CEO" ? CEO_EMAIL : STAFF_EMAIL), [tab]);
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+  function switchTab(next: RoleTab) {
+    setTab(next);
+    setMsg("");
+    setErr("");
+    setPassword(next === "CEO" ? DEFAULT_CEO_PASSWORD : DEFAULT_STAFF_PASSWORD);
+  }
 
-    if (error || !data.user) {
-      setLoading(false);
-      setError("Invalid login credentials");
+  function hardBlockCrossLogin(selectedTab: RoleTab, usedEmail: string) {
+    const ok =
+      (selectedTab === "CEO" && usedEmail.toLowerCase() === CEO_EMAIL.toLowerCase()) ||
+      (selectedTab === "Staff" && usedEmail.toLowerCase() === STAFF_EMAIL.toLowerCase());
+    return ok;
+  }
+
+  useEffect(() => {
+    (async () => {
+      if (!supabase) return;
+
+      const { data } = await supabase.auth.getSession();
+      setUser(data.session?.user ?? null);
+
+      const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        setUser(session?.user ?? null);
+        setProfile(null);
+        if (session?.user?.id) await fetchProfile(session.user.id);
+      });
+
+      if (data.session?.user?.id) await fetchProfile(data.session.user.id);
+
+      return () => sub.subscription.unsubscribe();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function fetchProfile(uid: string) {
+    if (!supabase) return;
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id,email,role")
+      .eq("id", uid)
+      .maybeSingle();
+
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+    if (data) setProfile(data as Profile);
+  }
+
+  async function createAccount() {
+    setMsg("");
+    setErr("");
+    if (!supabase) {
+      setErr("Supabase env missing on Vercel. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.");
+      return;
+    }
+    if (!password || password.length < 6) {
+      setErr("Password must be at least 6 characters.");
       return;
     }
 
-    localStorage.setItem("eventura_email", email);
-    document.cookie = `eventura_email=${encodeURIComponent(email)}; path=/; max-age=31536000; SameSite=Lax`;
+    setBusy(true);
+    try {
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) {
+        setMsg(`⚠️ ${error.message}`);
+      } else {
+        setMsg("✅ Account created. Now click Sign In.");
+      }
+    } catch (e: any) {
+      setErr(e?.message || "Unknown error");
+    } finally {
+      setBusy(false);
+    }
+  }
 
-    router.replace("/dashboard");
+  async function signIn() {
+    setMsg("");
+    setErr("");
+    if (!supabase) {
+      setErr("Supabase env missing on Vercel. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.");
+      return;
+    }
+    if (!password) {
+      setErr("Enter password.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      // Hard prevent cross login
+      if (!hardBlockCrossLogin(tab, email)) {
+        setErr("Cross-login blocked. Use the correct tab.");
+        return;
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        setErr(error.message);
+        return;
+      }
+
+      const signedEmail = data?.user?.email || email;
+
+      // Double-check after sign-in too
+      if (!hardBlockCrossLogin(tab, signedEmail)) {
+        await supabase.auth.signOut();
+        setErr("Cross-login blocked. Wrong account for this tab.");
+        return;
+      }
+
+      setSessionEmail(signedEmail);
+      setMsg("✅ Signed in. Opening Dashboard…");
+      window.location.href = "/dashboard";
+    } catch (e: any) {
+      setErr(e?.message || "Unknown error");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontFamily: "system-ui",
-      }}
-    >
-      <div style={{ width: 360 }}>
-        <h2>Eventura OS Login</h2>
-        <p style={{ color: "#6b7280" }}>CEO / Staff Login</p>
+    <div style={styles.page}>
+      <div style={styles.card}>
+        <div style={styles.h1}>Eventura OS Login</div>
+        <div style={styles.muted}>CEO & Staff separate login tabs (locked emails)</div>
 
-        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+        {!supabase ? (
+          <div style={styles.err}>
+            Supabase env missing on this deployment.
+            <div style={{ marginTop: 8, fontFamily: "monospace", fontSize: 12, lineHeight: 1.5 }}>
+              NEXT_PUBLIC_SUPABASE_URL
+              <br />
+              NEXT_PUBLIC_SUPABASE_ANON_KEY
+            </div>
+          </div>
+        ) : null}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
           <button
-            onClick={() => setTab("CEO")}
-            style={{ flex: 1, fontWeight: tab === "CEO" ? 700 : 400, padding: 10 }}
+            style={{ ...styles.tabBtn, ...(tab === "CEO" ? styles.tabActive : null) }}
+            onClick={() => switchTab("CEO")}
+            disabled={busy}
           >
-            CEO
+            CEO Login
           </button>
           <button
-            onClick={() => setTab("Staff")}
-            style={{ flex: 1, fontWeight: tab === "Staff" ? 700 : 400, padding: 10 }}
+            style={{ ...styles.tabBtn, ...(tab === "Staff" ? styles.tabActive : null) }}
+            onClick={() => switchTab("Staff")}
+            disabled={busy}
           >
-            Staff
+            Staff Login
           </button>
         </div>
 
-        <input
-          type="email"
-          placeholder={`${tab} Email`}
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          style={inputStyle}
-        />
+        <div style={styles.field}>
+          <label style={styles.label}>Email (locked)</label>
+          <input style={styles.input} value={email} readOnly />
+        </div>
 
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          style={{ ...inputStyle, marginTop: 10 }}
-        />
+        <div style={styles.field}>
+          <label style={styles.label}>Password</label>
+          <input
+            style={styles.input}
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder={tab === "CEO" ? "Enter CEO password" : "Enter Staff password"}
+          />
+        </div>
 
-        <button
-          onClick={login}
-          disabled={loading}
-          style={{
-            width: "100%",
-            marginTop: 14,
-            padding: 12,
-            fontWeight: 700,
-            cursor: "pointer",
-          }}
-        >
-          {loading ? "Signing in..." : "Login"}
-        </button>
+        <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+          <button style={styles.ghostBtn} onClick={createAccount} disabled={busy}>
+            {busy ? "Working…" : "Create/Recreate Account"}
+          </button>
+          <button style={styles.primaryBtn} onClick={signIn} disabled={busy}>
+            {busy ? "Signing in…" : "Sign In"}
+          </button>
+        </div>
 
-        {error && <div style={{ color: "red", marginTop: 12 }}>{error}</div>}
+        {err ? <div style={styles.err}>{err}</div> : null}
+        {msg ? <div style={styles.ok}>{msg}</div> : null}
+
+        <div style={styles.smallNote}>
+          Default accounts:
+          <br />
+          <b>CEO:</b> {CEO_EMAIL}
+          <br />
+          <b>Staff:</b> {STAFF_EMAIL}
+        </div>
+
+        {user ? (
+          <div style={styles.smallNote}>
+            Logged in user: <b>{user.email}</b>
+            {profile?.role ? (
+              <>
+                {" "}
+                • Role: <b>{profile.role}</b>
+              </>
+            ) : null}
+          </div>
+        ) : null}
       </div>
-    </main>
+    </div>
   );
 }
 
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  padding: 10,
-  borderRadius: 8,
-  border: "1px solid #d1d5db",
+const styles: Record<string, React.CSSProperties> = {
+  page: {
+    minHeight: "100vh",
+    padding: 18,
+    background:
+      "radial-gradient(1200px 800px at 20% 10%, rgba(255,215,110,0.18), transparent 60%), radial-gradient(900px 700px at 80% 20%, rgba(120,70,255,0.18), transparent 55%), #050816",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "#F9FAFB",
+    fontFamily:
+      'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
+  },
+  card: {
+    width: "100%",
+    maxWidth: 540,
+    background: "rgba(11,16,32,0.92)",
+    border: "1px solid rgba(255,255,255,0.10)",
+    borderRadius: 18,
+    padding: 18,
+    boxShadow: "0 18px 50px rgba(0,0,0,0.45)",
+    backdropFilter: "blur(10px)",
+  },
+  h1: { fontSize: 26, fontWeight: 950, letterSpacing: 0.2 },
+  muted: { color: "#9CA3AF", fontSize: 13, marginTop: 6 },
+  field: { marginTop: 14 },
+  label: { display: "block", fontSize: 12, color: "#9CA3AF", marginBottom: 8, fontWeight: 800 },
+  input: {
+    width: "100%",
+    padding: "12px 12px",
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(255,255,255,0.06)",
+    color: "#F9FAFB",
+    outline: "none",
+    fontSize: 14,
+  },
+  tabBtn: {
+    flex: 1,
+    padding: "10px 12px",
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.14)",
+    background: "rgba(255,255,255,0.06)",
+    color: "#E5E7EB",
+    fontWeight: 950,
+    cursor: "pointer",
+  },
+  tabActive: {
+    background: "rgba(212,175,55,0.16)",
+    border: "1px solid rgba(212,175,55,0.30)",
+    color: "#FDE68A",
+  },
+  primaryBtn: {
+    flex: 1,
+    padding: "12px 12px",
+    borderRadius: 14,
+    border: "1px solid rgba(212,175,55,0.35)",
+    background: "linear-gradient(135deg, rgba(212,175,55,0.32), rgba(139,92,246,0.22))",
+    color: "#FFF",
+    fontWeight: 950,
+    cursor: "pointer",
+  },
+  ghostBtn: {
+    flex: 1,
+    padding: "12px 12px",
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.16)",
+    background: "rgba(255,255,255,0.06)",
+    color: "#E5E7EB",
+    fontWeight: 900,
+    cursor: "pointer",
+  },
+  err: {
+    marginTop: 12,
+    padding: 10,
+    borderRadius: 12,
+    background: "rgba(248,113,113,0.12)",
+    border: "1px solid rgba(248,113,113,0.28)",
+    color: "#FCA5A5",
+    fontSize: 13,
+    lineHeight: 1.4,
+  },
+  ok: {
+    marginTop: 12,
+    padding: 10,
+    borderRadius: 12,
+    background: "rgba(34,197,94,0.10)",
+    border: "1px solid rgba(34,197,94,0.22)",
+    color: "#BBF7D0",
+    fontSize: 13,
+    lineHeight: 1.4,
+  },
+  smallNote: { marginTop: 12, fontSize: 12, color: "#A7B0C0", lineHeight: 1.35 },
 };
