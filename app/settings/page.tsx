@@ -11,11 +11,12 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
 const supabase =
   supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
-/* ================= SETTINGS ================= */
+/* ================= STORAGE KEYS ================= */
 const LS_SETTINGS = "eventura_os_settings_v4";
 const LS_ACL = "eventura_os_acl_v1";
 const LS_COMPANY = "eventura_os_company_v1";
 
+/* ================= TYPES ================= */
 type SidebarMode = "Icons + Text" | "Icons Only";
 type Theme =
   | "Royal Gold"
@@ -29,58 +30,7 @@ type Theme =
 type Density = "Comfort" | "Compact";
 type FontScale = 90 | 100 | 110 | 120;
 
-type AppSettings = {
-  ceoEmail: string;
-  staffEmail: string;
-
-  theme: Theme;
-  sidebarMode: SidebarMode;
-
-  density: Density;
-  fontScale: FontScale;
-
-  compactTables: boolean;
-  confirmDeletes: boolean;
-
-  reducedMotion: boolean;
-  highContrast: boolean;
-
-  // Modules toggles (visibility only)
-  modules: {
-    dashboard: boolean;
-    events: boolean;
-    finance: boolean;
-    vendors: boolean;
-    ai: boolean;
-    hr: boolean;
-    reports: boolean;
-    settings: boolean;
-  };
-
-  // security
-  sessionTimeoutMin: 15 | 30 | 60 | 120;
-  rememberDevice: boolean;
-  pinLockEnabled: boolean;
-  pinLock: string;
-
-  // notifications (placeholder toggles)
-  notifications: {
-    inApp: boolean;
-    email: boolean;
-    whatsapp: boolean;
-    dailySummary: boolean;
-    eventReminders: boolean;
-    financeAlerts: boolean;
-  };
-
-  // region
-  region: {
-    timezone: string;
-    currency: "INR" | "CAD" | "USD";
-    language: "English" | "Gujarati" | "Hindi";
-    dateFormat: "DD/MM/YYYY" | "MM/DD/YYYY" | "YYYY-MM-DD";
-  };
-};
+type Role = "CEO" | "Staff";
 
 type Permission =
   | "events.read"
@@ -103,7 +53,52 @@ type Permission =
   | "reports.export"
   | "settings.view";
 
-type Role = "CEO" | "Staff";
+type AppSettings = {
+  ceoEmail: string;
+  staffEmail: string;
+
+  theme: Theme;
+  sidebarMode: SidebarMode;
+
+  density: Density;
+  fontScale: FontScale;
+
+  compactTables: boolean;
+  confirmDeletes: boolean;
+
+  reducedMotion: boolean;
+  highContrast: boolean;
+
+  modules: {
+    dashboard: boolean;
+    events: boolean;
+    finance: boolean;
+    vendors: boolean;
+    ai: boolean;
+    hr: boolean;
+    reports: boolean;
+    settings: boolean;
+  };
+
+  sessionTimeoutMin: 15 | 30 | 60 | 120;
+  rememberDevice: boolean;
+
+  notifications: {
+    inApp: boolean;
+    email: boolean;
+    whatsapp: boolean;
+    dailySummary: boolean;
+    eventReminders: boolean;
+    financeAlerts: boolean;
+  };
+
+  region: {
+    timezone: string;
+    currency: "INR" | "CAD" | "USD";
+    language: "English" | "Gujarati" | "Hindi";
+    dateFormat: "DD/MM/YYYY" | "MM/DD/YYYY" | "YYYY-MM-DD";
+  };
+};
 
 type ACLState = {
   Staff: Record<Permission, boolean>;
@@ -118,9 +113,11 @@ type CompanyProfile = {
   founders: { name: string; title: string }[];
 };
 
+/* ================= DEFAULTS ================= */
 const SETTINGS_DEFAULTS: AppSettings = {
   ceoEmail: "hardikvekariya799@gmail.com",
   staffEmail: "eventurastaff@gmail.com",
+
   theme: "Royal Gold",
   sidebarMode: "Icons + Text",
 
@@ -146,8 +143,6 @@ const SETTINGS_DEFAULTS: AppSettings = {
 
   sessionTimeoutMin: 60,
   rememberDevice: true,
-  pinLockEnabled: false,
-  pinLock: "",
 
   notifications: {
     inApp: true,
@@ -192,8 +187,7 @@ const ACL_DEFAULTS: ACLState = {
   Staff: Object.fromEntries(
     ALL_PERMS.map((p) => [
       p,
-      // default staff can read most, create/edit limited, delete off
-      p.endsWith(".read") || p === "reports.export" || p === "settings.view" ? true : false,
+      p.endsWith(".read") || p === "reports.export" || p === "settings.view",
     ])
   ) as Record<Permission, boolean>,
 };
@@ -211,7 +205,49 @@ const COMPANY_DEFAULTS: CompanyProfile = {
   ],
 };
 
-/* ✅ Theme tokens (themes ACTUALLY apply) */
+/* ================= NAV ================= */
+type NavItem = { label: string; href: string; icon: string; key: keyof AppSettings["modules"] };
+const NAV: NavItem[] = [
+  { label: "Dashboard", href: "/dashboard", icon: "📊", key: "dashboard" },
+  { label: "Events", href: "/events", icon: "📅", key: "events" },
+  { label: "Finance", href: "/finance", icon: "💰", key: "finance" },
+  { label: "Vendors", href: "/vendors", icon: "🏷️", key: "vendors" },
+  { label: "AI", href: "/ai", icon: "🤖", key: "ai" },
+  { label: "HR", href: "/hr", icon: "🧑‍🤝‍🧑", key: "hr" },
+  { label: "Reports", href: "/reports", icon: "📈", key: "reports" },
+  { label: "Settings", href: "/settings", icon: "⚙️", key: "settings" },
+];
+
+/* ================= HELPERS ================= */
+function safeLoad<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function safeSave<T>(key: string, value: T) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+function roleFromSettings(email: string, s: AppSettings): Role {
+  if (!email) return "Staff";
+  return email.toLowerCase() === s.ceoEmail.toLowerCase() ? "CEO" : "Staff";
+}
+
+function applyThemeToDom(settings: AppSettings) {
+  if (typeof document === "undefined") return;
+  document.documentElement.setAttribute("data-ev-theme", settings.theme);
+  document.documentElement.setAttribute("data-ev-density", settings.density);
+  document.documentElement.setAttribute("data-ev-sidebar", settings.sidebarMode);
+  document.documentElement.setAttribute("data-ev-font", String(settings.fontScale));
+  document.documentElement.setAttribute("data-ev-contrast", settings.highContrast ? "high" : "normal");
+  document.documentElement.style.fontSize = `${settings.fontScale}%`;
+}
+
 function ThemeTokens(theme: Theme, highContrast: boolean) {
   const base = {
     text: "#F9FAFB",
@@ -309,64 +345,27 @@ function ThemeTokens(theme: Theme, highContrast: boolean) {
   }
 }
 
-/* ================= LOCAL HELPERS ================= */
-function safeLoad<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
+function groupPerms(staff: Record<Permission, boolean>) {
+  const byPrefix = (prefix: string) =>
+    (Object.keys(staff) as Permission[]).filter((p) => p.startsWith(prefix));
+  return [
+    { title: "Events", items: byPrefix("events.") },
+    { title: "Finance", items: byPrefix("finance.") },
+    { title: "Vendors", items: byPrefix("vendors.") },
+    { title: "HR", items: byPrefix("hr.") },
+    { title: "Reports", items: byPrefix("reports.") },
+    { title: "Settings", items: ["settings.view" as Permission] },
+  ];
 }
-function safeSave<T>(key: string, value: T) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(key, JSON.stringify(value));
+function prettyPerm(p: Permission) {
+  const [m, a] = p.split(".");
+  return `${cap(m)} ${cap(a)}`;
 }
-
-function applyThemeToDom(settings: AppSettings) {
-  if (typeof document === "undefined") return;
-  document.documentElement.setAttribute("data-ev-theme", settings.theme);
-  document.documentElement.setAttribute("data-ev-density", settings.density);
-  document.documentElement.setAttribute("data-ev-sidebar", settings.sidebarMode);
-  document.documentElement.setAttribute("data-ev-font", String(settings.fontScale));
-  document.documentElement.setAttribute("data-ev-contrast", settings.highContrast ? "high" : "normal");
-
-  // font scale + density apply globally
-  document.documentElement.style.fontSize = `${settings.fontScale}%`;
-  document.documentElement.style.setProperty(
-    "--ev-radius",
-    settings.density === "Compact" ? "14px" : "18px"
-  );
+function cap(s: string) {
+  return s ? s[0].toUpperCase() + s.slice(1) : s;
 }
 
-function setSessionEmail(email: string, remember: boolean) {
-  if (typeof window === "undefined") return;
-  if (remember) localStorage.setItem("eventura_email", email);
-  sessionStorage.setItem("eventura_email_session", email);
-  document.cookie = `eventura_email=${encodeURIComponent(email)}; Path=/; Max-Age=${
-    remember ? 31536000 : 86400
-  }; SameSite=Lax`;
-}
-
-function roleFromSettings(email: string, s: AppSettings): Role {
-  if (!email) return "Staff";
-  return email.toLowerCase() === s.ceoEmail.toLowerCase() ? "CEO" : "Staff";
-}
-
-/* ================= NAV ================= */
-type NavItem = { label: string; href: string; icon: string; key: keyof AppSettings["modules"] };
-const NAV: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: "📊", key: "dashboard" },
-  { label: "Events", href: "/events", icon: "📅", key: "events" },
-  { label: "Finance", href: "/finance", icon: "💰", key: "finance" },
-  { label: "Vendors", href: "/vendors", icon: "🏷️", key: "vendors" },
-  { label: "AI", href: "/ai", icon: "🤖", key: "ai" },
-  { label: "HR", href: "/hr", icon: "🧑‍🤝‍🧑", key: "hr" },
-  { label: "Reports", href: "/reports", icon: "📈", key: "reports" },
-  { label: "Settings", href: "/settings", icon: "⚙️", key: "settings" },
-];
-
+/* ================= PAGE ================= */
 export default function SettingsPage() {
   const router = useRouter();
 
@@ -374,14 +373,10 @@ export default function SettingsPage() {
   const [acl, setAcl] = useState<ACLState>(ACL_DEFAULTS);
   const [company, setCompany] = useState<CompanyProfile>(COMPANY_DEFAULTS);
 
-  const [email, setEmail] = useState<string>("");
+  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(true);
 
-  const role = useMemo(() => roleFromSettings(email, settings), [email, settings]);
-  const isCEO = role === "CEO";
-  const sidebarIconsOnly = settings.sidebarMode === "Icons Only";
-
-  // load everything
+  // load
   useEffect(() => {
     const s = safeLoad<AppSettings>(LS_SETTINGS, SETTINGS_DEFAULTS);
     const merged: AppSettings = {
@@ -397,17 +392,16 @@ export default function SettingsPage() {
     applyThemeToDom(merged);
   }, []);
 
-  // persist settings
+  // persist
   useEffect(() => {
     safeSave(LS_SETTINGS, settings);
     applyThemeToDom(settings);
   }, [settings]);
 
-  // persist acl + company
   useEffect(() => safeSave(LS_ACL, acl), [acl]);
   useEffect(() => safeSave(LS_COMPANY, company), [company]);
 
-  // session
+  // session email
   useEffect(() => {
     (async () => {
       try {
@@ -420,17 +414,16 @@ export default function SettingsPage() {
           return;
         }
         const { data } = await supabase.auth.getSession();
-        const e = data.session?.user?.email || "";
-        if (e) {
-          setEmail(e);
-          setSessionEmail(e, settings.rememberDevice);
-        }
+        setEmail(data.session?.user?.email || "");
       } finally {
         setLoading(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const role = useMemo(() => roleFromSettings(email, settings), [email, settings]);
+  const isCEO = role === "CEO";
+  const sidebarIconsOnly = settings.sidebarMode === "Icons Only";
 
   async function signOut() {
     try {
@@ -445,13 +438,9 @@ export default function SettingsPage() {
     }
   }
 
-  // styles from theme
-  const T = ThemeTokens(settings.theme, settings.highContrast);
-  const S = makeStyles(T, settings);
-
-  function exportAll() {
+  function exportBackup() {
     const payload = {
-      version: "eventura-export-v1",
+      version: "eventura-settings-backup-v1",
       exportedAt: new Date().toISOString(),
       settings,
       acl,
@@ -466,10 +455,9 @@ export default function SettingsPage() {
     URL.revokeObjectURL(url);
   }
 
-  async function importAll(file: File) {
+  async function importBackup(file: File) {
     try {
-      const text = await file.text();
-      const json = JSON.parse(text);
+      const json = JSON.parse(await file.text());
       if (!json?.settings) return alert("Invalid backup file.");
       const s = json.settings as AppSettings;
       const merged: AppSettings = {
@@ -482,9 +470,9 @@ export default function SettingsPage() {
       setSettings(merged);
       setAcl(json.acl ? (json.acl as ACLState) : ACL_DEFAULTS);
       setCompany(json.company ? (json.company as CompanyProfile) : COMPANY_DEFAULTS);
-      alert("Imported successfully ✅");
+      alert("Imported ✅");
     } catch {
-      alert("Import failed (file may be corrupted).");
+      alert("Import failed.");
     }
   }
 
@@ -495,18 +483,6 @@ export default function SettingsPage() {
     setCompany(COMPANY_DEFAULTS);
   }
 
-  function resetThemeOnly() {
-    setSettings((p) => ({
-      ...p,
-      theme: "Royal Gold",
-      sidebarMode: "Icons + Text",
-      density: "Comfort",
-      fontScale: 100,
-      reducedMotion: false,
-      highContrast: false,
-    }));
-  }
-
   function toggleStaffPreset(preset: "ReadOnly" | "Standard" | "Full") {
     if (!isCEO) return;
 
@@ -515,11 +491,9 @@ export default function SettingsPage() {
     if (preset === "ReadOnly") {
       ALL_PERMS.forEach((perm) => (next[perm] = perm.endsWith(".read") || perm === "settings.view"));
       next["reports.export"] = false;
-    }
-    if (preset === "Standard") {
+    } else if (preset === "Standard") {
       ALL_PERMS.forEach((perm) => (next[perm] = false));
-      // allow read + create/edit (no delete) for most modules
-      const allow = [
+      const allow: Permission[] = [
         "events.read",
         "events.create",
         "events.edit",
@@ -535,15 +509,17 @@ export default function SettingsPage() {
         "reports.read",
         "reports.export",
         "settings.view",
-      ] as Permission[];
+      ];
       allow.forEach((perm) => (next[perm] = true));
-    }
-    if (preset === "Full") {
+    } else {
       ALL_PERMS.forEach((perm) => (next[perm] = true));
     }
 
     setAcl({ Staff: next });
   }
+
+  const T = ThemeTokens(settings.theme, settings.highContrast);
+  const S = makeStyles(T);
 
   return (
     <div style={S.app}>
@@ -589,15 +565,15 @@ export default function SettingsPage() {
           <div>
             <div style={S.h1}>Settings</div>
             <div style={S.muted}>
-              Logged in as <b>{email || "Unknown"}</b> • Role:{" "}
-              <span style={S.rolePill}>{role}</span>
+              Logged in as <b>{email || "Unknown"}</b> • Role: <span style={S.rolePill}>{role}</span>
             </div>
           </div>
 
           <div style={S.headerRight}>
-            <button style={S.secondaryBtn} onClick={exportAll}>
+            <button style={S.secondaryBtn} onClick={exportBackup}>
               Export Backup
             </button>
+
             <label style={S.secondaryBtn as any}>
               Import Backup
               <input
@@ -606,11 +582,12 @@ export default function SettingsPage() {
                 style={{ display: "none" }}
                 onChange={(e) => {
                   const f = e.target.files?.[0];
-                  if (f) importAll(f);
+                  if (f) importBackup(f);
                   e.currentTarget.value = "";
                 }}
               />
             </label>
+
             <button style={S.dangerBtn} onClick={resetAll}>
               Reset All
             </button>
@@ -629,9 +606,7 @@ export default function SettingsPage() {
                 <select
                   style={S.select}
                   value={settings.theme}
-                  onChange={(e) =>
-                    setSettings((p) => ({ ...p, theme: e.target.value as Theme }))
-                  }
+                  onChange={(e) => setSettings((p) => ({ ...p, theme: e.target.value as Theme }))}
                 >
                   {(
                     [
@@ -656,10 +631,7 @@ export default function SettingsPage() {
                   style={S.select}
                   value={settings.sidebarMode}
                   onChange={(e) =>
-                    setSettings((p) => ({
-                      ...p,
-                      sidebarMode: e.target.value as SidebarMode,
-                    }))
+                    setSettings((p) => ({ ...p, sidebarMode: e.target.value as SidebarMode }))
                   }
                 >
                   <option style={S.option}>Icons + Text</option>
@@ -671,9 +643,7 @@ export default function SettingsPage() {
                 <select
                   style={S.select}
                   value={settings.density}
-                  onChange={(e) =>
-                    setSettings((p) => ({ ...p, density: e.target.value as Density }))
-                  }
+                  onChange={(e) => setSettings((p) => ({ ...p, density: e.target.value as Density }))}
                 >
                   <option style={S.option}>Comfort</option>
                   <option style={S.option}>Compact</option>
@@ -685,10 +655,7 @@ export default function SettingsPage() {
                   style={S.select}
                   value={settings.fontScale}
                   onChange={(e) =>
-                    setSettings((p) => ({
-                      ...p,
-                      fontScale: Number(e.target.value) as FontScale,
-                    }))
+                    setSettings((p) => ({ ...p, fontScale: Number(e.target.value) as FontScale }))
                   }
                 >
                   <option style={S.option} value={90}>
@@ -734,52 +701,59 @@ export default function SettingsPage() {
               />
             </div>
 
-            <div style={S.rowBetween}>
-              <div style={S.smallNote}>
-                Themes apply instantly ✅ (also affects other pages that read DOM tokens).
-              </div>
-              <button style={S.secondaryBtn} onClick={resetThemeOnly}>
-                Reset Appearance
-              </button>
-            </div>
+            <div style={S.smallNote}>Theme applies instantly ✅</div>
           </section>
 
           {/* Company */}
           <section style={S.panel}>
             <div style={S.panelTitle}>Company Profile</div>
+
+            {!isCEO ? (
+              <div style={S.noteBox}>Only CEO can edit Company Profile.</div>
+            ) : null}
+
             <div style={S.formGrid}>
               <Field label="Brand name">
                 <input
                   style={S.input}
                   value={company.brandName}
+                  disabled={!isCEO}
                   onChange={(e) => setCompany((p) => ({ ...p, brandName: e.target.value }))}
                 />
               </Field>
+
               <Field label="Tagline">
                 <input
                   style={S.input}
                   value={company.tagline}
+                  disabled={!isCEO}
                   onChange={(e) => setCompany((p) => ({ ...p, tagline: e.target.value }))}
                 />
               </Field>
+
               <Field label="City">
                 <input
                   style={S.input}
                   value={company.city}
+                  disabled={!isCEO}
                   onChange={(e) => setCompany((p) => ({ ...p, city: e.target.value }))}
                 />
               </Field>
+
               <Field label="Phone">
                 <input
                   style={S.input}
                   value={company.phone}
+                  disabled={!isCEO}
                   onChange={(e) => setCompany((p) => ({ ...p, phone: e.target.value }))}
                 />
               </Field>
+
               <Field label="Website">
                 <input
                   style={S.input}
                   value={company.website}
+                  disabled={!isCEO}
                   onChange={(e) => setCompany((p) => ({ ...p, website: e.target.value }))}
                 />
               </Field>
@@ -788,11 +762,12 @@ export default function SettingsPage() {
             <div style={S.sectionTitle}>Founders</div>
             <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
               {company.founders.map((f, idx) => (
-                <div key={idx} style={S.rowBetween}>
-                  <div style={{ display: "grid", gap: 6, flex: 1 }}>
+                <div key={idx} style={S.founderRow}>
+                  <div style={{ display: "grid", gap: 8, flex: 1 }}>
                     <input
                       style={S.input}
                       value={f.name}
+                      disabled={!isCEO}
                       onChange={(e) =>
                         setCompany((p) => {
                           const next = [...p.founders];
@@ -805,6 +780,7 @@ export default function SettingsPage() {
                     <input
                       style={S.input}
                       value={f.title}
+                      disabled={!isCEO}
                       onChange={(e) =>
                         setCompany((p) => {
                           const next = [...p.founders];
@@ -815,38 +791,43 @@ export default function SettingsPage() {
                       placeholder="Title"
                     />
                   </div>
-                  <button
-                    style={S.dltBtn}
-                    onClick={() =>
-                      setCompany((p) => ({
-                        ...p,
-                        founders: p.founders.filter((_, i) => i !== idx),
-                      }))
-                    }
-                  >
-                    Remove
-                  </button>
+
+                  {isCEO ? (
+                    <button
+                      style={S.dangerMini}
+                      onClick={() =>
+                        setCompany((p) => ({
+                          ...p,
+                          founders: p.founders.filter((_, i) => i !== idx),
+                        }))
+                      }
+                    >
+                      Remove
+                    </button>
+                  ) : null}
                 </div>
               ))}
             </div>
 
-            <div style={S.rowBetween}>
-              <div style={S.smallNote}>Used across app later (reports header, invoices, etc.).</div>
-              <button
-                style={S.primaryBtnSmall}
-                onClick={() =>
-                  setCompany((p) => ({
-                    ...p,
-                    founders: [...p.founders, { name: "", title: "" }],
-                  }))
-                }
-              >
-                Add Founder
-              </button>
-            </div>
+            {isCEO ? (
+              <div style={S.rowBetween}>
+                <div style={S.smallNote}>Shown on future reports/invoices.</div>
+                <button
+                  style={S.primaryBtnSmall}
+                  onClick={() =>
+                    setCompany((p) => ({
+                      ...p,
+                      founders: [...p.founders, { name: "", title: "" }],
+                    }))
+                  }
+                >
+                  Add Founder
+                </button>
+              </div>
+            ) : null}
           </section>
 
-          {/* Region + Notifications */}
+          {/* Region & Notifications */}
           <section style={S.panel}>
             <div style={S.panelTitle}>Region & Notifications</div>
 
@@ -916,16 +897,13 @@ export default function SettingsPage() {
               </Field>
             </div>
 
-            <div style={S.sectionTitle}>Notifications (toggles)</div>
+            <div style={S.sectionTitle}>Notifications</div>
             <div style={S.toggleRow}>
               <Toggle
                 label="In-app"
                 value={settings.notifications.inApp}
                 onChange={(v) =>
-                  setSettings((p) => ({
-                    ...p,
-                    notifications: { ...p.notifications, inApp: v },
-                  }))
+                  setSettings((p) => ({ ...p, notifications: { ...p.notifications, inApp: v } }))
                 }
                 S={S}
               />
@@ -933,10 +911,7 @@ export default function SettingsPage() {
                 label="Email"
                 value={settings.notifications.email}
                 onChange={(v) =>
-                  setSettings((p) => ({
-                    ...p,
-                    notifications: { ...p.notifications, email: v },
-                  }))
+                  setSettings((p) => ({ ...p, notifications: { ...p.notifications, email: v } }))
                 }
                 S={S}
               />
@@ -944,10 +919,7 @@ export default function SettingsPage() {
                 label="WhatsApp"
                 value={settings.notifications.whatsapp}
                 onChange={(v) =>
-                  setSettings((p) => ({
-                    ...p,
-                    notifications: { ...p.notifications, whatsapp: v },
-                  }))
+                  setSettings((p) => ({ ...p, notifications: { ...p.notifications, whatsapp: v } }))
                 }
                 S={S}
               />
@@ -985,95 +957,12 @@ export default function SettingsPage() {
                 S={S}
               />
             </div>
-
-            <div style={S.smallNote}>
-              These are UI switches now; later we can connect to real email/WhatsApp services.
-            </div>
-          </section>
-
-          {/* Security */}
-          <section style={S.panel}>
-            <div style={S.panelTitle}>Security</div>
-
-            <div style={S.formGrid}>
-              <Field label="Session timeout">
-                <select
-                  style={S.select}
-                  value={settings.sessionTimeoutMin}
-                  onChange={(e) =>
-                    setSettings((p) => ({
-                      ...p,
-                      sessionTimeoutMin: Number(e.target.value) as any,
-                    }))
-                  }
-                >
-                  <option style={S.option} value={15}>
-                    15 min
-                  </option>
-                  <option style={S.option} value={30}>
-                    30 min
-                  </option>
-                  <option style={S.option} value={60}>
-                    60 min
-                  </option>
-                  <option style={S.option} value={120}>
-                    120 min
-                  </option>
-                </select>
-              </Field>
-
-              <Field label="Remember device">
-                <select
-                  style={S.select}
-                  value={settings.rememberDevice ? "Yes" : "No"}
-                  onChange={(e) =>
-                    setSettings((p) => ({
-                      ...p,
-                      rememberDevice: e.target.value === "Yes",
-                    }))
-                  }
-                >
-                  <option style={S.option}>Yes</option>
-                  <option style={S.option}>No</option>
-                </select>
-              </Field>
-            </div>
-
-            <div style={S.toggleRow}>
-              <Toggle
-                label="Enable PIN lock"
-                value={settings.pinLockEnabled}
-                onChange={(v) => setSettings((p) => ({ ...p, pinLockEnabled: v }))}
-                S={S}
-              />
-            </div>
-
-            {settings.pinLockEnabled ? (
-              <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-                <div style={S.smallNote}>
-                  PIN is stored locally (for now). Use 4–8 digits.
-                </div>
-                <input
-                  style={S.input}
-                  value={settings.pinLock}
-                  onChange={(e) =>
-                    setSettings((p) => ({
-                      ...p,
-                      pinLock: e.target.value.replace(/[^\d]/g, "").slice(0, 8),
-                    }))
-                  }
-                  placeholder="Enter PIN"
-                />
-              </div>
-            ) : null}
           </section>
 
           {/* Modules */}
           <section style={S.panel}>
-            <div style={S.panelTitle}>Modules (Visibility)</div>
-            <div style={S.smallNote}>
-              Hide/Show tabs in sidebar. (Doesn’t delete data.)
-            </div>
+            <div style={S.panelTitle}>Modules (Sidebar visibility)</div>
+            {!isCEO ? <div style={S.noteBox}>Only CEO can change modules visibility.</div> : null}
 
             <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
               {Object.entries(settings.modules).map(([k, v]) => (
@@ -1081,6 +970,7 @@ export default function SettingsPage() {
                   <div style={{ fontWeight: 950, textTransform: "capitalize" }}>{k}</div>
                   <button
                     style={v ? S.toggleOnBtn : S.toggleOffBtn}
+                    disabled={!isCEO}
                     onClick={() =>
                       setSettings((p) => ({
                         ...p,
@@ -1100,14 +990,10 @@ export default function SettingsPage() {
             <div style={S.panelTitle}>Access Control (Staff)</div>
 
             {!isCEO ? (
-              <div style={S.noteBox}>
-                Only CEO can edit access control. Staff can view only.
-              </div>
+              <div style={S.noteBox}>Only CEO can edit permissions.</div>
             ) : (
               <div style={S.rowBetween}>
-                <div style={S.smallNote}>
-                  Quick presets for Staff permissions.
-                </div>
+                <div style={S.smallNote}>Quick presets:</div>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
                   <button style={S.secondaryBtn} onClick={() => toggleStaffPreset("ReadOnly")}>
                     Read-Only
@@ -1133,13 +1019,11 @@ export default function SettingsPage() {
                         <button
                           key={perm}
                           style={enabled ? S.permOn : S.permOff}
+                          disabled={!isCEO}
                           onClick={() => {
                             if (!isCEO) return;
-                            setAcl((p) => ({
-                              Staff: { ...p.Staff, [perm]: !p.Staff[perm] },
-                            }));
+                            setAcl((p) => ({ Staff: { ...p.Staff, [perm]: !p.Staff[perm] } }));
                           }}
-                          title={isCEO ? "Toggle permission" : "View only"}
                         >
                           {prettyPerm(perm)}: {enabled ? "ON" : "OFF"}
                         </button>
@@ -1151,39 +1035,7 @@ export default function SettingsPage() {
             </div>
 
             <div style={S.smallNote}>
-              Note: You will enforce these permissions in each page (Events/Finance/Vendors/HR) when rendering actions.
-            </div>
-          </section>
-
-          {/* Data Tools */}
-          <section style={S.panel}>
-            <div style={S.panelTitle}>Data Tools</div>
-            <div style={S.smallNote}>Backup/export & reset helpers.</div>
-
-            <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-              <button style={S.secondaryBtnFull} onClick={exportAll}>
-                Download Settings Backup (JSON)
-              </button>
-              <label style={S.secondaryBtnFull as any}>
-                Import Backup (JSON)
-                <input
-                  type="file"
-                  accept="application/json"
-                  style={{ display: "none" }}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) importAll(f);
-                    e.currentTarget.value = "";
-                  }}
-                />
-              </label>
-              <button style={S.dangerBtnFull} onClick={resetAll}>
-                Reset Everything to Defaults
-              </button>
-            </div>
-
-            <div style={S.noteBox}>
-              Next step (later): add export/import for Events, Finance, Vendors, HR data too.
+              (Next step later: enforce these permissions inside each module page.)
             </div>
           </section>
         </div>
@@ -1192,7 +1044,7 @@ export default function SettingsPage() {
   );
 }
 
-/* ================= UI Helpers ================= */
+/* ================= UI BITS ================= */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ display: "grid", gap: 6 }}>
@@ -1215,41 +1067,17 @@ function Toggle({
 }) {
   return (
     <button
+      type="button"
       style={value ? S.toggleOnBtn : S.toggleOffBtn}
       onClick={() => onChange(!value)}
-      type="button"
     >
       {label}: {value ? "ON" : "OFF"}
     </button>
   );
 }
 
-/* Group permissions nicely */
-function groupPerms(staff: Record<Permission, boolean>) {
-  const byPrefix = (prefix: string) =>
-    (Object.keys(staff) as Permission[]).filter((p) => p.startsWith(prefix));
-  return [
-    { title: "Events", items: byPrefix("events.") },
-    { title: "Finance", items: byPrefix("finance.") },
-    { title: "Vendors", items: byPrefix("vendors.") },
-    { title: "HR", items: byPrefix("hr.") },
-    { title: "Reports", items: byPrefix("reports.") },
-    { title: "Settings", items: ["settings.view" as Permission] },
-  ];
-}
-function prettyPerm(p: Permission) {
-  const [m, a] = p.split(".");
-  return `${capitalize(m)} ${capitalize(a)}`;
-}
-function capitalize(s: string) {
-  return s ? s[0].toUpperCase() + s.slice(1) : s;
-}
-
-/* ================= STYLES BUILDER ================= */
-function makeStyles(T: any, settings: AppSettings): Record<string, React.CSSProperties> {
-  const radius = settings.density === "Compact" ? 14 : 18;
-  const pad = settings.density === "Compact" ? 10 : 14;
-
+/* ================= STYLES ================= */
+function makeStyles(T: any): Record<string, React.CSSProperties> {
   return {
     app: {
       minHeight: "100vh",
@@ -1352,7 +1180,7 @@ function makeStyles(T: any, settings: AppSettings): Record<string, React.CSSProp
       justifyContent: "space-between",
       gap: 12,
       padding: 12,
-      borderRadius: radius,
+      borderRadius: 18,
       border: `1px solid ${T.border}`,
       background: T.panel,
       backdropFilter: "blur(10px)",
@@ -1360,7 +1188,6 @@ function makeStyles(T: any, settings: AppSettings): Record<string, React.CSSProp
     headerRight: { display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" },
     h1: { fontSize: 26, fontWeight: 950 },
     muted: { color: T.muted, fontSize: 13, marginTop: 6 },
-
     rolePill: {
       display: "inline-block",
       padding: "4px 10px",
@@ -1371,28 +1198,18 @@ function makeStyles(T: any, settings: AppSettings): Record<string, React.CSSProp
       color: T.accentTx,
     },
 
-    grid: {
-      marginTop: 12,
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      gap: 12,
-    },
+    grid: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
 
     panel: {
-      padding: pad,
-      borderRadius: radius,
+      padding: 14,
+      borderRadius: 18,
       border: `1px solid ${T.border}`,
       background: T.panel,
       backdropFilter: "blur(10px)",
     },
     panelTitle: { fontWeight: 950, color: T.accentTx },
 
-    formGrid: {
-      marginTop: 12,
-      display: "grid",
-      gap: 12,
-      gridTemplateColumns: "1fr 1fr",
-    },
+    formGrid: { marginTop: 12, display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" },
 
     input: {
       width: "100%",
@@ -1430,17 +1247,6 @@ function makeStyles(T: any, settings: AppSettings): Record<string, React.CSSProp
       fontWeight: 950,
       cursor: "pointer",
     },
-    secondaryBtnFull: {
-      width: "100%",
-      padding: "12px 12px",
-      borderRadius: 14,
-      border: `1px solid ${T.border}`,
-      background: T.soft,
-      color: T.text,
-      fontWeight: 950,
-      cursor: "pointer",
-      textAlign: "center",
-    },
     primaryBtnSmall: {
       padding: "10px 12px",
       borderRadius: 14,
@@ -1450,7 +1256,6 @@ function makeStyles(T: any, settings: AppSettings): Record<string, React.CSSProp
       fontWeight: 950,
       cursor: "pointer",
     },
-
     dangerBtn: {
       padding: "10px 12px",
       borderRadius: 14,
@@ -1459,17 +1264,6 @@ function makeStyles(T: any, settings: AppSettings): Record<string, React.CSSProp
       color: T.dangerTx,
       fontWeight: 950,
       cursor: "pointer",
-    },
-    dangerBtnFull: {
-      width: "100%",
-      padding: "12px 12px",
-      borderRadius: 14,
-      border: `1px solid ${T.dangerBd}`,
-      background: T.dangerBg,
-      color: T.dangerTx,
-      fontWeight: 950,
-      cursor: "pointer",
-      textAlign: "center",
     },
 
     toggleOnBtn: {
@@ -1493,17 +1287,15 @@ function makeStyles(T: any, settings: AppSettings): Record<string, React.CSSProp
       fontSize: 12,
     },
 
-    dltBtn: {
-      fontSize: 12,
-      padding: "10px 12px",
-      borderRadius: 14,
-      border: `1px solid ${T.dangerBd}`,
-      background: T.dangerBg,
-      color: T.dangerTx,
-      fontWeight: 950,
-      cursor: "pointer",
-      height: "fit-content",
-      marginLeft: 10,
+    noteBox: {
+      marginTop: 12,
+      padding: 12,
+      borderRadius: 16,
+      border: `1px solid ${T.accentBd}`,
+      background: T.accentBg,
+      color: T.text,
+      fontSize: 13,
+      lineHeight: 1.35,
     },
 
     sectionTitle: { marginTop: 14, fontWeight: 950, fontSize: 13, color: T.text },
@@ -1516,7 +1308,6 @@ function makeStyles(T: any, settings: AppSettings): Record<string, React.CSSProp
     },
     permGroupTitle: { fontWeight: 950, marginBottom: 10 },
     permGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 },
-
     permOn: {
       padding: "10px 10px",
       borderRadius: 14,
@@ -1538,15 +1329,17 @@ function makeStyles(T: any, settings: AppSettings): Record<string, React.CSSProp
       textAlign: "left",
     },
 
-    noteBox: {
-      marginTop: 12,
-      padding: 12,
-      borderRadius: 16,
-      border: `1px solid ${T.accentBd}`,
-      background: T.accentBg,
-      color: T.text,
-      fontSize: 13,
-      lineHeight: 1.35,
+    founderRow: { display: "flex", gap: 10, alignItems: "flex-start" },
+    dangerMini: {
+      padding: "10px 12px",
+      borderRadius: 14,
+      border: `1px solid ${T.dangerBd}`,
+      background: T.dangerBg,
+      color: T.dangerTx,
+      fontWeight: 950,
+      cursor: "pointer",
+      height: "fit-content",
+      marginTop: 2,
     },
 
     loadingBar: {
