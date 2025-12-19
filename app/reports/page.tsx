@@ -1,101 +1,76 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, type CSSProperties } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
 
-/* ================= STORAGE KEYS (edit if yours differ) ================= */
-const LS_EVENTS = "eventura_os_events_v1";
-const LS_FIN = "eventura_os_fin_tx_v1";
-const LS_HR = "eventura_os_hr_team_v2";
-const LS_VENDORS = "eventura_os_vendors_v1";
-const LS_AI = "eventura_os_ai_docs_v1";
-const LS_REPORT_TEMPLATES = "eventura_os_reports_templates_v1";
+/* ================= SUPABASE (safe) ================= */
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+const supabase =
+  supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
-/* ================= TYPES ================= */
-type Module = "Events" | "Finance" | "HR" | "Vendors" | "AI";
+/* ================= STORAGE KEYS =================
+   We DO NOT change other pages.
+   Reports will TRY multiple keys and pick the first that exists.
+*/
+const LS_SETTINGS = "eventura_os_settings_v3";
 
-type ReportTemplate = {
-  id: string;
-  name: string;
-  module: Module;
-  dateFrom: string;
-  dateTo: string;
-  status: string; // optional filter
-  city: string; // optional filter
-  createdAt: string;
+// common keys you used earlier in other pages/snippets
+const EVENT_KEYS = ["eventura-events", "eventura_os_events_v1", "eventura_events_v1"];
+const FIN_KEYS = ["eventura-finance-transactions", "eventura_os_fin_v1", "eventura_fin_v1"];
+const HR_KEYS = ["eventura-hr-team", "eventura_os_hr_v1", "eventura_hr_v1", "eventura-hr"];
+const VENDOR_KEYS = ["eventura-vendors", "eventura_os_vendors_v1", "eventura_vendors_v1", "eventura-vendor-list"];
+
+/* ================= NAV ================= */
+type NavItem = { label: string; href: string; icon: string };
+const NAV: NavItem[] = [
+  { label: "Dashboard", href: "/dashboard", icon: "📊" },
+  { label: "Events", href: "/events", icon: "📅" },
+  { label: "Finance", href: "/finance", icon: "💰" },
+  { label: "Vendors", href: "/vendors", icon: "🏷️" },
+  { label: "AI", href: "/ai", icon: "🤖" },
+  { label: "HR", href: "/hr", icon: "🧑‍🤝‍🧑" },
+  { label: "Reports", href: "/reports", icon: "📈" },
+  { label: "Settings", href: "/settings", icon: "⚙️" },
+];
+
+/* ================= SETTINGS TYPES ================= */
+type Role = "CEO" | "Staff";
+type SidebarMode = "Icons + Text" | "Icons Only";
+type Theme =
+  | "Royal Gold"
+  | "Midnight Purple"
+  | "Emerald Night"
+  | "Ocean Blue"
+  | "Ruby Noir"
+  | "Carbon Black"
+  | "Ivory Light";
+
+type AppSettings = {
+  ceoEmail: string;
+  staffEmail: string;
+  theme: Theme;
+  sidebarMode: SidebarMode;
+  compactTables: boolean;
+  confirmDeletes: boolean;
+  reducedMotion?: boolean;
+  highContrast?: boolean;
 };
 
-type EventItem = {
-  id: string | number;
-  date?: string; // YYYY-MM-DD
-  title?: string;
-  status?: string;
-  city?: string;
-  budget?: number;
-  createdAt?: string;
-  updatedAt?: string;
+const SETTINGS_DEFAULTS: AppSettings = {
+  ceoEmail: "hardikvekariya799@gmail.com",
+  staffEmail: "eventurastaff@gmail.com",
+  theme: "Royal Gold",
+  sidebarMode: "Icons + Text",
+  compactTables: false,
+  confirmDeletes: true,
+  reducedMotion: false,
+  highContrast: false,
 };
 
-type FinanceTx = {
-  id: string | number;
-  date?: string; // YYYY-MM-DD
-  type?: "Income" | "Expense" | string;
-  category?: string;
-  amount?: number;
-  note?: string;
-};
-
-type TeamMember = {
-  id: string;
-  name: string;
-  role: string;
-  status: string;
-  city: string;
-  workload: number;
-  eventsThisMonth: number;
-  rating: number;
-  monthlySalary: number;
-  skills?: string[];
-  notes?: string;
-  updatedAt?: string;
-};
-
-type Vendor = {
-  id: string;
-  name: string;
-  category: string;
-  city: string;
-  rating?: number;
-  priceBand?: string;
-  phone?: string;
-  updatedAt?: string;
-};
-
-type AIDoc = {
-  id: string;
-  type: string;
-  title: string;
-  createdAt: string;
-  output: string;
-  inputs?: Record<string, any>;
-};
-
-/* ================= HELPERS ================= */
-function uid() {
-  return Math.random().toString(16).slice(2) + "-" + Date.now().toString(16);
-}
-function todayISO() {
-  const d = new Date();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${mm}-${dd}`;
-}
-function isoMinusDays(days: number) {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${mm}-${dd}`;
-}
+/* ================= LOCAL HELPERS ================= */
 function safeLoad<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   try {
@@ -105,27 +80,211 @@ function safeLoad<T>(key: string, fallback: T): T {
     return fallback;
   }
 }
-function safeSave<T>(key: string, value: T) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(key, JSON.stringify(value));
+
+function loadFirstKey<T>(keys: string[], fallback: T): { keyUsed: string | null; data: T } {
+  if (typeof window === "undefined") return { keyUsed: null, data: fallback };
+  for (const k of keys) {
+    try {
+      const raw = localStorage.getItem(k);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as T;
+      return { keyUsed: k, data: parsed };
+    } catch {
+      // ignore and keep trying
+    }
+  }
+  return { keyUsed: null, data: fallback };
 }
-function inr(n: number) {
+
+function roleFromSettings(email: string, s: AppSettings): Role {
+  if (!email) return "Staff";
+  return email.toLowerCase() === s.ceoEmail.toLowerCase() ? "CEO" : "Staff";
+}
+
+function toYMD(d: Date) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function parseDateSafe(s: any): Date | null {
+  if (!s) return null;
+  const d = new Date(s);
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
+function formatCurrency(amount: number, currency = "INR") {
   try {
-    return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(n);
+    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
   } catch {
-    return String(Math.round(n));
+    return `${amount.toFixed(2)} ${currency}`;
   }
 }
-function toCSV(rows: Record<string, any>[]) {
-  if (!rows.length) return "";
-  const cols = Object.keys(rows[0]);
-  const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const head = cols.map(esc).join(",");
-  const body = rows.map((r) => cols.map((c) => esc(r[c])).join(",")).join("\n");
-  return `${head}\n${body}`;
+
+/* ================= NORMALIZERS (flexible) ================= */
+type EventStatus = string;
+type NormalEvent = {
+  id: string;
+  date: string; // YYYY-MM-DD
+  title: string;
+  status: EventStatus;
+  city?: string;
+  budget?: number;
+};
+
+type NormalTx = {
+  id: string;
+  date: string; // YYYY-MM-DD
+  type: "Income" | "Expense";
+  amount: number;
+  category?: string;
+  vendor?: string;
+  note?: string;
+};
+
+type NormalStaff = {
+  id: string;
+  name: string;
+  role?: string;
+  city?: string;
+  status?: string;
+  workload?: number;
+  monthlySalary?: number;
+  eventsThisMonth?: number;
+  rating?: number;
+};
+
+type NormalVendor = {
+  id: string;
+  name: string;
+  category?: string;
+  city?: string;
+  phone?: string;
+  rating?: number;
+  status?: string;
+  priceNote?: string;
+};
+
+function normalizeEvents(raw: any): NormalEvent[] {
+  const arr = Array.isArray(raw) ? raw : [];
+  return arr
+    .map((x) => {
+      const id = String(x?.id ?? x?._id ?? "");
+      const date = String(x?.date ?? x?.eventDate ?? "");
+      const title = String(x?.title ?? x?.name ?? x?.eventName ?? "Untitled");
+      const status = String(x?.status ?? x?.stage ?? "Unknown");
+      const city = x?.city ? String(x.city) : undefined;
+      const budget = Number.isFinite(Number(x?.budget)) ? Number(x.budget) : undefined;
+      return { id: id || `${title}-${date}`, date, title, status, city, budget };
+    })
+    .filter((e) => e.date && e.title);
 }
-function downloadFile(filename: string, content: string, mime = "text/plain") {
-  const blob = new Blob([content], { type: mime });
+
+function normalizeFinance(raw: any): NormalTx[] {
+  const arr = Array.isArray(raw) ? raw : [];
+  return arr
+    .map((x) => {
+      const id = String(x?.id ?? x?._id ?? "");
+      const date = String(x?.date ?? x?.txDate ?? "");
+      const type = x?.type === "Income" ? "Income" : "Expense";
+      const amount = Number(x?.amount ?? x?.value ?? 0);
+      const category = x?.category ? String(x.category) : undefined;
+      const vendor = x?.vendor ? String(x.vendor) : undefined;
+      const note = x?.note ? String(x.note) : undefined;
+      return { id: id || `${date}-${type}-${amount}`, date, type, amount: Number.isFinite(amount) ? amount : 0, category, vendor, note };
+    })
+    .filter((t) => t.date && t.amount > 0);
+}
+
+function normalizeHR(raw: any): NormalStaff[] {
+  const arr = Array.isArray(raw) ? raw : [];
+  return arr
+    .map((x) => {
+      const id = String(x?.id ?? x?._id ?? "");
+      const name = String(x?.name ?? x?.fullName ?? "Unknown");
+      return {
+        id: id || name,
+        name,
+        role: x?.role ? String(x.role) : undefined,
+        city: x?.city ? String(x.city) : undefined,
+        status: x?.status ? String(x.status) : undefined,
+        workload: Number.isFinite(Number(x?.workload)) ? Number(x.workload) : undefined,
+        monthlySalary: Number.isFinite(Number(x?.monthlySalary)) ? Number(x.monthlySalary) : undefined,
+        eventsThisMonth: Number.isFinite(Number(x?.eventsThisMonth)) ? Number(x.eventsThisMonth) : undefined,
+        rating: Number.isFinite(Number(x?.rating)) ? Number(x.rating) : undefined,
+      };
+    })
+    .filter((m) => m.name);
+}
+
+function normalizeVendors(raw: any): NormalVendor[] {
+  const arr = Array.isArray(raw) ? raw : [];
+  return arr
+    .map((x) => {
+      const id = String(x?.id ?? x?._id ?? "");
+      const name = String(x?.name ?? x?.vendorName ?? "Vendor");
+      return {
+        id: id || name,
+        name,
+        category: x?.category ? String(x.category) : undefined,
+        city: x?.city ? String(x.city) : undefined,
+        phone: x?.phone ? String(x.phone) : undefined,
+        rating: Number.isFinite(Number(x?.rating)) ? Number(x.rating) : undefined,
+        status: x?.status ? String(x.status) : undefined,
+        priceNote: x?.priceNote ? String(x.priceNote) : undefined,
+      };
+    })
+    .filter((v) => v.name);
+}
+
+/* ================= KPI CALCS ================= */
+function inRange(dateStr: string, from: string, to: string) {
+  if (!dateStr) return false;
+  return dateStr >= from && dateStr <= to; // works for YYYY-MM-DD
+}
+
+function sumFinance(txs: NormalTx[]) {
+  let income = 0;
+  let expense = 0;
+  for (const t of txs) {
+    if (t.type === "Income") income += t.amount;
+    else expense += t.amount;
+  }
+  return { income, expense, net: income - expense };
+}
+
+function statusCount(events: NormalEvent[]) {
+  const m = new Map<string, number>();
+  for (const e of events) {
+    const k = (e.status || "Unknown").trim();
+    m.set(k, (m.get(k) ?? 0) + 1);
+  }
+  return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
+}
+
+function topCategories(txs: NormalTx[], type: "Income" | "Expense", n = 5) {
+  const m = new Map<string, number>();
+  for (const t of txs) {
+    if (t.type !== type) continue;
+    const k = (t.category || "Other").trim() || "Other";
+    m.set(k, (m.get(k) ?? 0) + t.amount);
+  }
+  return Array.from(m.entries())
+    .map(([k, v]) => ({ category: k, amount: v }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, n);
+}
+
+function exportCSV(filename: string, rows: Record<string, any>[]) {
+  const keys = Array.from(new Set(rows.flatMap((r) => Object.keys(r))));
+  const esc = (v: any) => {
+    const s = String(v ?? "");
+    if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  };
+  const csv = [keys.join(","), ...rows.map((r) => keys.map((k) => esc(r[k])).join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -134,488 +293,513 @@ function downloadFile(filename: string, content: string, mime = "text/plain") {
   URL.revokeObjectURL(url);
 }
 
-/* ================= FILTER HELPERS ================= */
-function inDateRange(dateStr: string | undefined, from: string, to: string) {
-  if (!dateStr) return false;
-  // dateStr expected "YYYY-MM-DD"
-  return dateStr >= from && dateStr <= to;
+/* ================= THEME TOKENS (safe) ================= */
+function ThemeTokens(theme: Theme, highContrast?: boolean) {
+  const hc = !!highContrast;
+  const base = {
+    text: "#F9FAFB",
+    muted: "#9CA3AF",
+    bg: "#050816",
+    panel: "rgba(11,16,32,0.60)",
+    panel2: "rgba(11,16,32,0.85)",
+    border: hc ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.10)",
+    soft: hc ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)",
+    inputBg: hc ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
+    dangerBg: "rgba(248,113,113,0.10)",
+    dangerBd: hc ? "rgba(248,113,113,0.55)" : "rgba(248,113,113,0.30)",
+    dangerTx: "#FCA5A5",
+    okBg: "rgba(34,197,94,0.12)",
+    okBd: hc ? "rgba(34,197,94,0.45)" : "rgba(34,197,94,0.28)",
+    okTx: "#86EFAC",
+  };
+
+  switch (theme) {
+    case "Midnight Purple":
+      return { ...base, glow1: "rgba(139,92,246,0.22)", glow2: "rgba(212,175,55,0.14)", accentBg: "rgba(139,92,246,0.16)", accentBd: hc ? "rgba(139,92,246,0.55)" : "rgba(139,92,246,0.30)", accentTx: "#DDD6FE" };
+    case "Emerald Night":
+      return { ...base, glow1: "rgba(16,185,129,0.18)", glow2: "rgba(212,175,55,0.12)", accentBg: "rgba(16,185,129,0.16)", accentBd: hc ? "rgba(16,185,129,0.55)" : "rgba(16,185,129,0.30)", accentTx: "#A7F3D0" };
+    case "Ocean Blue":
+      return { ...base, glow1: "rgba(59,130,246,0.22)", glow2: "rgba(34,211,238,0.14)", accentBg: "rgba(59,130,246,0.16)", accentBd: hc ? "rgba(59,130,246,0.55)" : "rgba(59,130,246,0.30)", accentTx: "#BFDBFE" };
+    case "Ruby Noir":
+      return { ...base, glow1: "rgba(244,63,94,0.18)", glow2: "rgba(212,175,55,0.10)", accentBg: "rgba(244,63,94,0.14)", accentBd: hc ? "rgba(244,63,94,0.50)" : "rgba(244,63,94,0.26)", accentTx: "#FDA4AF" };
+    case "Carbon Black":
+      return { ...base, bg: "#03040A", glow1: "rgba(255,255,255,0.10)", glow2: "rgba(212,175,55,0.10)", accentBg: "rgba(212,175,55,0.14)", accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)", accentTx: "#FDE68A" };
+    case "Ivory Light":
+      return { ...base, text: "#111827", muted: "#4B5563", bg: "#F9FAFB", panel: "rgba(255,255,255,0.78)", panel2: "rgba(255,255,255,0.92)", border: hc ? "rgba(17,24,39,0.22)" : "rgba(17,24,39,0.12)", soft: hc ? "rgba(17,24,39,0.07)" : "rgba(17,24,39,0.04)", inputBg: hc ? "rgba(17,24,39,0.08)" : "rgba(17,24,39,0.04)", dangerTx: "#B91C1C", glow1: "rgba(212,175,55,0.16)", glow2: "rgba(59,130,246,0.14)", accentBg: "rgba(212,175,55,0.16)", accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)", accentTx: "#92400E", okTx: "#166534" };
+    case "Royal Gold":
+    default:
+      return { ...base, glow1: "rgba(255,215,110,0.18)", glow2: "rgba(120,70,255,0.18)", accentBg: "rgba(212,175,55,0.12)", accentBd: hc ? "rgba(212,175,55,0.50)" : "rgba(212,175,55,0.22)", accentTx: "#FDE68A" };
+  }
 }
 
 /* ================= PAGE ================= */
 export default function ReportsPage() {
-  const [msg, setMsg] = useState("");
+  const router = useRouter();
 
-  const [module, setModule] = useState<Module>("Events");
-  const [dateFrom, setDateFrom] = useState(isoMinusDays(30));
-  const [dateTo, setDateTo] = useState(todayISO());
-  const [status, setStatus] = useState("All");
-  const [city, setCity] = useState("All");
+  const [settings, setSettings] = useState<AppSettings>(SETTINGS_DEFAULTS);
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const [templates, setTemplates] = useState<ReportTemplate[]>([]);
-  const [templateName, setTemplateName] = useState("");
+  // report range (default last 30 days)
+  const today = toYMD(new Date());
+  const [from, setFrom] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return toYMD(d);
+  });
+  const [to, setTo] = useState<string>(today);
 
-  // load templates
+  // loaded raw keys info
+  const [keysInfo, setKeysInfo] = useState<{ events: string | null; fin: string | null; hr: string | null; vendors: string | null }>({
+    events: null,
+    fin: null,
+    hr: null,
+    vendors: null,
+  });
+
+  const [rawEvents, setRawEvents] = useState<any[]>([]);
+  const [rawFin, setRawFin] = useState<any[]>([]);
+  const [rawHR, setRawHR] = useState<any[]>([]);
+  const [rawVendors, setRawVendors] = useState<any[]>([]);
+
+  // load settings + all modules
   useEffect(() => {
-    setTemplates(safeLoad<ReportTemplate[]>(LS_REPORT_TEMPLATES, []));
+    const s = safeLoad<AppSettings>(LS_SETTINGS, SETTINGS_DEFAULTS);
+    setSettings({ ...SETTINGS_DEFAULTS, ...s });
+
+    const e = loadFirstKey<any[]>(EVENT_KEYS, []);
+    const f = loadFirstKey<any[]>(FIN_KEYS, []);
+    const h = loadFirstKey<any[]>(HR_KEYS, []);
+    const v = loadFirstKey<any[]>(VENDOR_KEYS, []);
+
+    setKeysInfo({ events: e.keyUsed, fin: f.keyUsed, hr: h.keyUsed, vendors: v.keyUsed });
+    setRawEvents(Array.isArray(e.data) ? e.data : []);
+    setRawFin(Array.isArray(f.data) ? f.data : []);
+    setRawHR(Array.isArray(h.data) ? h.data : []);
+    setRawVendors(Array.isArray(v.data) ? v.data : []);
   }, []);
+
+  // session email
   useEffect(() => {
-    safeSave(LS_REPORT_TEMPLATES, templates);
-  }, [templates]);
+    (async () => {
+      try {
+        if (!supabase) {
+          setEmail(safeLoad<string>("eventura_email", ""));
+          return;
+        }
+        const { data } = await supabase.auth.getSession();
+        setEmail(data.session?.user?.email || "");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
 
-  // load data
-  const events = useMemo(() => safeLoad<EventItem[]>(LS_EVENTS, []), []);
-  const fin = useMemo(() => safeLoad<FinanceTx[]>(LS_FIN, []), []);
-  const hr = useMemo(() => safeLoad<TeamMember[]>(LS_HR, []), []);
-  const vendors = useMemo(() => safeLoad<Vendor[]>(LS_VENDORS, []), []);
-  const ai = useMemo(() => safeLoad<AIDoc[]>(LS_AI, []), []);
+  const role = useMemo(() => roleFromSettings(email, settings), [email, settings]);
+  const isCEO = role === "CEO";
+  const sidebarIconsOnly = settings.sidebarMode === "Icons Only";
 
-  const cities = useMemo(() => {
-    const s = new Set<string>();
-    [...events, ...vendors, ...hr].forEach((x: any) => {
-      if (x?.city) s.add(String(x.city));
-    });
-    return ["All", ...[...s].sort()];
-  }, [events, vendors, hr]);
+  const T = ThemeTokens(settings.theme, settings.highContrast);
+  const S = makeStyles(T, settings);
 
-  /* ================= REPORT LOGIC ================= */
-  const report = useMemo(() => {
-    // generic city filter
-    const cityOk = (item: any) => (city === "All" ? true : String(item?.city || "") === city);
+  // normalize
+  const events = useMemo(() => normalizeEvents(rawEvents), [rawEvents]);
+  const txs = useMemo(() => normalizeFinance(rawFin), [rawFin]);
+  const team = useMemo(() => normalizeHR(rawHR), [rawHR]);
+  const vendors = useMemo(() => normalizeVendors(rawVendors), [rawVendors]);
 
-    if (module === "Events") {
-      const rows = events
-        .filter((e) => inDateRange(e.date, dateFrom, dateTo))
-        .filter((e) => cityOk(e))
-        .filter((e) => (status === "All" ? true : String(e.status || "") === status));
+  // filtered by range
+  const eventsInRange = useMemo(() => events.filter((e) => inRange(e.date, from, to)), [events, from, to]);
+  const txsInRange = useMemo(() => txs.filter((t) => inRange(t.date, from, to)), [txs, from, to]);
 
-      const byStatus = rows.reduce<Record<string, number>>((acc, r) => {
-        const k = String(r.status || "Unknown");
-        acc[k] = (acc[k] || 0) + 1;
-        return acc;
-      }, {});
-      const totalBudget = rows.reduce((a, b) => a + Number(b.budget || 0), 0);
+  // KPIs
+  const finTotals = useMemo(() => sumFinance(txsInRange), [txsInRange]);
+  const eventStatus = useMemo(() => statusCount(eventsInRange), [eventsInRange]);
+  const topExp = useMemo(() => topCategories(txsInRange, "Expense", 5), [txsInRange]);
+  const topInc = useMemo(() => topCategories(txsInRange, "Income", 5), [txsInRange]);
 
-      return {
-        title: "Events Report",
-        kpis: [
-          { label: "Events", value: rows.length },
-          { label: "Total Budget", value: `₹${inr(totalBudget)}` },
-          { label: "Cities", value: new Set(rows.map((r) => r.city).filter(Boolean)).size },
-          { label: "Statuses", value: Object.keys(byStatus).length },
-        ],
-        breakdown: Object.entries(byStatus).map(([k, v]) => ({ key: k, value: v })),
-        rows: rows.map((r) => ({
-          date: r.date || "",
-          title: r.title || "",
-          status: r.status || "",
-          city: r.city || "",
-          budget: r.budget ?? "",
-        })),
-      };
+  // HR KPIs
+  const hrKpis = useMemo(() => {
+    const total = team.length;
+    const avgWorkload =
+      total ? Math.round((team.reduce((a, b) => a + (Number.isFinite(b.workload as any) ? (b.workload as number) : 0), 0) / total) * 10) / 10 : 0;
+
+    const active = team.filter((m) => String(m.status || "").toLowerCase() !== "inactive").length;
+    const freelancers = team.filter((m) => String(m.status || "").toLowerCase().includes("freel")).length;
+
+    const payroll = team.reduce((a, b) => a + (Number.isFinite(b.monthlySalary as any) ? (b.monthlySalary as number) : 0), 0);
+
+    return { total, active, freelancers, avgWorkload, payroll };
+  }, [team]);
+
+  // Vendor KPIs
+  const vendorKpis = useMemo(() => {
+    const total = vendors.length;
+    const active = vendors.filter((v) => String(v.status || "").toLowerCase() !== "inactive").length;
+    const topRated = vendors
+      .filter((v) => Number.isFinite(v.rating as any))
+      .slice()
+      .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
+      .slice(0, 5);
+    return { total, active, topRated };
+  }, [vendors]);
+
+  // Executive summary (auto)
+  const execSummary = useMemo(() => {
+    const lines: string[] = [];
+
+    lines.push(`Report Range: ${from} → ${to}`);
+    lines.push(`Events in range: ${eventsInRange.length}`);
+    if (eventStatus.length) lines.push(`Top event status: ${eventStatus[0][0]} (${eventStatus[0][1]})`);
+
+    lines.push(`Finance Net: ${formatCurrency(finTotals.net)} (Income ${formatCurrency(finTotals.income)} • Expense ${formatCurrency(finTotals.expense)})`);
+
+    if (topExp.length) lines.push(`Biggest expense category: ${topExp[0].category} (${formatCurrency(topExp[0].amount)})`);
+    if (topInc.length) lines.push(`Top income category: ${topInc[0].category} (${formatCurrency(topInc[0].amount)})`);
+
+    lines.push(`Team: ${hrKpis.total} total • ${hrKpis.active} active • Avg workload ${hrKpis.avgWorkload}%`);
+    if (hrKpis.payroll > 0) lines.push(`Estimated monthly payroll: ${formatCurrency(hrKpis.payroll)}`);
+
+    lines.push(`Vendors: ${vendorKpis.total} total • ${vendorKpis.active} active`);
+
+    // simple alerts
+    const highWorkload = team.filter((m) => (m.workload ?? 0) >= 80).length;
+    if (highWorkload) lines.push(`⚠ High workload staff (>=80%): ${highWorkload}`);
+
+    const negativeNet = finTotals.net < 0;
+    if (negativeNet) lines.push(`⚠ Net is negative in this range. Focus on expense control + collections.`);
+
+    const noData = !events.length && !txs.length && !team.length && !vendors.length;
+    if (noData) lines.push(`No module data found. (Reports reads localStorage; ensure modules saved at least one entry.)`);
+
+    return lines;
+  }, [from, to, eventsInRange.length, eventStatus, finTotals, topExp, topInc, hrKpis, vendorKpis, team, events.length, txs.length]);
+
+  async function signOut() {
+    try {
+      if (supabase) await supabase.auth.signOut();
+    } finally {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("eventura_email");
+        document.cookie = `eventura_email=; Path=/; Max-Age=0`;
+      }
+      router.push("/login");
     }
+  }
 
-    if (module === "Finance") {
-      const rows = fin
-        .filter((t) => inDateRange(t.date, dateFrom, dateTo))
-        .filter((t: any) => cityOk(t)); // if finance rows don't have city, city filter is ignored by cityOk -> false, so we must handle:
-      const rows2 = fin.filter((t) => inDateRange(t.date, dateFrom, dateTo)); // real finance list (no city filter)
-      const base = city === "All" ? rows2 : rows; // apply only if finance has city field
-
-      const income = base
-        .filter((x) => String(x.type || "").toLowerCase() === "income")
-        .reduce((a, b) => a + Number(b.amount || 0), 0);
-
-      const expense = base
-        .filter((x) => String(x.type || "").toLowerCase() === "expense")
-        .reduce((a, b) => a + Number(b.amount || 0), 0);
-
-      const profit = income - expense;
-
-      const byCat = base.reduce<Record<string, number>>((acc, r) => {
-        const k = String(r.category || "Uncategorized");
-        acc[k] = (acc[k] || 0) + Number(r.amount || 0) * (String(r.type).toLowerCase() === "expense" ? -1 : 1);
-        return acc;
-      }, {});
-
-      return {
-        title: "Finance Report",
-        kpis: [
-          { label: "Income", value: `₹${inr(income)}` },
-          { label: "Expense", value: `₹${inr(expense)}` },
-          { label: "Profit", value: `₹${inr(profit)}` },
-          { label: "Transactions", value: base.length },
-        ],
-        breakdown: Object.entries(byCat)
-          .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
-          .slice(0, 12)
-          .map(([k, v]) => ({ key: k, value: v >= 0 ? `+₹${inr(v)}` : `-₹${inr(Math.abs(v))}` })),
-        rows: base.map((r) => ({
-          date: r.date || "",
-          type: r.type || "",
-          category: r.category || "",
-          amount: r.amount ?? "",
-          note: r.note || "",
-        })),
-      };
-    }
-
-    if (module === "HR") {
-      const base = hr.filter((m) => cityOk(m));
-      const active = base.filter((m) => String(m.status) !== "Inactive");
-      const avgWorkload =
-        active.length === 0
-          ? 0
-          : Math.round(active.reduce((a, b) => a + Number(b.workload || 0), 0) / active.length);
-      const avgRating =
-        active.length === 0
-          ? 0
-          : +(active.reduce((a, b) => a + Number(b.rating || 0), 0) / active.length).toFixed(1);
-
-      const payroll = base
-        .filter((m) => m.status === "Core" || m.status === "Trainee")
-        .reduce((a, b) => a + Number(b.monthlySalary || 0), 0);
-
-      const byRole = base.reduce<Record<string, number>>((acc, r) => {
-        const k = String(r.role || "Other");
-        acc[k] = (acc[k] || 0) + 1;
-        return acc;
-      }, {});
-
-      return {
-        title: "HR Report",
-        kpis: [
-          { label: "Team", value: base.length },
-          { label: "Active", value: active.length },
-          { label: "Avg Workload", value: `${avgWorkload}%` },
-          { label: "Avg Rating", value: avgRating.toFixed(1) },
-          { label: "Payroll/mo", value: `₹${inr(payroll)}` },
-        ],
-        breakdown: Object.entries(byRole)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 12)
-          .map(([k, v]) => ({ key: k, value: v })),
-        rows: base.map((m) => ({
-          name: m.name,
-          role: m.role,
-          status: m.status,
-          city: m.city,
-          workload: m.workload,
-          rating: m.rating,
-          salary: m.monthlySalary,
-          eventsThisMonth: m.eventsThisMonth,
-        })),
-      };
-    }
-
-    if (module === "Vendors") {
-      const base = vendors.filter((v) => cityOk(v));
-      const byCat = base.reduce<Record<string, number>>((acc, r) => {
-        const k = String(r.category || "Other");
-        acc[k] = (acc[k] || 0) + 1;
-        return acc;
-      }, {});
-
-      const avgRating =
-        base.length === 0
-          ? 0
-          : +(base.reduce((a, b) => a + Number(b.rating || 0), 0) / base.length).toFixed(1);
-
-      return {
-        title: "Vendors Report",
-        kpis: [
-          { label: "Vendors", value: base.length },
-          { label: "Avg Rating", value: avgRating.toFixed(1) },
-          { label: "Categories", value: Object.keys(byCat).length },
-          { label: "City", value: city === "All" ? "All" : city },
-        ],
-        breakdown: Object.entries(byCat)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 12)
-          .map(([k, v]) => ({ key: k, value: v })),
-        rows: base.map((v) => ({
-          name: v.name,
-          category: v.category,
-          city: v.city,
-          rating: v.rating ?? "",
-          phone: v.phone ?? "",
-          priceBand: v.priceBand ?? "",
-        })),
-      };
-    }
-
-    // AI
-    const base = ai.filter((d) => inDateRange((d.createdAt || "").slice(0, 10), dateFrom, dateTo));
-    const byType = base.reduce<Record<string, number>>((acc, r) => {
-      const k = String(r.type || "Other");
-      acc[k] = (acc[k] || 0) + 1;
-      return acc;
-    }, {});
-
-    return {
-      title: "AI Report",
-      kpis: [
-        { label: "Outputs", value: base.length },
-        { label: "Types", value: Object.keys(byType).length },
-        { label: "Range", value: `${dateFrom} → ${dateTo}` },
-        { label: "Saved", value: "local" },
-      ],
-      breakdown: Object.entries(byType)
-        .sort((a, b) => b[1] - a[1])
-        .map(([k, v]) => ({ key: k, value: v })),
-      rows: base.map((d) => ({
-        title: d.title,
-        type: d.type,
-        createdAt: new Date(d.createdAt).toLocaleString(),
-      })),
+  function exportAllJSON() {
+    const payload = {
+      version: "eventura-reports-export-v1",
+      exportedAt: new Date().toISOString(),
+      range: { from, to },
+      keysUsed: keysInfo,
+      data: {
+        events: eventsInRange,
+        finance: txsInRange,
+        hr: team,
+        vendors,
+      },
+      summary: execSummary,
     };
-  }, [module, dateFrom, dateTo, status, city, events, fin, hr, vendors, ai]);
-
-  const eventStatuses = useMemo(() => {
-    const s = new Set<string>();
-    events.forEach((e) => s.add(String(e.status || "Unknown")));
-    return ["All", ...[...s].sort()];
-  }, [events]);
-
-  /* ================= TEMPLATE ACTIONS ================= */
-  function saveTemplate() {
-    const n = templateName.trim();
-    if (!n) return setMsg("❌ Template name required");
-    const t: ReportTemplate = {
-      id: uid(),
-      name: n,
-      module,
-      dateFrom,
-      dateTo,
-      status,
-      city,
-      createdAt: new Date().toISOString(),
-    };
-    setTemplates((prev) => [t, ...prev]);
-    setTemplateName("");
-    setMsg("✅ Template saved");
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `eventura_report_${from}_to_${to}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
-  function loadTemplate(t: ReportTemplate) {
-    setModule(t.module);
-    setDateFrom(t.dateFrom);
-    setDateTo(t.dateTo);
-    setStatus(t.status);
-    setCity(t.city);
-    setMsg(`✅ Loaded template: ${t.name}`);
-  }
-
-  function deleteTemplate(id: string) {
-    setTemplates((prev) => prev.filter((x) => x.id !== id));
-    setMsg("✅ Template deleted");
-  }
-
-  function exportReportJSON() {
-    downloadFile(
-      `eventura_report_${module.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.json`,
-      JSON.stringify({ module, dateFrom, dateTo, status, city, report }, null, 2),
-      "application/json"
-    );
-    setMsg("✅ Exported JSON");
-  }
-
-  function exportReportCSV() {
-    const csv = toCSV(report.rows || []);
-    downloadFile(
-      `eventura_report_${module.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.csv`,
-      csv || "empty\n",
-      "text/csv"
-    );
-    setMsg("✅ Exported CSV");
+  function refreshRead() {
+    const e = loadFirstKey<any[]>(EVENT_KEYS, []);
+    const f = loadFirstKey<any[]>(FIN_KEYS, []);
+    const h = loadFirstKey<any[]>(HR_KEYS, []);
+    const v = loadFirstKey<any[]>(VENDOR_KEYS, []);
+    setKeysInfo({ events: e.keyUsed, fin: f.keyUsed, hr: h.keyUsed, vendors: v.keyUsed });
+    setRawEvents(Array.isArray(e.data) ? e.data : []);
+    setRawFin(Array.isArray(f.data) ? f.data : []);
+    setRawHR(Array.isArray(h.data) ? h.data : []);
+    setRawVendors(Array.isArray(v.data) ? v.data : []);
   }
 
   return (
-    <div style={S.page}>
-      <div style={S.shell}>
-        <div style={S.topRow}>
+    <div style={S.app}>
+      <aside style={{ ...S.sidebar, width: sidebarIconsOnly ? 76 : 280 }}>
+        <div style={S.brandRow}>
+          <div style={S.logoCircle}>E</div>
+          {!sidebarIconsOnly ? (
+            <div>
+              <div style={S.brandName}>Eventura OS</div>
+              <div style={S.brandSub}>{settings.theme}</div>
+            </div>
+          ) : null}
+        </div>
+
+        <nav style={S.nav}>
+          {NAV.map((item) => (
+            <Link key={item.href} href={item.href} style={S.navItem as any}>
+              <span style={S.navIcon}>{item.icon}</span>
+              {!sidebarIconsOnly ? <span style={S.navLabel}>{item.label}</span> : null}
+            </Link>
+          ))}
+        </nav>
+
+        <div style={S.sidebarFooter}>
+          {!sidebarIconsOnly ? (
+            <div style={S.userBox}>
+              <div style={S.userLabel}>Signed in</div>
+              <div style={S.userEmail}>{email || "Unknown"}</div>
+              <div style={S.roleBadge}>{role}</div>
+            </div>
+          ) : (
+            <div style={S.roleBadgeSmall}>{role}</div>
+          )}
+
+          <button style={S.signOutBtn} onClick={signOut}>
+            {sidebarIconsOnly ? "⎋" : "Sign Out"}
+          </button>
+        </div>
+      </aside>
+
+      <main style={S.main}>
+        <div style={S.header}>
           <div>
             <div style={S.h1}>Reports</div>
             <div style={S.muted}>
-              Build reports from your saved modules • Export JSON/CSV • Save templates
+              Company overview • Logged in as <b>{email || "Unknown"}</b> • Role: <span style={S.rolePill}>{role}</span>
+            </div>
+            <div style={{ marginTop: 8, ...S.smallMuted }}>
+              Reading keys → Events: <b>{keysInfo.events ?? "not found"}</b> • Finance: <b>{keysInfo.fin ?? "not found"}</b> • HR:{" "}
+              <b>{keysInfo.hr ?? "not found"}</b> • Vendors: <b>{keysInfo.vendors ?? "not found"}</b>
             </div>
           </div>
-          <div style={S.row}>
-            <button style={S.ghostBtn} onClick={exportReportJSON}>
-              Export JSON
+
+          <div style={S.headerRight}>
+            <button style={S.secondaryBtn} onClick={refreshRead}>
+              Refresh
             </button>
-            <button style={S.ghostBtn} onClick={exportReportCSV}>
-              Export CSV
+            <button style={S.secondaryBtn} onClick={exportAllJSON}>
+              Export Report (JSON)
             </button>
+            {isCEO ? (
+              <>
+                <button style={S.secondaryBtn} onClick={() => exportCSV(`eventura_events_${from}_to_${to}.csv`, eventsInRange)}>
+                  Export Events CSV
+                </button>
+                <button style={S.secondaryBtn} onClick={() => exportCSV(`eventura_finance_${from}_to_${to}.csv`, txsInRange)}>
+                  Export Finance CSV
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
 
-        {msg ? <div style={S.msg}>{msg}</div> : null}
+        {loading ? <div style={S.loadingBar}>Loading session…</div> : null}
 
-        {/* BUILDER */}
-        <div style={S.panel}>
-          <div style={S.panelTitle}>Report Builder</div>
-
-          <div style={S.grid5}>
-            <Field label="Module">
-              <select style={S.select} value={module} onChange={(e) => setModule(e.target.value as Module)}>
-                {["Events", "Finance", "HR", "Vendors", "AI"].map((x) => (
-                  <option key={x} style={S.option}>
-                    {x}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="From">
-              <input style={S.input} type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-            </Field>
-
-            <Field label="To">
-              <input style={S.input} type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-            </Field>
-
-            <Field label="City">
-              <select style={S.select} value={city} onChange={(e) => setCity(e.target.value)}>
-                {cities.map((c) => (
-                  <option key={c} style={S.option} value={c}>
-                    {c === "All" ? "All Cities" : c}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Status">
-              <select
-                style={S.select}
-                value={status}
-                onChange={(e) => setStatus(e.target.value)}
-                disabled={module !== "Events"}
-                title={module !== "Events" ? "Status filter only for Events" : ""}
-              >
-                {(module === "Events" ? eventStatuses : ["All"]).map((s) => (
-                  <option key={s} style={S.option} value={s}>
-                    {s === "All" ? "All Status" : s}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-
-          <div style={S.rowBetween}>
-            <div style={S.smallMuted}>
-              Tip: If a module doesn’t exist yet, this report will show 0 (no errors).
+        <div style={S.rangeBar}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "end" }}>
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={S.smallMuted}>From</div>
+              <input style={S.input} type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
             </div>
-            <div style={S.row}>
-              <input
-                style={{ ...S.input, width: 240 }}
-                value={templateName}
-                onChange={(e) => setTemplateName(e.target.value)}
-                placeholder="Template name"
-              />
-              <button style={S.primaryBtn} onClick={saveTemplate}>
-                Save Template
-              </button>
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={S.smallMuted}>To</div>
+              <input style={S.input} type="date" value={to} onChange={(e) => setTo(e.target.value)} />
             </div>
           </div>
+          <div style={S.smallNote}>Tip: Reports uses date fields (YYYY-MM-DD). Make sure each module stores valid dates.</div>
         </div>
 
-        {/* REPORT OUTPUT */}
-        <div style={S.panel}>
-          <div style={S.panelTitle}>{report.title}</div>
-
-          <div style={S.kpiRow}>
-            {report.kpis.map((k: any) => (
-              <KPI key={k.label} label={k.label} value={k.value} />
-            ))}
-          </div>
-
-          <div style={S.split}>
-            <div style={S.box}>
-              <div style={S.boxTitle}>Breakdown</div>
-              {!report.breakdown?.length ? (
-                <div style={S.empty}>No breakdown available.</div>
-              ) : (
-                <div style={{ display: "grid", gap: 8 }}>
-                  {report.breakdown.map((b: any) => (
-                    <div key={b.key} style={S.breakRow}>
-                      <div style={{ fontWeight: 950 }}>{b.key}</div>
-                      <div style={S.pill}>{b.value}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div style={S.box}>
-              <div style={S.boxTitle}>Preview Rows</div>
-              {!report.rows?.length ? (
-                <div style={S.empty}>No rows found for selected filters.</div>
-              ) : (
-                <div style={{ display: "grid", gap: 8 }}>
-                  {report.rows.slice(0, 10).map((r: any, idx: number) => (
-                    <div key={idx} style={S.previewRow}>
-                      <div style={S.smallMuted}>{Object.values(r).slice(0, 2).join(" • ")}</div>
-                      <div style={S.previewMeta}>{Object.entries(r).slice(2, 5).map(([k, v]) => `${k}: ${v}`).join(" | ")}</div>
-                    </div>
-                  ))}
-                  {report.rows.length > 10 ? (
-                    <div style={S.smallMuted}>… and {report.rows.length - 10} more rows (export to CSV to see all)</div>
-                  ) : null}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* TEMPLATES */}
-        <div style={S.panel}>
-          <div style={S.panelTitle}>Saved Templates</div>
-
-          {!templates.length ? (
-            <div style={S.empty}>No templates yet.</div>
-          ) : (
-            <div style={{ display: "grid", gap: 10 }}>
-              {templates.map((t) => (
-                <div key={t.id} style={S.card}>
-                  <div style={S.rowBetween}>
-                    <div>
-                      <div style={S.cardTitle}>{t.name}</div>
-                      <div style={S.cardSub}>
-                        {t.module} • {t.dateFrom} → {t.dateTo} • {t.city} • {t.status}
-                      </div>
-                    </div>
-                    <div style={S.row}>
-                      <button style={S.ghostBtn} onClick={() => loadTemplate(t)}>
-                        Load
-                      </button>
-                      <button style={S.dangerBtn} onClick={() => deleteTemplate(t.id)}>
-                        Delete
-                      </button>
-                    </div>
-                  </div>
+        <div style={S.grid}>
+          {/* Executive Summary */}
+          <section style={S.panel}>
+            <div style={S.panelTitle}>Executive Summary (Auto)</div>
+            <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+              {execSummary.map((line, i) => (
+                <div key={i} style={S.summaryLine}>
+                  {line}
                 </div>
               ))}
             </div>
-          )}
-        </div>
+          </section>
 
-        <div style={S.footerNote}>
-          ✅ Hover fixed • ✅ Export JSON/CSV • ✅ Templates • ✅ No deployment errors
+          {/* Overall KPIs */}
+          <section style={S.panel}>
+            <div style={S.panelTitle}>Company KPIs</div>
+            <div style={S.kpiRow}>
+              <KPI label="Events" value={String(eventsInRange.length)} S={S} />
+              <KPI label="Net" value={formatCurrency(finTotals.net)} S={S} />
+              <KPI label="Team" value={String(hrKpis.total)} S={S} />
+              <KPI label="Vendors" value={String(vendorKpis.total)} S={S} />
+            </div>
+            <div style={S.smallNote}>(KPIs are for selected date range, HR/Vendors are overall because many HR/Vendor records may not have dates.)</div>
+          </section>
+
+          {/* Events */}
+          <section style={S.panel}>
+            <div style={S.panelTitle}>Events Report</div>
+            {eventsInRange.length ? (
+              <>
+                <div style={S.sectionTitle}>Status breakdown</div>
+                <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                  {eventStatus.slice(0, 6).map(([st, c]) => (
+                    <BarRow key={st} label={st} value={c} max={eventStatus[0]?.[1] ?? c} S={S} />
+                  ))}
+                </div>
+
+                <div style={S.sectionTitle}>Recent events</div>
+                <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                  {eventsInRange
+                    .slice()
+                    .sort((a, b) => (a.date < b.date ? 1 : -1))
+                    .slice(0, 8)
+                    .map((e) => (
+                      <div key={e.id} style={S.itemCard}>
+                        <div style={S.rowBetween}>
+                          <div style={{ fontWeight: 950 }}>{e.title}</div>
+                          <span style={S.pill}>{e.status}</span>
+                        </div>
+                        <div style={S.smallMuted}>
+                          {e.date} • {e.city || "—"} {typeof e.budget === "number" ? `• Budget ${formatCurrency(e.budget)}` : ""}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </>
+            ) : (
+              <div style={S.muted}>No events found in this range.</div>
+            )}
+          </section>
+
+          {/* Finance */}
+          <section style={S.panel}>
+            <div style={S.panelTitle}>Finance Report</div>
+            <div style={S.kpiRow}>
+              <KPI label="Income" value={formatCurrency(finTotals.income)} S={S} />
+              <KPI label="Expense" value={formatCurrency(finTotals.expense)} S={S} />
+              <KPI label="Net" value={formatCurrency(finTotals.net)} S={S} />
+              <KPI label="Tx Count" value={String(txsInRange.length)} S={S} />
+            </div>
+
+            <div style={S.sectionTitle}>Top Expenses</div>
+            {topExp.length ? (
+              <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                {topExp.map((x) => (
+                  <div key={x.category} style={S.rowBetween}>
+                    <div style={{ fontWeight: 950 }}>{x.category}</div>
+                    <div style={S.muted}>{formatCurrency(x.amount)}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={S.muted}>No expense data in this range.</div>
+            )}
+
+            <div style={S.sectionTitle}>Top Income</div>
+            {topInc.length ? (
+              <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                {topInc.map((x) => (
+                  <div key={x.category} style={S.rowBetween}>
+                    <div style={{ fontWeight: 950 }}>{x.category}</div>
+                    <div style={S.muted}>{formatCurrency(x.amount)}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={S.muted}>No income data in this range.</div>
+            )}
+          </section>
+
+          {/* HR */}
+          <section style={S.panel}>
+            <div style={S.panelTitle}>HR Report</div>
+            <div style={S.kpiRow}>
+              <KPI label="Total Staff" value={String(hrKpis.total)} S={S} />
+              <KPI label="Active" value={String(hrKpis.active)} S={S} />
+              <KPI label="Freelancers" value={String(hrKpis.freelancers)} S={S} />
+              <KPI label="Avg Workload" value={`${hrKpis.avgWorkload}%`} S={S} />
+            </div>
+
+            {hrKpis.payroll > 0 ? <div style={S.noteBox}>Estimated Monthly Payroll: {formatCurrency(hrKpis.payroll)}</div> : null}
+
+            <div style={S.sectionTitle}>High workload (>=80%)</div>
+            {team.filter((m) => (m.workload ?? 0) >= 80).length ? (
+              <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                {team
+                  .filter((m) => (m.workload ?? 0) >= 80)
+                  .slice(0, 8)
+                  .map((m) => (
+                    <div key={m.id} style={S.itemCard}>
+                      <div style={S.rowBetween}>
+                        <div style={{ fontWeight: 950 }}>{m.name}</div>
+                        <span style={S.pill}>{m.workload}%</span>
+                      </div>
+                      <div style={S.smallMuted}>
+                        {m.role || "—"} • {m.city || "—"} • {m.status || "—"}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            ) : (
+              <div style={S.muted}>No one above 80% workload.</div>
+            )}
+
+            {isCEO ? (
+              <div style={S.rowBetween}>
+                <div style={S.smallNote}>Export HR list as CSV</div>
+                <button style={S.secondaryBtn} onClick={() => exportCSV(`eventura_hr_${today}.csv`, team)}>
+                  Export HR CSV
+                </button>
+              </div>
+            ) : null}
+          </section>
+
+          {/* Vendors */}
+          <section style={S.panel}>
+            <div style={S.panelTitle}>Vendors Report</div>
+            <div style={S.kpiRow}>
+              <KPI label="Total" value={String(vendorKpis.total)} S={S} />
+              <KPI label="Active" value={String(vendorKpis.active)} S={S} />
+              <KPI label="Top Rated" value={String(vendorKpis.topRated.length)} S={S} />
+              <KPI label="Cities" value={String(new Set(vendors.map((v) => v.city || "—")).size)} S={S} />
+            </div>
+
+            <div style={S.sectionTitle}>Top rated vendors</div>
+            {vendorKpis.topRated.length ? (
+              <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                {vendorKpis.topRated.map((v) => (
+                  <div key={v.id} style={S.itemCard}>
+                    <div style={S.rowBetween}>
+                      <div style={{ fontWeight: 950 }}>{v.name}</div>
+                      <span style={S.pill}>{typeof v.rating === "number" ? `⭐ ${v.rating}` : "—"}</span>
+                    </div>
+                    <div style={S.smallMuted}>
+                      {v.category || "—"} • {v.city || "—"} • {v.phone || "—"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={S.muted}>No ratings yet.</div>
+            )}
+
+            {isCEO ? (
+              <div style={S.rowBetween}>
+                <div style={S.smallNote}>Export vendor list as CSV</div>
+                <button style={S.secondaryBtn} onClick={() => exportCSV(`eventura_vendors_${today}.csv`, vendors)}>
+                  Export Vendors CSV
+                </button>
+              </div>
+            ) : null}
+          </section>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
 
-/* ================= UI PARTS ================= */
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={S.field}>
-      <div style={S.label}>{label}</div>
-      {children}
-    </div>
-  );
-}
-function KPI({ label, value }: { label: string; value: any }) {
+/* ================= UI ================= */
+function KPI({ label, value, S }: { label: string; value: string; S: Record<string, CSSProperties> }) {
   return (
     <div style={S.kpi}>
       <div style={S.kpiLabel}>{label}</div>
@@ -624,159 +808,243 @@ function KPI({ label, value }: { label: string; value: any }) {
   );
 }
 
+function BarRow({ label, value, max, S }: { label: string; value: number; max: number; S: Record<string, CSSProperties> }) {
+  const pct = max ? Math.round((value / max) * 100) : 0;
+  return (
+    <div style={S.barRow}>
+      <div style={{ fontWeight: 950 }}>{label}</div>
+      <div style={S.barWrap}>
+        <div style={{ ...S.barFill, width: `${pct}%` }} />
+      </div>
+      <div style={S.smallMuted}>{value}</div>
+    </div>
+  );
+}
+
 /* ================= STYLES ================= */
-const S: Record<string, React.CSSProperties> = {
-  page: {
-    minHeight: "100vh",
-    padding: 16,
-    background:
-      "radial-gradient(1200px 800px at 20% 10%, rgba(255,215,110,0.18), transparent 60%), radial-gradient(900px 700px at 80% 20%, rgba(120,70,255,0.18), transparent 55%), #050816",
-    color: "#F9FAFB",
-    fontFamily:
-      'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
-  },
-  shell: { maxWidth: 1100, margin: "0 auto", display: "grid", gap: 12 },
+function makeStyles(T: any, settings: AppSettings): Record<string, CSSProperties> {
+  const compact = !!settings.compactTables;
 
-  topRow: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 },
-  h1: { fontSize: 26, fontWeight: 950 },
-  muted: { color: "#9CA3AF", fontSize: 13, marginTop: 6 },
-  smallMuted: { color: "#9CA3AF", fontSize: 12 },
+  return {
+    app: {
+      minHeight: "100vh",
+      display: "flex",
+      background: `radial-gradient(1200px 800px at 20% 10%, ${T.glow1}, transparent 60%),
+                   radial-gradient(900px 700px at 80% 20%, ${T.glow2}, transparent 55%),
+                   ${T.bg}`,
+      color: T.text,
+      fontFamily:
+        'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
+    },
 
-  msg: {
-    padding: 10,
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.05)",
-    color: "#E5E7EB",
-    fontSize: 13,
-  },
+    sidebar: {
+      position: "sticky",
+      top: 0,
+      height: "100vh",
+      padding: 12,
+      borderRight: `1px solid ${T.border}`,
+      background: T.panel2,
+      backdropFilter: "blur(10px)",
+      display: "flex",
+      flexDirection: "column",
+      gap: 12,
+    },
+    brandRow: { display: "flex", alignItems: "center", gap: 10, padding: "8px 8px" },
+    logoCircle: {
+      width: 38,
+      height: 38,
+      borderRadius: 12,
+      display: "grid",
+      placeItems: "center",
+      fontWeight: 950,
+      background: `linear-gradient(135deg, ${T.accentBg}, rgba(255,255,255,0.06))`,
+      border: `1px solid ${T.accentBd}`,
+      color: T.accentTx,
+    },
+    brandName: { fontWeight: 950, lineHeight: 1.1 },
+    brandSub: { color: T.muted, fontSize: 12, marginTop: 2 },
 
-  panel: {
-    background: "rgba(11,16,32,0.78)",
-    border: "1px solid rgba(255,255,255,0.10)",
-    borderRadius: 18,
-    padding: 14,
-    backdropFilter: "blur(10px)",
-  },
-  panelTitle: { fontWeight: 950, color: "#FDE68A", marginBottom: 10 },
+    nav: { display: "grid", gap: 8 },
+    navItem: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      padding: "10px 10px",
+      borderRadius: 14,
+      textDecoration: "none",
+      color: T.text,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+    },
+    navIcon: { fontSize: 18, width: 22, textAlign: "center" },
+    navLabel: { fontWeight: 900, fontSize: 13 },
 
-  grid5: { display: "grid", gridTemplateColumns: "220px 1fr 1fr 1fr 1fr", gap: 12 },
-  field: { display: "grid", gap: 8 },
-  label: { fontSize: 12, color: "#A7B0C0", fontWeight: 900 },
+    sidebarFooter: { marginTop: "auto", display: "grid", gap: 10 },
+    userBox: {
+      padding: 12,
+      borderRadius: 16,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+    },
+    userLabel: { fontSize: 12, color: T.muted, fontWeight: 900 },
+    userEmail: { fontSize: 13, fontWeight: 900, marginTop: 6, wordBreak: "break-word" },
+    roleBadge: {
+      marginTop: 10,
+      display: "inline-flex",
+      alignItems: "center",
+      padding: "5px 10px",
+      borderRadius: 999,
+      background: T.accentBg,
+      border: `1px solid ${T.accentBd}`,
+      color: T.accentTx,
+      fontWeight: 950,
+      width: "fit-content",
+    },
+    roleBadgeSmall: {
+      display: "inline-flex",
+      justifyContent: "center",
+      padding: "6px 8px",
+      borderRadius: 999,
+      background: T.accentBg,
+      border: `1px solid ${T.accentBd}`,
+      color: T.accentTx,
+      fontWeight: 950,
+    },
+    signOutBtn: {
+      padding: "10px 12px",
+      borderRadius: 14,
+      border: `1px solid ${T.dangerBd}`,
+      background: T.dangerBg,
+      color: T.dangerTx,
+      fontWeight: 950,
+      cursor: "pointer",
+    },
 
-  input: {
-    width: "100%",
-    padding: "12px 12px",
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "rgba(255,255,255,0.06)",
-    color: "#F9FAFB",
-    outline: "none",
-    fontSize: 14,
-  },
+    main: { flex: 1, padding: 16, maxWidth: 1400, margin: "0 auto", width: "100%" },
+    header: {
+      display: "flex",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: 12,
+      padding: 12,
+      borderRadius: 18,
+      border: `1px solid ${T.border}`,
+      background: T.panel,
+      backdropFilter: "blur(10px)",
+    },
+    headerRight: { display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" },
 
-  /* ✅ HOVER FIX: dark select + dark options */
-  select: {
-    width: "100%",
-    padding: "12px 12px",
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "rgba(255,255,255,0.06)",
-    color: "#F9FAFB",
-    outline: "none",
-    fontSize: 14,
-    fontWeight: 900,
-    appearance: "none",
-    WebkitAppearance: "none",
-    MozAppearance: "none",
-  },
-  option: { backgroundColor: "#0B1020", color: "#F9FAFB" },
+    h1: { fontSize: 26, fontWeight: 950 },
+    muted: { color: T.muted, fontSize: 13, marginTop: 6 },
+    smallMuted: { color: T.muted, fontSize: 12 },
 
-  row: { display: "flex", gap: 10, alignItems: "center" },
-  rowBetween: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 },
+    rolePill: {
+      display: "inline-block",
+      padding: "4px 10px",
+      borderRadius: 999,
+      fontWeight: 950,
+      background: T.accentBg,
+      border: `1px solid ${T.accentBd}`,
+      color: T.accentTx,
+      marginLeft: 6,
+    },
 
-  primaryBtn: {
-    padding: "10px 14px",
-    borderRadius: 14,
-    border: "1px solid rgba(212,175,55,0.35)",
-    background: "linear-gradient(135deg, rgba(212,175,55,0.32), rgba(139,92,246,0.22))",
-    color: "#FFF",
-    fontWeight: 950,
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-  },
-  ghostBtn: {
-    padding: "10px 14px",
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.16)",
-    background: "rgba(255,255,255,0.06)",
-    color: "#E5E7EB",
-    fontWeight: 950,
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-  },
-  dangerBtn: {
-    padding: "10px 14px",
-    borderRadius: 14,
-    border: "1px solid rgba(248,113,113,0.30)",
-    background: "rgba(248,113,113,0.10)",
-    color: "#FCA5A5",
-    fontWeight: 950,
-    cursor: "pointer",
-    whiteSpace: "nowrap",
-  },
+    rangeBar: {
+      marginTop: 12,
+      padding: 12,
+      borderRadius: 18,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+      display: "grid",
+      gap: 10,
+    },
 
-  kpiRow: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 },
-  kpi: {
-    padding: 12,
-    borderRadius: 16,
-    background: "rgba(255,255,255,0.05)",
-    border: "1px solid rgba(255,255,255,0.10)",
-  },
-  kpiLabel: { color: "#9CA3AF", fontSize: 12, fontWeight: 900 },
-  kpiValue: { marginTop: 6, fontSize: 20, fontWeight: 950 },
+    input: {
+      width: 210,
+      padding: compact ? "10px 10px" : "12px 12px",
+      borderRadius: 14,
+      border: `1px solid ${T.border}`,
+      background: T.inputBg,
+      color: T.text,
+      outline: "none",
+      fontSize: 14,
+    },
 
-  split: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 },
-  box: {
-    padding: 12,
-    borderRadius: 16,
-    background: "rgba(255,255,255,0.04)",
-    border: "1px solid rgba(255,255,255,0.10)",
-  },
-  boxTitle: { fontWeight: 950, marginBottom: 10 },
+    secondaryBtn: {
+      padding: "10px 12px",
+      borderRadius: 14,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+      color: T.text,
+      fontWeight: 950,
+      cursor: "pointer",
+    },
 
-  breakRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 },
-  pill: {
-    fontSize: 12,
-    padding: "6px 10px",
-    borderRadius: 999,
-    background: "rgba(139,92,246,0.12)",
-    border: "1px solid rgba(139,92,246,0.22)",
-    color: "#E9D5FF",
-    fontWeight: 950,
-    whiteSpace: "nowrap",
-  },
+    grid: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
+    panel: {
+      padding: 14,
+      borderRadius: 18,
+      border: `1px solid ${T.border}`,
+      background: T.panel,
+      backdropFilter: "blur(10px)",
+    },
+    panelTitle: { fontWeight: 950, color: T.accentTx },
 
-  previewRow: {
-    padding: 10,
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(11,16,32,0.65)",
-  },
-  previewMeta: { marginTop: 6, color: "#C7CFDD", fontSize: 12 },
+    kpiRow: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 },
+    kpi: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft },
+    kpiLabel: { color: T.muted, fontSize: 12, fontWeight: 900 },
+    kpiValue: { marginTop: 6, fontSize: 18, fontWeight: 950 },
 
-  empty: { color: "#A7B0C0", fontSize: 13, padding: 10 },
+    sectionTitle: { marginTop: 14, fontWeight: 950, fontSize: 13 },
 
-  card: {
-    padding: 12,
-    borderRadius: 16,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: "rgba(255,255,255,0.04)",
-  },
-  cardTitle: { fontWeight: 950, fontSize: 15 },
-  cardSub: { marginTop: 4, color: "#A7B0C0", fontSize: 12 },
+    itemCard: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft },
+    rowBetween: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 },
 
-  footerNote: { color: "#A7B0C0", fontSize: 12, textAlign: "center", padding: 6 },
-};
+    pill: {
+      padding: "5px 10px",
+      borderRadius: 999,
+      border: `1px solid ${T.accentBd}`,
+      background: T.accentBg,
+      color: T.accentTx,
+      fontWeight: 950,
+      fontSize: 12,
+      whiteSpace: "nowrap",
+    },
 
-/* ================= END ================= */
+    noteBox: {
+      marginTop: 12,
+      padding: 12,
+      borderRadius: 16,
+      border: `1px solid ${T.okBd}`,
+      background: T.okBg,
+      color: T.okTx,
+      fontSize: 13,
+      lineHeight: 1.35,
+    },
+
+    summaryLine: {
+      padding: "10px 12px",
+      borderRadius: 14,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+      fontWeight: 900,
+      color: T.text,
+    },
+
+    barRow: { display: "grid", gridTemplateColumns: "1fr 2fr 50px", gap: 10, alignItems: "center" },
+    barWrap: { height: 10, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" },
+    barFill: { height: "100%", borderRadius: 999, background: T.accentTx, opacity: 0.9 },
+
+    smallNote: { color: T.muted, fontSize: 12, lineHeight: 1.35 },
+
+    loadingBar: {
+      marginTop: 12,
+      padding: 10,
+      borderRadius: 14,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+      color: T.muted,
+      fontSize: 12,
+    },
+  };
+}
