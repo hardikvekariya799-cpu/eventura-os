@@ -1,22 +1,21 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import Link from "next/link";
+import { createClient, User } from "@supabase/supabase-js";
 
+/* ================= AUTH / SUPABASE (SAFE) ================= */
 type Role = "CEO" | "Staff";
-type TaskStatus = "Not Started" | "In progress" | "Complete";
+type Profile = { id: string; email: string | null; role: Role };
 
 type TaskItem = {
   id: string;
   title: string;
   note?: string;
-  status: TaskStatus;
-  assignedTo: Role;
+  status: "Not Started" | "In progress" | "Complete";
+  assignedTo: "CEO" | "Staff";
   createdAt: string;
 };
-
-const CEO_EMAIL = process.env.NEXT_PUBLIC_CEO_EMAIL || "hardikvekariya799@gmail.com";
-const STAFF_EMAIL = process.env.NEXT_PUBLIC_STAFF_EMAIL || "eventurastaff@gmail.com";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
@@ -27,10 +26,6 @@ const LS_TASKS = "eventura_os_tasks_v1";
 
 function uid() {
   return Math.random().toString(16).slice(2) + "-" + Date.now().toString(16);
-}
-function roleFromEmail(email: string | null | undefined): Role {
-  if (!email) return "Staff";
-  return email.toLowerCase() === CEO_EMAIL.toLowerCase() ? "CEO" : "Staff";
 }
 function loadTasks(): TaskItem[] {
   if (typeof window === "undefined") return [];
@@ -47,16 +42,23 @@ function saveTasks(tasks: TaskItem[]) {
 }
 
 export default function DashboardPage() {
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
+  const [email, setEmail] = useState("hardikvekariya799@gmail.com");
+  const [password, setPassword] = useState("");
+
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const [email, setEmail] = useState<string | null>(null);
-  const [role, setRole] = useState<Role>("Staff");
+  const [err, setErr] = useState<string | null>(null);
+
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
 
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [newTitle, setNewTitle] = useState("");
   const [newNote, setNewNote] = useState("");
-  const [newAssign, setNewAssign] = useState<Role>("Staff");
+  const [newAssign, setNewAssign] = useState<"CEO" | "Staff">("Staff");
+
+  const role: Role | null = profile?.role ?? null;
 
   useEffect(() => {
     setTasks(loadTasks());
@@ -68,35 +70,129 @@ export default function DashboardPage() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      setErr("");
+      setErr(null);
 
       if (!supabase) {
-        setErr("Supabase env missing on Vercel.");
         setLoading(false);
+        setErr(
+          "Supabase env missing. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel."
+        );
         return;
       }
 
       const { data } = await supabase.auth.getSession();
-      const sessionEmail = data.session?.user?.email ?? null;
+      const sessionUser = data.session?.user ?? null;
+      setUser(sessionUser);
 
-      if (!sessionEmail) {
-        // Not signed in → go login
-        window.location.href = "/login";
-        return;
+      if (sessionUser) {
+        await fetchProfile(sessionUser.id);
       }
-
-      setEmail(sessionEmail);
-      setRole(roleFromEmail(sessionEmail));
       setLoading(false);
+
+      const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        const u = session?.user ?? null;
+        setUser(u);
+        setProfile(null);
+        if (u) await fetchProfile(u.id);
+      });
+
+      return () => sub.subscription.unsubscribe();
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const myTasks = useMemo(() => tasks.filter((t) => t.assignedTo === role), [tasks, role]);
+  async function fetchProfile(uid: string) {
+    if (!supabase) return;
+    setErr(null);
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id,email,role")
+      .eq("id", uid)
+      .maybeSingle();
+
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+
+    if (!data) {
+      const me = (await supabase.auth.getUser()).data.user;
+      const myEmail = me?.email ?? null;
+      const myRole: Role =
+        (myEmail || "").toLowerCase() === "hardikvekariya799@gmail.com" ? "CEO" : "Staff";
+
+      const { data: inserted, error: insErr } = await supabase
+        .from("profiles")
+        .insert({ id: uid, email: myEmail, role: myRole })
+        .select("id,email,role")
+        .single();
+
+      if (insErr) {
+        setErr(insErr.message);
+        return;
+      }
+      setProfile(inserted as Profile);
+      return;
+    }
+
+    setProfile(data as Profile);
+  }
+
+  async function handleAuth() {
+    setErr(null);
+    setBusy(true);
+    try {
+      if (!supabase) throw new Error("Supabase not configured.");
+      if (!email.trim() || !password.trim()) throw new Error("Email and password required.");
+
+      if (authMode === "signup") {
+        const { error } = await supabase.auth.signUp({ email: email.trim(), password });
+        if (error) throw error;
+
+        const { error: e2 } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+        if (e2) throw e2;
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+        if (error) throw error;
+      }
+    } catch (e: any) {
+      setErr(e?.message || "Auth failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function signOut() {
+    setErr(null);
+    setBusy(true);
+    try {
+      if (!supabase) return;
+      await supabase.auth.signOut();
+      setUser(null);
+      setProfile(null);
+      window.location.href = "/login";
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const myTasks = useMemo(() => {
+    if (!role) return [];
+    return tasks.filter((t) => t.assignedTo === role);
+  }, [tasks, role]);
+
   const staffTasks = useMemo(() => tasks.filter((t) => t.assignedTo === "Staff"), [tasks]);
   const ceoTasks = useMemo(() => tasks.filter((t) => t.assignedTo === "CEO"), [tasks]);
 
   function addTask() {
-    setErr("");
+    setErr(null);
     const title = newTitle.trim();
     if (!title) {
       setErr("Task title required.");
@@ -123,31 +219,73 @@ export default function DashboardPage() {
     setTasks((prev) => prev.filter((t) => t.id !== id));
   }
 
-  async function signOut() {
-    setBusy(true);
-    setErr("");
-    try {
-      if (!supabase) return;
-      await supabase.auth.signOut();
-      window.location.href = "/login";
-    } catch (e: any) {
-      setErr(e?.message || "Sign out failed.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   if (loading) {
     return (
       <div style={styles.page}>
         <div style={styles.card}>
           <div style={styles.h1}>Eventura OS</div>
-          <div style={styles.muted}>Loading dashboard…</div>
+          <div style={styles.muted}>Loading…</div>
         </div>
       </div>
     );
   }
 
+  // AUTH SCREEN (IF YOU EVER LAND HERE)
+  if (!user) {
+    return (
+      <div style={styles.page}>
+        <div style={styles.card}>
+          <div style={styles.h1}>Eventura OS</div>
+          <div style={styles.muted}>Sign in to continue</div>
+          {err ? <div style={styles.err}>{err}</div> : null}
+
+          <div style={styles.segment}>
+            <button
+              style={{ ...styles.segBtn, ...(authMode === "signin" ? styles.segActive : null) }}
+              onClick={() => setAuthMode("signin")}
+              disabled={busy}
+            >
+              Sign In
+            </button>
+            <button
+              style={{ ...styles.segBtn, ...(authMode === "signup" ? styles.segActive : null) }}
+              onClick={() => setAuthMode("signup")}
+              disabled={busy}
+            >
+              Create Account
+            </button>
+          </div>
+
+          <div style={styles.field}>
+            <label style={styles.label}>Email</label>
+            <input
+              style={styles.input}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
+            />
+          </div>
+
+          <div style={styles.field}>
+            <label style={styles.label}>Password</label>
+            <input
+              style={styles.input}
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete={authMode === "signup" ? "new-password" : "current-password"}
+            />
+          </div>
+
+          <button style={styles.primaryBtn} onClick={handleAuth} disabled={busy}>
+            {busy ? "Please wait…" : authMode === "signup" ? "Create Account" : "Sign In"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // LOGGED IN
   return (
     <div style={styles.page}>
       <div style={{ ...styles.card, maxWidth: 1100 }}>
@@ -155,41 +293,58 @@ export default function DashboardPage() {
           <div>
             <div style={styles.h1}>Eventura OS Dashboard</div>
             <div style={styles.muted}>
-              Logged in as <b>{email}</b> • Role: <span style={styles.rolePill}>{role}</span>
+              Logged in as <b>{profile?.email || email}</b> • Role:{" "}
+              <span style={styles.rolePill}>{profile?.role || "Staff"}</span>
             </div>
           </div>
           <button style={styles.ghostBtn} onClick={signOut} disabled={busy}>
-            {busy ? "Signing out…" : "Sign Out"}
+            Sign Out
           </button>
         </div>
 
         {err ? <div style={styles.err}>{err}</div> : null}
 
+        {/* ✅ NEW: QUICK NAV TABS */}
+        <div style={styles.navGrid}>
+          <Link style={styles.navBtn} href="/events">Events</Link>
+          <Link style={styles.navBtn} href="/vendors">Vendors</Link>
+          <Link style={styles.navBtn} href="/finance">Finance</Link>
+          <Link style={styles.navBtn} href="/ai">AI</Link>
+          <Link style={styles.navBtn} href="/hr">HR</Link>
+          <Link style={styles.navBtn} href="/reports">Reports</Link>
+          <Link style={styles.navBtn} href="/settings">Settings</Link>
+        </div>
+
         <div style={styles.grid2}>
+          {/* LEFT: TASKS */}
           <div style={styles.panel}>
             <div style={styles.panelTitle}>Tasks</div>
 
             {role === "CEO" ? (
               <div style={styles.addBox}>
-                <input
-                  style={styles.input}
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  placeholder="Add a task (Follow up leads, vendor booking, budget review)"
-                />
-                <textarea
-                  style={styles.textarea}
-                  value={newNote}
-                  onChange={(e) => setNewNote(e.target.value)}
-                  placeholder="Notes (optional)"
-                />
+                <div style={styles.row}>
+                  <input
+                    style={{ ...styles.input, marginBottom: 0 }}
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    placeholder="Add a task (Follow up leads, vendor booking, budget review)"
+                  />
+                </div>
+                <div style={styles.row}>
+                  <textarea
+                    style={styles.textarea}
+                    value={newNote}
+                    onChange={(e) => setNewNote(e.target.value)}
+                    placeholder="Notes (optional)"
+                  />
+                </div>
                 <div style={styles.rowBetween}>
                   <div style={styles.inline}>
                     <span style={styles.muted}>Assign to:</span>
                     <select
                       style={styles.select}
                       value={newAssign}
-                      onChange={(e) => setNewAssign(e.target.value as Role)}
+                      onChange={(e) => setNewAssign(e.target.value as any)}
                     >
                       <option value="Staff">Staff</option>
                       <option value="CEO">CEO</option>
@@ -199,10 +354,12 @@ export default function DashboardPage() {
                     Add Task
                   </button>
                 </div>
-                <div style={styles.smallNote}>CEO can create tasks for Staff (saved locally for now).</div>
+                <div style={styles.smallNote}>
+                  CEO can create tasks for Staff (saved locally for now).
+                </div>
               </div>
             ) : (
-              <div style={styles.smallNote}>Staff can update status & delete their tasks.</div>
+              <div style={styles.smallNote}>Staff can update status and delete their tasks.</div>
             )}
 
             <TaskList
@@ -213,6 +370,7 @@ export default function DashboardPage() {
             />
           </div>
 
+          {/* RIGHT: CEO / STAFF */}
           <div style={styles.panel}>
             {role === "CEO" ? (
               <>
@@ -222,6 +380,7 @@ export default function DashboardPage() {
                   <KPI label="Staff Tasks" value={staffTasks.length} />
                   <KPI label="CEO Tasks" value={ceoTasks.length} />
                 </div>
+
                 <div style={styles.sectionTitle}>Next Modules</div>
                 <div style={styles.noteBox}>
                   Leads • Finance • HR • Vendors — we can add them now (same style).
@@ -233,10 +392,14 @@ export default function DashboardPage() {
                 <div style={styles.kpiRow}>
                   <KPI label="My Tasks" value={myTasks.length} />
                   <KPI label="Completed" value={myTasks.filter((t) => t.status === "Complete").length} />
-                  <KPI label="In progress" value={myTasks.filter((t) => t.status === "In progress").length} />
+                  <KPI
+                    label="In progress"
+                    value={myTasks.filter((t) => t.status === "In progress").length}
+                  />
                 </div>
+
                 <div style={styles.sectionTitle}>Today Focus</div>
-                <div style={styles.noteBox}>Update tasks as you work. Ask CEO for new tasks.</div>
+                <div style={styles.noteBox}>Update your tasks and ask CEO for new work.</div>
               </>
             )}
           </div>
@@ -264,10 +427,12 @@ function TaskList({
       {tasks.map((t) => (
         <div key={t.id} style={styles.taskCard}>
           <div style={styles.rowBetween}>
-            <div style={{ fontWeight: 900 }}>{t.title}</div>
+            <div style={{ fontWeight: 800 }}>{t.title}</div>
             <div style={styles.inline}>
               {canAssign ? <span style={styles.assignedPill}>Assigned: {t.assignedTo}</span> : null}
-              <button style={styles.dltBtn} onClick={() => onDelete(t.id)}>Delete</button>
+              <button style={styles.dltBtn} onClick={() => onDelete(t.id)}>
+                Delete
+              </button>
             </div>
           </div>
 
@@ -279,7 +444,7 @@ function TaskList({
               <select
                 style={styles.select}
                 value={t.status}
-                onChange={(e) => onUpdate(t.id, { status: e.target.value as TaskStatus })}
+                onChange={(e) => onUpdate(t.id, { status: e.target.value as any })}
               >
                 <option>Not Started</option>
                 <option>In progress</option>
@@ -294,7 +459,7 @@ function TaskList({
   );
 }
 
-function KPI({ label, value }: { label: string; value: number }) {
+function KPI({ label, value }: { label: string; value: any }) {
   return (
     <div style={styles.kpi}>
       <div style={styles.kpiLabel}>{label}</div>
@@ -327,7 +492,7 @@ const styles: Record<string, React.CSSProperties> = {
     backdropFilter: "blur(10px)",
   },
   topRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 },
-  h1: { fontSize: 26, fontWeight: 950 },
+  h1: { fontSize: 24, fontWeight: 950 },
   muted: { color: "#9CA3AF", fontSize: 13, marginTop: 6 },
   smallMuted: { color: "#9CA3AF", fontSize: 12 },
   rolePill: {
@@ -349,17 +514,24 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     lineHeight: 1.4,
   },
-  ghostBtn: {
+
+  navGrid: {
+    marginTop: 14,
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr 1fr",
+    gap: 10,
+  },
+  navBtn: {
+    textDecoration: "none",
+    textAlign: "center",
     padding: "10px 12px",
     borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.16)",
-    background: "rgba(255,255,255,0.06)",
-    color: "#E5E7EB",
-    fontWeight: 900,
-    cursor: "pointer",
-    whiteSpace: "nowrap",
+    border: "1px solid rgba(212,175,55,0.35)",
+    background: "linear-gradient(135deg, rgba(212,175,55,0.32), rgba(139,92,246,0.22))",
+    color: "#FFF",
+    fontWeight: 950,
   },
-  smallNote: { marginTop: 10, fontSize: 12, color: "#A7B0C0", lineHeight: 1.35 },
+
   grid2: { marginTop: 14, display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 12 },
   panel: {
     background: "rgba(255,255,255,0.04)",
@@ -368,17 +540,18 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 14,
   },
   panelTitle: { fontSize: 14, fontWeight: 950, marginBottom: 10, color: "#FDE68A" },
+
   addBox: {
     padding: 12,
     borderRadius: 14,
     background: "rgba(212,175,55,0.07)",
     border: "1px solid rgba(212,175,55,0.18)",
     marginBottom: 12,
-    display: "grid",
-    gap: 10,
   },
+  row: { display: "flex", gap: 10, marginTop: 10 },
   rowBetween: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 },
-  inline: { display: "flex", alignItems: "center", gap: 10 },
+  inline: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" },
+  label: { display: "block", fontSize: 12, color: "#9CA3AF", marginBottom: 8, fontWeight: 800 },
   input: {
     width: "100%",
     padding: "12px 12px",
@@ -419,6 +592,18 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 950,
     cursor: "pointer",
   },
+  ghostBtn: {
+    padding: "10px 12px",
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.16)",
+    background: "rgba(255,255,255,0.06)",
+    color: "#E5E7EB",
+    fontWeight: 900,
+    cursor: "pointer",
+    whiteSpace: "nowrap",
+  },
+  smallNote: { marginTop: 12, fontSize: 12, color: "#A7B0C0", lineHeight: 1.35 },
+
   taskCard: {
     padding: 12,
     borderRadius: 14,
@@ -445,6 +630,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 900,
     cursor: "pointer",
   },
+
   kpiRow: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 10 },
   kpi: {
     padding: 12,
@@ -454,6 +640,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   kpiLabel: { color: "#9CA3AF", fontSize: 12, fontWeight: 800 },
   kpiValue: { marginTop: 6, fontSize: 22, fontWeight: 950 },
+
   sectionTitle: { marginTop: 14, fontWeight: 950, color: "#E5E7EB", fontSize: 13 },
   noteBox: {
     marginTop: 10,
