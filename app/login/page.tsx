@@ -3,20 +3,16 @@
 import React, { useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
-type RoleTab = "CEO" | "Staff";
+type Tab = "CEO" | "Staff";
 
 const CEO_EMAIL = "hardikvekariya799@gmail.com";
 const STAFF_EMAIL = "eventurastaff@gmail.com";
 
-// ✅ Set your passwords here (change anytime)
 const DEFAULT_CEO_PASSWORD = "Hardik@9727";
 const DEFAULT_STAFF_PASSWORD = "Eventura@79";
 
-// Supabase env
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-
-// Create client ONLY if env exists (prevents runtime crash)
 const supabase =
   supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
@@ -28,27 +24,68 @@ function setSessionEmail(email: string) {
   )}; Path=/; Max-Age=31536000; SameSite=Lax`;
 }
 
-function hardBlockCrossLogin(selectedTab: RoleTab, usedEmail: string) {
-  const ok =
-    (selectedTab === "CEO" && usedEmail.toLowerCase() === CEO_EMAIL.toLowerCase()) ||
-    (selectedTab === "Staff" && usedEmail.toLowerCase() === STAFF_EMAIL.toLowerCase());
-  return ok;
+function hardBlockCrossLogin(tab: Tab, email: string) {
+  const e = email.toLowerCase();
+  return (tab === "CEO" && e === CEO_EMAIL.toLowerCase()) || (tab === "Staff" && e === STAFF_EMAIL.toLowerCase());
 }
 
 export default function LoginPage() {
-  const [tab, setTab] = useState<RoleTab>("CEO");
+  const [tab, setTab] = useState<Tab>("CEO");
   const email = useMemo(() => (tab === "CEO" ? CEO_EMAIL : STAFF_EMAIL), [tab]);
 
-  const [password, setPassword] = useState<string>(DEFAULT_CEO_PASSWORD);
+  const [password, setPassword] = useState(DEFAULT_CEO_PASSWORD);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string>("");
-  const [err, setErr] = useState<string>("");
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
 
-  function switchTab(next: RoleTab) {
+  function switchTab(next: Tab) {
     setTab(next);
     setMsg("");
     setErr("");
     setPassword(next === "CEO" ? DEFAULT_CEO_PASSWORD : DEFAULT_STAFF_PASSWORD);
+  }
+
+  async function signIn() {
+    setMsg("");
+    setErr("");
+
+    if (!supabase) {
+      setErr("Supabase env missing on Vercel. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.");
+      return;
+    }
+    if (!password) {
+      setErr("Enter password.");
+      return;
+    }
+    if (!hardBlockCrossLogin(tab, email)) {
+      setErr("Cross-login blocked. Wrong tab/email.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        setErr(error.message);
+        return;
+      }
+
+      const signedEmail = data?.user?.email || email;
+
+      if (!hardBlockCrossLogin(tab, signedEmail)) {
+        await supabase.auth.signOut();
+        setErr("Cross-login blocked. Wrong account for this tab.");
+        return;
+      }
+
+      setSessionEmail(signedEmail);
+      setMsg("✅ Signed in!");
+      window.location.href = "/"; // root will redirect to /login until you add dashboard later
+    } catch (e: any) {
+      setErr(e?.message || "Unknown error");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function createAccount() {
@@ -56,9 +93,7 @@ export default function LoginPage() {
     setErr("");
 
     if (!supabase) {
-      setErr(
-        "Supabase env missing on Vercel. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY."
-      );
+      setErr("Supabase env missing on Vercel. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.");
       return;
     }
     if (!password || password.length < 6) {
@@ -68,71 +103,9 @@ export default function LoginPage() {
 
     setBusy(true);
     try {
-      // Hard prevent cross login by design (email locked)
-      if (!hardBlockCrossLogin(tab, email)) {
-        setErr("Cross-login blocked. Use the correct tab.");
-        return;
-      }
-
       const { error } = await supabase.auth.signUp({ email, password });
-
-      if (error) {
-        // Common: already registered
-        setMsg(`⚠️ ${error.message}`);
-      } else {
-        setMsg("✅ Account created. Now click Sign In.");
-      }
-    } catch (e: any) {
-      setErr(e?.message || "Unknown error");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function signIn() {
-    setMsg("");
-    setErr("");
-
-    if (!supabase) {
-      setErr(
-        "Supabase env missing on Vercel. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY."
-      );
-      return;
-    }
-    if (!password) {
-      setErr("Enter password.");
-      return;
-    }
-
-    setBusy(true);
-    try {
-      // Hard prevent cross login
-      if (!hardBlockCrossLogin(tab, email)) {
-        setErr("Cross-login blocked. Use the correct tab.");
-        return;
-      }
-
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-
-      if (error) {
-        setErr(error.message);
-        return;
-      }
-
-      const signedEmail = data?.user?.email || email;
-
-      // Double-check after sign-in too
-      if (!hardBlockCrossLogin(tab, signedEmail)) {
-        await supabase.auth.signOut();
-        setErr("Cross-login blocked. Wrong account for this tab.");
-        return;
-      }
-
-      // ✅ Fix “always staff view” by setting session email
-      setSessionEmail(signedEmail);
-
-      setMsg("✅ Signed in. Opening Dashboard…");
-      window.location.href = "/dashboard";
+      if (error) setMsg(`⚠️ ${error.message}`);
+      else setMsg("✅ Account created. Now click Sign In.");
     } catch (e: any) {
       setErr(e?.message || "Unknown error");
     } finally {
@@ -144,11 +117,11 @@ export default function LoginPage() {
     <div style={styles.page}>
       <div style={styles.card}>
         <div style={styles.h1}>Eventura OS Login</div>
-        <div style={styles.muted}>CEO & Staff separate login tabs (locked emails)</div>
+        <div style={styles.muted}>CEO & Staff tabs (locked emails)</div>
 
         {!supabase ? (
           <div style={styles.err}>
-            Supabase env missing on this deployment.
+            Supabase env missing (Production).
             <div style={{ marginTop: 8, fontFamily: "monospace", fontSize: 12, lineHeight: 1.5 }}>
               NEXT_PUBLIC_SUPABASE_URL
               <br />
@@ -157,46 +130,28 @@ export default function LoginPage() {
           </div>
         ) : null}
 
-        {/* Tabs */}
         <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-          <button
-            style={{ ...styles.tabBtn, ...(tab === "CEO" ? styles.tabActive : null) }}
-            onClick={() => switchTab("CEO")}
-            disabled={busy}
-          >
+          <button style={{ ...styles.tabBtn, ...(tab === "CEO" ? styles.tabActive : null) }} onClick={() => switchTab("CEO")} disabled={busy}>
             CEO Login
           </button>
-          <button
-            style={{ ...styles.tabBtn, ...(tab === "Staff" ? styles.tabActive : null) }}
-            onClick={() => switchTab("Staff")}
-            disabled={busy}
-          >
+          <button style={{ ...styles.tabBtn, ...(tab === "Staff" ? styles.tabActive : null) }} onClick={() => switchTab("Staff")} disabled={busy}>
             Staff Login
           </button>
         </div>
 
-        {/* Email locked */}
         <div style={styles.field}>
           <label style={styles.label}>Email (locked)</label>
           <input style={styles.input} value={email} readOnly />
         </div>
 
-        {/* Password */}
         <div style={styles.field}>
           <label style={styles.label}>Password</label>
-          <input
-            style={styles.input}
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder={tab === "CEO" ? "Enter CEO password" : "Enter Staff password"}
-          />
+          <input style={styles.input} type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </div>
 
-        {/* Actions */}
         <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
           <button style={styles.ghostBtn} onClick={createAccount} disabled={busy}>
-            {busy ? "Working…" : "Create/Recreate Account"}
+            {busy ? "Working…" : "Create Account"}
           </button>
           <button style={styles.primaryBtn} onClick={signIn} disabled={busy}>
             {busy ? "Signing in…" : "Sign In"}
@@ -207,11 +162,8 @@ export default function LoginPage() {
         {msg ? <div style={styles.ok}>{msg}</div> : null}
 
         <div style={styles.smallNote}>
-          Default accounts:
-          <br />
-          <b>CEO:</b> {CEO_EMAIL}
-          <br />
-          <b>Staff:</b> {STAFF_EMAIL}
+          CEO: <b>{CEO_EMAIL}</b> <br />
+          Staff: <b>{STAFF_EMAIL}</b>
         </div>
       </div>
     </div>
@@ -241,7 +193,7 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: "0 18px 50px rgba(0,0,0,0.45)",
     backdropFilter: "blur(10px)",
   },
-  h1: { fontSize: 26, fontWeight: 950, letterSpacing: 0.2 },
+  h1: { fontSize: 26, fontWeight: 950 },
   muted: { color: "#9CA3AF", fontSize: 13, marginTop: 6 },
   field: { marginTop: 14 },
   label: { display: "block", fontSize: 12, color: "#9CA3AF", marginBottom: 8, fontWeight: 800 },
