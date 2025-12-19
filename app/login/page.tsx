@@ -24,16 +24,33 @@ function setSessionEmail(email: string) {
   )}; Path=/; Max-Age=31536000; SameSite=Lax`;
 }
 
-function hardBlockCrossLogin(tab: Tab, email: string) {
-  const e = email.toLowerCase();
-  return (tab === "CEO" && e === CEO_EMAIL.toLowerCase()) || (tab === "Staff" && e === STAFF_EMAIL.toLowerCase());
+function clearClientSession() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem("eventura_email");
+  document.cookie.split(";").forEach((c) => {
+    document.cookie = c
+      .replace(/^ +/, "")
+      .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+  });
+}
+
+function matchesTab(tab: Tab, email: string) {
+  const e = email.trim().toLowerCase();
+  return (
+    (tab === "CEO" && e === CEO_EMAIL.toLowerCase()) ||
+    (tab === "Staff" && e === STAFF_EMAIL.toLowerCase())
+  );
 }
 
 export default function LoginPage() {
   const [tab, setTab] = useState<Tab>("CEO");
-  const email = useMemo(() => (tab === "CEO" ? CEO_EMAIL : STAFF_EMAIL), [tab]);
+
+  // ✅ Prefill (still locked by default)
+  const lockedEmail = useMemo(() => (tab === "CEO" ? CEO_EMAIL : STAFF_EMAIL), [tab]);
+  const [email, setEmail] = useState<string>(CEO_EMAIL);
 
   const [password, setPassword] = useState(DEFAULT_CEO_PASSWORD);
+
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
@@ -42,50 +59,9 @@ export default function LoginPage() {
     setTab(next);
     setMsg("");
     setErr("");
+    const nextEmail = next === "CEO" ? CEO_EMAIL : STAFF_EMAIL;
+    setEmail(nextEmail);
     setPassword(next === "CEO" ? DEFAULT_CEO_PASSWORD : DEFAULT_STAFF_PASSWORD);
-  }
-
-  async function signIn() {
-    setMsg("");
-    setErr("");
-
-    if (!supabase) {
-      setErr("Supabase env missing on Vercel. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.");
-      return;
-    }
-    if (!password) {
-      setErr("Enter password.");
-      return;
-    }
-    if (!hardBlockCrossLogin(tab, email)) {
-      setErr("Cross-login blocked. Wrong tab/email.");
-      return;
-    }
-
-    setBusy(true);
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) {
-        setErr(error.message);
-        return;
-      }
-
-      const signedEmail = data?.user?.email || email;
-
-      if (!hardBlockCrossLogin(tab, signedEmail)) {
-        await supabase.auth.signOut();
-        setErr("Cross-login blocked. Wrong account for this tab.");
-        return;
-      }
-
-      setSessionEmail(signedEmail);
-      setMsg("✅ Signed in!");
-      window.location.href = "/"; // root will redirect to /login until you add dashboard later
-    } catch (e: any) {
-      setErr(e?.message || "Unknown error");
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function createAccount() {
@@ -93,21 +69,127 @@ export default function LoginPage() {
     setErr("");
 
     if (!supabase) {
-      setErr("Supabase env missing on Vercel. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.");
+      setErr(
+        "Supabase env missing on Vercel. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY."
+      );
       return;
     }
-    if (!password || password.length < 6) {
+    if (!email.trim() || !password.trim()) {
+      setErr("Email and password required.");
+      return;
+    }
+    if (!matchesTab(tab, email)) {
+      setErr(`Wrong email for ${tab}. Use: ${tab === "CEO" ? CEO_EMAIL : STAFF_EMAIL}`);
+      return;
+    }
+    if (password.length < 6) {
       setErr("Password must be at least 6 characters.");
       return;
     }
 
     setBusy(true);
     try {
-      const { error } = await supabase.auth.signUp({ email, password });
-      if (error) setMsg(`⚠️ ${error.message}`);
-      else setMsg("✅ Account created. Now click Sign In.");
+      // Clear any stuck local session (client only)
+      clearClientSession();
+
+      const { error } = await supabase.auth.signUp({ email: email.trim(), password });
+
+      if (error) {
+        // If already registered, tell them to sign in instead
+        setMsg(`⚠️ ${error.message} (If user already exists, just click Sign In.)`);
+        return;
+      }
+
+      setMsg("✅ Account created. Now click Sign In.");
     } catch (e: any) {
-      setErr(e?.message || "Unknown error");
+      setErr(e?.message || "Unknown error creating account.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function signIn() {
+    setMsg("");
+    setErr("");
+
+    if (!supabase) {
+      setErr(
+        "Supabase env missing on Vercel. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY."
+      );
+      return;
+    }
+    if (!email.trim() || !password.trim()) {
+      setErr("Email and password required.");
+      return;
+    }
+    if (!matchesTab(tab, email)) {
+      setErr(`Wrong email for ${tab}. Use: ${tab === "CEO" ? CEO_EMAIL : STAFF_EMAIL}`);
+      return;
+    }
+
+    setBusy(true);
+    try {
+      clearClientSession();
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (error) {
+        // Most common: user not created yet or password mismatch
+        const m = error.message.toLowerCase();
+        if (m.includes("invalid login credentials")) {
+          setErr(
+            "Invalid login credentials. ✅ First click 'Create Account' once (or reset password). Also check Supabase: Auth → Providers → Email → Confirm email should be OFF."
+          );
+        } else {
+          setErr(error.message);
+        }
+        return;
+      }
+
+      const signedEmail = data?.user?.email || email.trim();
+      setSessionEmail(signedEmail);
+
+      setMsg("✅ Signed in! Redirecting…");
+      window.location.href = "/"; // root redirects to /login or your next page
+    } catch (e: any) {
+      setErr(e?.message || "Unknown error signing in.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resetPassword() {
+    setMsg("");
+    setErr("");
+
+    if (!supabase) {
+      setErr(
+        "Supabase env missing on Vercel. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY."
+      );
+      return;
+    }
+    if (!email.trim()) {
+      setErr("Email required.");
+      return;
+    }
+    if (!matchesTab(tab, email)) {
+      setErr(`Wrong email for ${tab}. Use: ${tab === "CEO" ? CEO_EMAIL : STAFF_EMAIL}`);
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim());
+      if (error) {
+        setErr(error.message);
+        return;
+      }
+      setMsg("✅ Password reset email sent. Check inbox/spam.");
+    } catch (e: any) {
+      setErr(e?.message || "Unknown error sending reset email.");
     } finally {
       setBusy(false);
     }
@@ -117,11 +199,11 @@ export default function LoginPage() {
     <div style={styles.page}>
       <div style={styles.card}>
         <div style={styles.h1}>Eventura OS Login</div>
-        <div style={styles.muted}>CEO & Staff tabs (locked emails)</div>
+        <div style={styles.muted}>CEO & Staff tabs (locked accounts)</div>
 
         {!supabase ? (
           <div style={styles.err}>
-            Supabase env missing (Production).
+            Supabase env missing on this deployment.
             <div style={{ marginTop: 8, fontFamily: "monospace", fontSize: 12, lineHeight: 1.5 }}>
               NEXT_PUBLIC_SUPABASE_URL
               <br />
@@ -131,22 +213,36 @@ export default function LoginPage() {
         ) : null}
 
         <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-          <button style={{ ...styles.tabBtn, ...(tab === "CEO" ? styles.tabActive : null) }} onClick={() => switchTab("CEO")} disabled={busy}>
+          <button
+            style={{ ...styles.tabBtn, ...(tab === "CEO" ? styles.tabActive : null) }}
+            onClick={() => switchTab("CEO")}
+            disabled={busy}
+          >
             CEO Login
           </button>
-          <button style={{ ...styles.tabBtn, ...(tab === "Staff" ? styles.tabActive : null) }} onClick={() => switchTab("Staff")} disabled={busy}>
+          <button
+            style={{ ...styles.tabBtn, ...(tab === "Staff" ? styles.tabActive : null) }}
+            onClick={() => switchTab("Staff")}
+            disabled={busy}
+          >
             Staff Login
           </button>
         </div>
 
         <div style={styles.field}>
           <label style={styles.label}>Email (locked)</label>
-          <input style={styles.input} value={email} readOnly />
+          <input style={styles.input} value={lockedEmail} readOnly />
         </div>
 
         <div style={styles.field}>
           <label style={styles.label}>Password</label>
-          <input style={styles.input} type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <input
+            style={styles.input}
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder={tab === "CEO" ? "Enter CEO password" : "Enter Staff password"}
+          />
         </div>
 
         <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
@@ -158,11 +254,16 @@ export default function LoginPage() {
           </button>
         </div>
 
+        <button style={styles.linkBtn} onClick={resetPassword} disabled={busy}>
+          Forgot password? Send reset email
+        </button>
+
         {err ? <div style={styles.err}>{err}</div> : null}
         {msg ? <div style={styles.ok}>{msg}</div> : null}
 
         <div style={styles.smallNote}>
-          CEO: <b>{CEO_EMAIL}</b> <br />
+          CEO: <b>{CEO_EMAIL}</b>
+          <br />
           Staff: <b>{STAFF_EMAIL}</b>
         </div>
       </div>
@@ -240,6 +341,17 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(255,255,255,0.06)",
     color: "#E5E7EB",
     fontWeight: 900,
+    cursor: "pointer",
+  },
+  linkBtn: {
+    width: "100%",
+    marginTop: 10,
+    padding: "10px 12px",
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(255,255,255,0.04)",
+    color: "#E5E7EB",
+    fontWeight: 800,
     cursor: "pointer",
   },
   err: {
