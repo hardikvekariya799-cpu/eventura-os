@@ -1,64 +1,39 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
 
-/* ================== SUPABASE SAFE ================== */
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-const supabase =
-  supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
-
-/* ================== ROLE ================== */
-type Role = "CEO" | "Staff";
-const CEO_EMAIL = process.env.NEXT_PUBLIC_CEO_EMAIL || "hardikvekariya799@gmail.com";
-
-function roleFromEmail(email: string | null | undefined): Role {
-  if (!email) return "Staff";
-  return email.toLowerCase() === CEO_EMAIL.toLowerCase() ? "CEO" : "Staff";
-}
-
-/* ================== EVENT TYPES ================== */
-type EventStatus = "Lead" | "Tentative" | "Confirmed" | "Completed" | "Cancelled";
+/* ================= TYPES ================= */
+type EventStatus =
+  | "Inquiry"
+  | "Planned"
+  | "Confirmed"
+  | "In Progress"
+  | "Completed"
+  | "Cancelled";
 
 type EventItem = {
   id: string;
-  createdAt: string;
-
   title: string;
-  date: string; // YYYY-MM-DD
-  city: string;
-
   clientName: string;
-  clientPhone: string;
-
+  phone?: string;
+  city: string;
+  venue?: string;
+  date: string; // YYYY-MM-DD
+  guests?: number;
+  budget?: number;
   status: EventStatus;
-
-  budget: number; // total budget
-  advancePaid: number; // paid
   notes?: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
-const LS_EVENTS = "eventura_os_events_v2";
+/* ================= STORAGE ================= */
+const LS_EVENTS = "eventura_os_events_v1";
 
-/* ================== HELPERS ================== */
 function uid() {
   return Math.random().toString(16).slice(2) + "-" + Date.now().toString(16);
 }
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-function num(v: any) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-function money(n: number) {
-  try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency: "CAD" }).format(n);
-  } catch {
-    return `$${(n || 0).toFixed(2)}`;
-  }
-}
+
 function loadEvents(): EventItem[] {
   if (typeof window === "undefined") return [];
   try {
@@ -68,678 +43,372 @@ function loadEvents(): EventItem[] {
     return [];
   }
 }
-function saveEvents(events: EventItem[]) {
+
+function saveEvents(items: EventItem[]) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(LS_EVENTS, JSON.stringify(events));
-}
-function downloadText(filename: string, text: string) {
-  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-function toCSV(rows: any[]) {
-  const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  if (!rows.length) return "";
-  const headers = Object.keys(rows[0]);
-  const out = [headers.map(esc).join(",")];
-  for (const r of rows) out.push(headers.map((h) => esc(r[h])).join(","));
-  return out.join("\n");
+  localStorage.setItem(LS_EVENTS, JSON.stringify(items));
 }
 
-/* ================== PAGE ================== */
+/* ================= PAGE ================= */
 export default function EventsPage() {
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string>("");
-  const [email, setEmail] = useState<string | null>(null);
-  const [role, setRole] = useState<Role>("Staff");
-
-  const isCEO = role === "CEO";
-
   const [events, setEvents] = useState<EventItem[]>([]);
   const [q, setQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState<EventStatus | "All">("All");
-  const [cityFilter, setCityFilter] = useState<string>("All");
+  const [statusFilter, setStatusFilter] = useState<"All" | EventStatus>("All");
 
-  // modal editor
-  const [editing, setEditing] = useState<EventItem | null>(null);
+  // form
+  const [title, setTitle] = useState("");
+  const [clientName, setClientName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [city, setCity] = useState("Surat");
+  const [venue, setVenue] = useState("");
+  const [date, setDate] = useState("");
+  const [guests, setGuests] = useState<string>("");
+  const [budget, setBudget] = useState<string>("");
+  const [status, setStatus] = useState<EventStatus>("Planned");
+  const [notes, setNotes] = useState("");
 
-  const [form, setForm] = useState({
-    title: "",
-    date: todayISO(),
-    city: "Surat",
-    clientName: "",
-    clientPhone: "",
-    status: "Lead" as EventStatus,
-    budget: 0,
-    advancePaid: 0,
-    notes: "",
-  });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string>("");
 
-  // boot
   useEffect(() => {
     setEvents(loadEvents());
   }, []);
 
-  // persist
   useEffect(() => {
     saveEvents(events);
   }, [events]);
 
-  // auth
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setErr("");
-
-      // If no supabase, still allow viewing local events, but show warning
-      if (!supabase) {
-        setEmail("(no-supabase-env)");
-        setRole("CEO"); // allow editing locally if env missing (so you can keep working)
-        setErr(
-          "⚠️ Supabase env missing (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY). Events still work locally."
-        );
-        setLoading(false);
-        return;
-      }
-
-      const { data } = await supabase.auth.getSession();
-      const sessionEmail = data.session?.user?.email ?? null;
-
-      if (!sessionEmail) {
-        window.location.href = "/login";
-        return;
-      }
-
-      setEmail(sessionEmail);
-      setRole(roleFromEmail(sessionEmail));
-      setLoading(false);
-    })();
-  }, []);
-
-  const cities = useMemo(() => {
-    const set = new Set(events.map((e) => (e.city || "").trim()).filter(Boolean));
-    return ["All", ...Array.from(set).sort((a, b) => a.localeCompare(b))];
-  }, [events]);
-
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
-    let list = [...events];
-
-    // filters
-    if (statusFilter !== "All") list = list.filter((e) => e.status === statusFilter);
-    if (cityFilter !== "All") list = list.filter((e) => (e.city || "") === cityFilter);
-
-    // search
-    if (s) {
-      list = list.filter((e) => {
+    return events
+      .filter((e) => (statusFilter === "All" ? true : e.status === statusFilter))
+      .filter((e) => {
+        if (!s) return true;
         return (
           e.title.toLowerCase().includes(s) ||
           e.clientName.toLowerCase().includes(s) ||
-          e.clientPhone.toLowerCase().includes(s) ||
           e.city.toLowerCase().includes(s) ||
-          e.status.toLowerCase().includes(s)
+          (e.venue || "").toLowerCase().includes(s) ||
+          (e.phone || "").toLowerCase().includes(s)
         );
-      });
-    }
-
-    // sort by date
-    list.sort((a, b) => (a.date < b.date ? -1 : 1));
-    return list;
-  }, [events, q, statusFilter, cityFilter]);
-
-  const totals = useMemo(() => {
-    const totalBudget = filtered.reduce((sum, e) => sum + num(e.budget), 0);
-    const totalAdvance = filtered.reduce((sum, e) => sum + num(e.advancePaid), 0);
-    return { totalBudget, totalAdvance, totalRemaining: totalBudget - totalAdvance };
-  }, [filtered]);
+      })
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
+  }, [events, q, statusFilter]);
 
   function resetForm() {
-    setForm({
-      title: "",
-      date: todayISO(),
-      city: "Surat",
-      clientName: "",
-      clientPhone: "",
-      status: "Lead",
-      budget: 0,
-      advancePaid: 0,
-      notes: "",
-    });
+    setEditingId(null);
+    setTitle("");
+    setClientName("");
+    setPhone("");
+    setCity("Surat");
+    setVenue("");
+    setDate("");
+    setGuests("");
+    setBudget("");
+    setStatus("Planned");
+    setNotes("");
+    setMsg("");
   }
 
-  function addEvent() {
-    if (!isCEO) return;
-
-    const title = form.title.trim();
-    if (!title) {
-      setErr("❌ Event title is required.");
-      return;
-    }
-
-    const item: EventItem = {
-      id: uid(),
-      createdAt: new Date().toISOString(),
-      title,
-      date: form.date || todayISO(),
-      city: (form.city || "Surat").trim(),
-      clientName: (form.clientName || "").trim(),
-      clientPhone: (form.clientPhone || "").trim(),
-      status: form.status,
-      budget: num(form.budget),
-      advancePaid: num(form.advancePaid),
-      notes: (form.notes || "").trim() || undefined,
-    };
-
-    setEvents((prev) => [item, ...prev]);
-    resetForm();
-    setErr("");
+  function startEdit(item: EventItem) {
+    setEditingId(item.id);
+    setTitle(item.title);
+    setClientName(item.clientName);
+    setPhone(item.phone || "");
+    setCity(item.city);
+    setVenue(item.venue || "");
+    setDate(item.date);
+    setGuests(item.guests?.toString() || "");
+    setBudget(item.budget?.toString() || "");
+    setStatus(item.status);
+    setNotes(item.notes || "");
+    setMsg("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function deleteEvent(id: string) {
-    if (!isCEO) return;
+  function remove(id: string) {
     setEvents((prev) => prev.filter((e) => e.id !== id));
+    setMsg("✅ Event deleted");
+    if (editingId === id) resetForm();
   }
 
-  function openEdit(e: EventItem) {
-    if (!isCEO) return;
-    setEditing(e);
-  }
+  function upsert() {
+    setMsg("");
+    const t = title.trim();
+    const c = clientName.trim();
+    const d = date.trim();
 
-  function saveEdit() {
-    if (!isCEO || !editing) return;
+    if (!t) return setMsg("❌ Event title required");
+    if (!c) return setMsg("❌ Client name required");
+    if (!d) return setMsg("❌ Date required");
 
-    const cleaned: EventItem = {
-      ...editing,
-      title: editing.title.trim(),
-      city: (editing.city || "Surat").trim(),
-      clientName: (editing.clientName || "").trim(),
-      clientPhone: (editing.clientPhone || "").trim(),
-      budget: num(editing.budget),
-      advancePaid: num(editing.advancePaid),
-      notes: (editing.notes || "").trim() || undefined,
-    };
+    const now = new Date().toISOString();
+    const gNum = guests.trim() ? Math.max(0, Number(guests)) : undefined;
+    const bNum = budget.trim() ? Math.max(0, Number(budget)) : undefined;
 
-    if (!cleaned.title) {
-      setErr("❌ Event title is required.");
+    if (guests.trim() && Number.isNaN(Number(guests))) return setMsg("❌ Guests must be a number");
+    if (budget.trim() && Number.isNaN(Number(budget))) return setMsg("❌ Budget must be a number");
+
+    if (!editingId) {
+      const item: EventItem = {
+        id: uid(),
+        title: t,
+        clientName: c,
+        phone: phone.trim() || undefined,
+        city: city.trim() || "Surat",
+        venue: venue.trim() || undefined,
+        date: d,
+        guests: gNum,
+        budget: bNum,
+        status,
+        notes: notes.trim() || undefined,
+        createdAt: now,
+        updatedAt: now,
+      };
+      setEvents((prev) => [item, ...prev]);
+      setMsg("✅ Event added");
+      resetForm();
       return;
     }
 
-    setEvents((prev) => prev.map((x) => (x.id === cleaned.id ? cleaned : x)));
-    setEditing(null);
-    setErr("");
+    // update existing
+    setEvents((prev) =>
+      prev.map((e) =>
+        e.id === editingId
+          ? {
+              ...e,
+              title: t,
+              clientName: c,
+              phone: phone.trim() || undefined,
+              city: city.trim() || "Surat",
+              venue: venue.trim() || undefined,
+              date: d,
+              guests: gNum,
+              budget: bNum,
+              status,
+              notes: notes.trim() || undefined,
+              updatedAt: now,
+            }
+          : e
+      )
+    );
+    setMsg("✅ Event updated");
+    resetForm();
   }
 
-  function exportCSV() {
-    const rows = filtered.map((e) => ({
-      id: e.id,
-      date: e.date,
-      title: e.title,
-      city: e.city,
-      status: e.status,
-      clientName: e.clientName,
-      clientPhone: e.clientPhone,
-      budget: e.budget,
-      advancePaid: e.advancePaid,
-      remaining: num(e.budget) - num(e.advancePaid),
-      notes: e.notes || "",
-      createdAt: e.createdAt,
-    }));
-    const csv = toCSV(rows);
-    downloadText(`eventura-events-${todayISO()}.csv`, csv || "No data");
-  }
-
-  if (loading) {
-    return (
-      <div style={styles.page}>
-        <div style={styles.card}>
-          <div style={styles.h1}>Events</div>
-          <div style={styles.muted}>Loading…</div>
-        </div>
-      </div>
+  // ✅ IMPORTANT: status changes should overwrite saved data immediately
+  function setEventStatus(id: string, next: EventStatus) {
+    const now = new Date().toISOString();
+    setEvents((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, status: next, updatedAt: now } : e))
     );
   }
 
   return (
-    <div style={styles.page}>
-      <div style={{ ...styles.card, maxWidth: 1100 }}>
-        <div style={styles.topRow}>
+    <div style={S.page}>
+      <div style={S.shell}>
+        <div style={S.topRow}>
           <div>
-            <div style={styles.h1}>Events</div>
-            <div style={styles.muted}>
-              Logged in: <b>{email}</b> • Role:{" "}
-              <span style={styles.rolePill}>{role}</span>
+            <div style={S.h1}>Events</div>
+            <div style={S.muted}>
+              Add, update, and track statuses. Status always saves as the latest (Planned → Completed stays Completed).
             </div>
           </div>
-
-          <div style={styles.inline}>
-            <button style={styles.ghostBtn} onClick={exportCSV}>
-              Export CSV
-            </button>
-          </div>
+          <button style={S.ghostBtn} onClick={resetForm}>
+            Clear Form
+          </button>
         </div>
 
-        {err ? <div style={styles.err}>{err}</div> : null}
+        {/* FORM */}
+        <div style={S.panel}>
+          <div style={S.panelTitle}>{editingId ? "Edit Event" : "Create Event"}</div>
 
-        <div style={styles.grid2}>
-          {/* LEFT: ADD + LIST */}
-          <div style={styles.panel}>
-            <div style={styles.panelTitle}>Event Pipeline</div>
+          <div style={S.grid2}>
+            <Field label="Event Title">
+              <input style={S.input} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Wedding • Reception • Engagement" />
+            </Field>
+            <Field label="Client Name">
+              <input style={S.input} value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Client full name" />
+            </Field>
 
-            {/* Add form */}
-            {isCEO ? (
-              <div style={styles.addBox}>
-                <div style={styles.row2}>
-                  <div>
-                    <div style={styles.label}>Date</div>
-                    <input
-                      style={styles.input}
-                      type="date"
-                      value={form.date}
-                      onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <div style={styles.label}>Status</div>
-                    <select
-                      style={styles.select}
-                      value={form.status}
-                      onChange={(e) =>
-                        setForm((p) => ({ ...p, status: e.target.value as EventStatus }))
-                      }
-                    >
-                      <option>Lead</option>
-                      <option>Tentative</option>
-                      <option>Confirmed</option>
-                      <option>Completed</option>
-                      <option>Cancelled</option>
-                    </select>
-                  </div>
-                </div>
+            <Field label="Phone (optional)">
+              <input style={S.input} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91..." />
+            </Field>
+            <Field label="City">
+              <input style={S.input} value={city} onChange={(e) => setCity(e.target.value)} placeholder="Surat / Ahmedabad / Rajkot" />
+            </Field>
 
-                <div style={styles.label}>Event Title</div>
-                <input
-                  style={styles.input}
-                  value={form.title}
-                  onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-                  placeholder="Wedding / Engagement / Corporate Event"
-                />
+            <Field label="Venue (optional)">
+              <input style={S.input} value={venue} onChange={(e) => setVenue(e.target.value)} placeholder="Farmhouse / Banquet / Hotel" />
+            </Field>
+            <Field label="Event Date">
+              <input style={S.input} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </Field>
 
-                <div style={styles.row2}>
-                  <div>
-                    <div style={styles.label}>City</div>
-                    <input
-                      style={styles.input}
-                      value={form.city}
-                      onChange={(e) => setForm((p) => ({ ...p, city: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <div style={styles.label}>Budget</div>
-                    <input
-                      style={styles.input}
-                      type="number"
-                      value={form.budget}
-                      onChange={(e) => setForm((p) => ({ ...p, budget: num(e.target.value) }))}
-                    />
-                  </div>
-                </div>
+            <Field label="Guests (optional)">
+              <input style={S.input} value={guests} onChange={(e) => setGuests(e.target.value)} placeholder="e.g. 250" />
+            </Field>
+            <Field label="Budget (optional)">
+              <input style={S.input} value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="e.g. 500000" />
+            </Field>
 
-                <div style={styles.row2}>
-                  <div>
-                    <div style={styles.label}>Client Name</div>
-                    <input
-                      style={styles.input}
-                      value={form.clientName}
-                      onChange={(e) => setForm((p) => ({ ...p, clientName: e.target.value }))}
-                      placeholder="Client full name"
-                    />
-                  </div>
-                  <div>
-                    <div style={styles.label}>Client Phone</div>
-                    <input
-                      style={styles.input}
-                      value={form.clientPhone}
-                      onChange={(e) => setForm((p) => ({ ...p, clientPhone: e.target.value }))}
-                      placeholder="+91..."
-                    />
-                  </div>
-                </div>
+            <Field label="Status">
+              {/* ✅ DARK SELECT: fixes white hover / unreadable dropdown */}
+              <select style={S.select} value={status} onChange={(e) => setStatus(e.target.value as EventStatus)}>
+                <option style={S.option}>Inquiry</option>
+                <option style={S.option}>Planned</option>
+                <option style={S.option}>Confirmed</option>
+                <option style={S.option}>In Progress</option>
+                <option style={S.option}>Completed</option>
+                <option style={S.option}>Cancelled</option>
+              </select>
+            </Field>
 
-                <div style={styles.row2}>
-                  <div>
-                    <div style={styles.label}>Advance Paid</div>
-                    <input
-                      style={styles.input}
-                      type="number"
-                      value={form.advancePaid}
-                      onChange={(e) => setForm((p) => ({ ...p, advancePaid: num(e.target.value) }))}
-                    />
-                  </div>
-                  <div>
-                    <div style={styles.label}>Remaining (auto)</div>
-                    <input
-                      style={{ ...styles.input, opacity: 0.8 }}
-                      value={money(num(form.budget) - num(form.advancePaid))}
-                      readOnly
-                    />
-                  </div>
-                </div>
+            <Field label="Notes (optional)" full>
+              <textarea style={S.textarea} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Decor theme, vendor requirements, payment notes..." />
+            </Field>
+          </div>
 
-                <div style={styles.label}>Notes</div>
-                <textarea
-                  style={styles.textarea}
-                  value={form.notes}
-                  onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
-                  placeholder="Venue, guest count, theme, vendor notes…"
-                />
-
-                <div style={styles.rowBetween}>
-                  <div style={styles.smallNote}>Saved locally (works immediately).</div>
-                  <button style={styles.primaryBtnSmall} onClick={addEvent}>
-                    Add Event
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div style={styles.noteBox}>
-                Staff can view events. CEO can add/edit/delete.
-              </div>
-            )}
-
-            {/* Filters */}
-            <div style={styles.filters}>
-              <input
-                style={styles.input}
-                placeholder="Search (title, client, city, phone, status)…"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-              />
-              <div style={styles.row2}>
-                <select
-                  style={styles.select}
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as any)}
-                >
-                  <option value="All">All Status</option>
-                  <option>Lead</option>
-                  <option>Tentative</option>
-                  <option>Confirmed</option>
-                  <option>Completed</option>
-                  <option>Cancelled</option>
-                </select>
-
-                <select
-                  style={styles.select}
-                  value={cityFilter}
-                  onChange={(e) => setCityFilter(e.target.value)}
-                >
-                  {cities.map((c) => (
-                    <option key={c} value={c}>
-                      {c === "All" ? "All Cities" : c}
-                    </option>
-                  ))}
-                </select>
-              </div>
+          <div style={S.rowBetween}>
+            <div style={S.smallMuted}>
+              {editingId ? "Editing existing event (updates overwrite saved data)." : "New event will be saved locally."}
             </div>
+            <div style={S.row}>
+              {editingId ? (
+                <button style={S.dangerBtn} onClick={() => remove(editingId)}>
+                  Delete
+                </button>
+              ) : null}
+              <button style={S.primaryBtn} onClick={upsert}>
+                {editingId ? "Save Changes" : "Add Event"}
+              </button>
+            </div>
+          </div>
 
-            {/* List */}
-            {filtered.length ? (
-              <div style={{ display: "grid", gap: 10 }}>
-                {filtered.map((e) => {
-                  const remaining = num(e.budget) - num(e.advancePaid);
-                  return (
-                    <div key={e.id} style={styles.itemCard}>
-                      <div style={styles.rowBetween}>
-                        <div style={{ fontWeight: 950 }}>{e.title}</div>
-                        <span style={pill(e.status)}>{e.status}</span>
-                      </div>
+          {msg ? <div style={S.msg}>{msg}</div> : null}
+        </div>
 
-                      <div style={styles.smallMuted}>
-                        {e.date} • {e.city} • Budget: {money(num(e.budget))}
-                      </div>
-                      <div style={styles.smallMuted}>
-                        Advance: {money(num(e.advancePaid))} • Remaining: {money(remaining)}
-                      </div>
-                      <div style={styles.smallMuted}>
-                        Client: {e.clientName || "-"} • {e.clientPhone || "-"}
-                      </div>
+        {/* LIST */}
+        <div style={S.panel}>
+          <div style={S.panelTitle}>Event List</div>
 
-                      {e.notes ? <div style={styles.taskNote}>{e.notes}</div> : null}
+          <div style={S.filters}>
+            <input style={S.input} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search: title / client / city / venue / phone" />
+            <select
+              style={S.select}
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              title="Filter by status"
+            >
+              <option style={S.option} value="All">
+                All Status
+              </option>
+              <option style={S.option}>Inquiry</option>
+              <option style={S.option}>Planned</option>
+              <option style={S.option}>Confirmed</option>
+              <option style={S.option}>In Progress</option>
+              <option style={S.option}>Completed</option>
+              <option style={S.option}>Cancelled</option>
+            </select>
+          </div>
 
-                      {isCEO ? (
-                        <div style={styles.rowBetween}>
-                          <div style={styles.inline}>
-                            <button style={styles.ghostBtn} onClick={() => openEdit(e)}>
-                              Edit
-                            </button>
-                            <button style={styles.dltBtn} onClick={() => deleteEvent(e.id)}>
-                              Delete
-                            </button>
-                          </div>
-                          <div style={styles.smallMuted}>
-                            {new Date(e.createdAt).toLocaleString()}
-                          </div>
-                        </div>
-                      ) : null}
+          {!filtered.length ? (
+            <div style={S.empty}>No events found.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 10 }}>
+              {filtered.map((e) => (
+                <div key={e.id} style={S.card}>
+                  <div style={S.rowBetween}>
+                    <div>
+                      <div style={S.cardTitle}>{e.title}</div>
+                      <div style={S.cardSub}>
+                        {e.clientName} • {e.city} • {e.date}
+                        {e.venue ? ` • ${e.venue}` : ""}
+                      </div>
                     </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div style={styles.muted}>No events found.</div>
-            )}
-          </div>
 
-          {/* RIGHT: SUMMARY */}
-          <div style={styles.panel}>
-            <div style={styles.panelTitle}>Summary</div>
+                    <div style={S.row}>
+                      <button style={S.ghostBtn} onClick={() => startEdit(e)}>
+                        Edit
+                      </button>
+                      <button style={S.dangerBtn} onClick={() => remove(e.id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </div>
 
-            <div style={styles.kpiRow}>
-              <KPI label="Events" value={filtered.length} />
-              <KPI label="Budget" value={money(totals.totalBudget)} />
-              <KPI label="Advance" value={money(totals.totalAdvance)} />
+                  <div style={S.metaGrid}>
+                    <Meta label="Guests" value={e.guests ?? "—"} />
+                    <Meta label="Budget" value={e.budget ?? "—"} />
+                    <Meta label="Phone" value={e.phone ?? "—"} />
+                    <Meta label="Updated" value={new Date(e.updatedAt).toLocaleString()} />
+                  </div>
+
+                  <div style={S.rowBetween}>
+                    <div style={S.inline}>
+                      <span style={S.smallMuted}>Status:</span>
+                      {/* ✅ Dark dropdown + immediate save */}
+                      <select
+                        style={S.select}
+                        value={e.status}
+                        onChange={(x) => setEventStatus(e.id, x.target.value as EventStatus)}
+                        title="Change status (auto-saves)"
+                      >
+                        <option style={S.option}>Inquiry</option>
+                        <option style={S.option}>Planned</option>
+                        <option style={S.option}>Confirmed</option>
+                        <option style={S.option}>In Progress</option>
+                        <option style={S.option}>Completed</option>
+                        <option style={S.option}>Cancelled</option>
+                      </select>
+                      <span style={S.badge}>{e.status}</span>
+                    </div>
+
+                    {e.notes ? <div style={S.note}>{e.notes}</div> : <div style={S.smallMuted}>No notes</div>}
+                  </div>
+                </div>
+              ))}
             </div>
+          )}
+        </div>
 
-            <div style={{ ...styles.kpiRow, marginTop: 10 }}>
-              <KPI label="Remaining" value={money(totals.totalRemaining)} />
-              <KPI label="Confirmed" value={filtered.filter((x) => x.status === "Confirmed").length} />
-              <KPI label="Leads" value={filtered.filter((x) => x.status === "Lead").length} />
-            </div>
-
-            <div style={styles.sectionTitle}>Workflow</div>
-            <div style={styles.noteBox}>
-              <b>Lead</b> → inquiry  
-              <br />
-              <b>Tentative</b> → negotiation  
-              <br />
-              <b>Confirmed</b> → booking fixed + advance received  
-              <br />
-              <b>Completed</b> → event done + final payment  
-              <br />
-              <b>Cancelled</b> → dropped
-            </div>
-
-            <div style={styles.sectionTitle}>Next Upgrade</div>
-            <div style={styles.noteBox}>
-              Next we will connect Events to Supabase tables so events sync on all devices.
-            </div>
-          </div>
+        <div style={S.footerNote}>
+          ✅ Hover/scroll readability fixed by dark dropdown styling. ✅ Status changes overwrite saved value immediately.
         </div>
       </div>
-
-      {/* EDIT MODAL */}
-      {editing ? (
-        <div style={styles.modalOverlay} onClick={() => setEditing(null)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <div style={styles.modalTitle}>Edit Event</div>
-
-            <div style={styles.label}>Title</div>
-            <input
-              style={styles.input}
-              value={editing.title}
-              onChange={(e) => setEditing((p) => (p ? { ...p, title: e.target.value } : p))}
-            />
-
-            <div style={styles.row2}>
-              <div>
-                <div style={styles.label}>Date</div>
-                <input
-                  style={styles.input}
-                  type="date"
-                  value={editing.date}
-                  onChange={(e) => setEditing((p) => (p ? { ...p, date: e.target.value } : p))}
-                />
-              </div>
-              <div>
-                <div style={styles.label}>Status</div>
-                <select
-                  style={styles.select}
-                  value={editing.status}
-                  onChange={(e) =>
-                    setEditing((p) => (p ? { ...p, status: e.target.value as EventStatus } : p))
-                  }
-                >
-                  <option>Lead</option>
-                  <option>Tentative</option>
-                  <option>Confirmed</option>
-                  <option>Completed</option>
-                  <option>Cancelled</option>
-                </select>
-              </div>
-            </div>
-
-            <div style={styles.row2}>
-              <div>
-                <div style={styles.label}>City</div>
-                <input
-                  style={styles.input}
-                  value={editing.city}
-                  onChange={(e) => setEditing((p) => (p ? { ...p, city: e.target.value } : p))}
-                />
-              </div>
-              <div>
-                <div style={styles.label}>Budget</div>
-                <input
-                  style={styles.input}
-                  type="number"
-                  value={editing.budget}
-                  onChange={(e) =>
-                    setEditing((p) => (p ? { ...p, budget: num(e.target.value) } : p))
-                  }
-                />
-              </div>
-            </div>
-
-            <div style={styles.row2}>
-              <div>
-                <div style={styles.label}>Advance Paid</div>
-                <input
-                  style={styles.input}
-                  type="number"
-                  value={editing.advancePaid}
-                  onChange={(e) =>
-                    setEditing((p) => (p ? { ...p, advancePaid: num(e.target.value) } : p))
-                  }
-                />
-              </div>
-              <div>
-                <div style={styles.label}>Remaining (auto)</div>
-                <input
-                  style={{ ...styles.input, opacity: 0.8 }}
-                  readOnly
-                  value={money(num(editing.budget) - num(editing.advancePaid))}
-                />
-              </div>
-            </div>
-
-            <div style={styles.row2}>
-              <div>
-                <div style={styles.label}>Client Name</div>
-                <input
-                  style={styles.input}
-                  value={editing.clientName}
-                  onChange={(e) =>
-                    setEditing((p) => (p ? { ...p, clientName: e.target.value } : p))
-                  }
-                />
-              </div>
-              <div>
-                <div style={styles.label}>Client Phone</div>
-                <input
-                  style={styles.input}
-                  value={editing.clientPhone}
-                  onChange={(e) =>
-                    setEditing((p) => (p ? { ...p, clientPhone: e.target.value } : p))
-                  }
-                />
-              </div>
-            </div>
-
-            <div style={styles.label}>Notes</div>
-            <textarea
-              style={styles.textarea}
-              value={editing.notes || ""}
-              onChange={(e) => setEditing((p) => (p ? { ...p, notes: e.target.value } : p))}
-            />
-
-            <div style={styles.modalActions}>
-              <button style={styles.ghostBtn} onClick={() => setEditing(null)}>
-                Cancel
-              </button>
-              <button style={styles.primaryBtnSmall} onClick={saveEdit}>
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
 
-/* ================== UI ================== */
-function KPI({ label, value }: { label: string; value: any }) {
+/* ================= SMALL UI HELPERS ================= */
+function Field({
+  label,
+  full,
+  children,
+}: {
+  label: string;
+  full?: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <div style={styles.kpi}>
-      <div style={styles.kpiLabel}>{label}</div>
-      <div style={styles.kpiValue}>{value}</div>
+    <div style={{ ...S.field, gridColumn: full ? "1 / -1" : undefined }}>
+      <div style={S.label}>{label}</div>
+      {children}
     </div>
   );
 }
-function pillStyle(bg: string, border: string, color: string): React.CSSProperties {
-  return {
-    fontSize: 12,
-    padding: "5px 10px",
-    borderRadius: 999,
-    fontWeight: 900,
-    background: bg,
-    border,
-    color,
-    whiteSpace: "nowrap",
-  };
-}
-function pill(status: string): React.CSSProperties {
-  if (status === "Confirmed" || status === "Completed") {
-    return pillStyle("rgba(34,197,94,0.12)", "1px solid rgba(34,197,94,0.22)", "#BBF7D0");
-  }
-  if (status === "Lead") {
-    return pillStyle("rgba(96,165,250,0.12)", "1px solid rgba(96,165,250,0.22)", "#BFDBFE");
-  }
-  if (status === "Tentative") {
-    return pillStyle("rgba(234,179,8,0.12)", "1px solid rgba(234,179,8,0.22)", "#FDE68A");
-  }
-  if (status === "Cancelled") {
-    return pillStyle("rgba(248,113,113,0.12)", "1px solid rgba(248,113,113,0.22)", "#FCA5A5");
-  }
-  return pillStyle("rgba(255,255,255,0.06)", "1px solid rgba(255,255,255,0.14)", "#E5E7EB");
+
+function Meta({ label, value }: { label: string; value: any }) {
+  return (
+    <div style={S.meta}>
+      <div style={S.metaLabel}>{label}</div>
+      <div style={S.metaValue}>{String(value)}</div>
+    </div>
+  );
 }
 
-/* ================== STYLES ================== */
-const styles: Record<string, React.CSSProperties> = {
+/* ================= STYLES ================= */
+const S: Record<string, React.CSSProperties> = {
   page: {
     minHeight: "100vh",
     padding: 16,
@@ -749,59 +418,25 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily:
       'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
   },
-  card: {
-    width: "100%",
-    maxWidth: 1100,
-    margin: "0 auto",
-    background: "rgba(11,16,32,0.92)",
-    border: "1px solid rgba(255,255,255,0.10)",
-    borderRadius: 18,
-    padding: 16,
-    boxShadow: "0 18px 50px rgba(0,0,0,0.45)",
-    backdropFilter: "blur(10px)",
-  },
-  topRow: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 },
+  shell: { maxWidth: 1100, margin: "0 auto", display: "grid", gap: 12 },
+  topRow: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 },
   h1: { fontSize: 26, fontWeight: 950 },
   muted: { color: "#9CA3AF", fontSize: 13, marginTop: 6 },
   smallMuted: { color: "#9CA3AF", fontSize: 12 },
-  rolePill: {
-    display: "inline-block",
-    padding: "4px 10px",
-    borderRadius: 999,
-    fontWeight: 900,
-    background: "rgba(139,92,246,0.16)",
-    border: "1px solid rgba(139,92,246,0.30)",
-    color: "#DDD6FE",
-  },
-  err: {
-    marginTop: 12,
-    marginBottom: 12,
-    padding: 10,
-    borderRadius: 12,
-    background: "rgba(248,113,113,0.12)",
-    border: "1px solid rgba(248,113,113,0.28)",
-    color: "#FCA5A5",
-    fontSize: 13,
-    lineHeight: 1.4,
-  },
-  grid2: { marginTop: 12, display: "grid", gridTemplateColumns: "1.2fr 0.8fr", gap: 12 },
+
   panel: {
-    background: "rgba(255,255,255,0.04)",
+    background: "rgba(11,16,32,0.78)",
     border: "1px solid rgba(255,255,255,0.10)",
     borderRadius: 18,
     padding: 14,
+    backdropFilter: "blur(10px)",
   },
-  panelTitle: { fontSize: 14, fontWeight: 950, marginBottom: 10, color: "#FDE68A" },
-  addBox: {
-    padding: 12,
-    borderRadius: 14,
-    background: "rgba(212,175,55,0.07)",
-    border: "1px solid rgba(212,175,55,0.18)",
-    marginBottom: 12,
-    display: "grid",
-    gap: 10,
-  },
-  label: { fontSize: 12, color: "#9CA3AF", fontWeight: 800, marginBottom: 6 },
+  panelTitle: { fontWeight: 950, color: "#FDE68A", marginBottom: 10 },
+
+  grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
+  field: { display: "grid", gap: 8 },
+  label: { fontSize: 12, color: "#A7B0C0", fontWeight: 900 },
+
   input: {
     width: "100%",
     padding: "12px 12px",
@@ -812,10 +447,31 @@ const styles: Record<string, React.CSSProperties> = {
     outline: "none",
     fontSize: 14,
   },
+
+  /* ✅ FIX: dark select + prevent white hover unreadable */
+  select: {
+    width: "100%",
+    padding: "12px 12px",
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(255,255,255,0.06)",
+    color: "#F9FAFB",
+    outline: "none",
+    fontSize: 14,
+    fontWeight: 900,
+    appearance: "none",
+    WebkitAppearance: "none",
+    MozAppearance: "none",
+  },
+  option: {
+    backgroundColor: "#0B1020",
+    color: "#F9FAFB",
+  },
+
   textarea: {
     width: "100%",
-    minHeight: 80,
-    padding: "10px 12px",
+    minHeight: 90,
+    padding: "12px 12px",
     borderRadius: 14,
     border: "1px solid rgba(255,255,255,0.12)",
     background: "rgba(255,255,255,0.06)",
@@ -824,21 +480,13 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 14,
     resize: "vertical",
   },
-  select: {
-    width: "100%",
-    padding: "10px 10px",
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.14)",
-    background: "rgba(255,255,255,0.06)",
-    color: "#F9FAFB",
-    outline: "none",
-    fontWeight: 800,
-  },
-  row2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
-  rowBetween: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 },
+
+  row: { display: "flex", gap: 10, alignItems: "center" },
+  rowBetween: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 },
   inline: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" },
-  primaryBtnSmall: {
-    padding: "10px 12px",
+
+  primaryBtn: {
+    padding: "10px 14px",
     borderRadius: 14,
     border: "1px solid rgba(212,175,55,0.35)",
     background: "linear-gradient(135deg, rgba(212,175,55,0.32), rgba(139,92,246,0.22))",
@@ -848,74 +496,69 @@ const styles: Record<string, React.CSSProperties> = {
     whiteSpace: "nowrap",
   },
   ghostBtn: {
-    padding: "10px 12px",
+    padding: "10px 14px",
     borderRadius: 14,
     border: "1px solid rgba(255,255,255,0.16)",
     background: "rgba(255,255,255,0.06)",
     color: "#E5E7EB",
-    fontWeight: 900,
+    fontWeight: 950,
     cursor: "pointer",
     whiteSpace: "nowrap",
   },
-  dltBtn: {
-    fontSize: 12,
-    padding: "9px 10px",
-    borderRadius: 12,
+  dangerBtn: {
+    padding: "10px 14px",
+    borderRadius: 14,
     border: "1px solid rgba(248,113,113,0.30)",
     background: "rgba(248,113,113,0.10)",
     color: "#FCA5A5",
-    fontWeight: 900,
+    fontWeight: 950,
     cursor: "pointer",
+    whiteSpace: "nowrap",
   },
-  filters: { display: "grid", gap: 10, marginBottom: 12 },
-  itemCard: {
+
+  msg: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(255,255,255,0.05)",
+    color: "#E5E7EB",
+    fontSize: 13,
+  },
+
+  filters: { display: "grid", gridTemplateColumns: "1fr 240px", gap: 10, marginBottom: 10 },
+  empty: { color: "#A7B0C0", fontSize: 13, padding: 10 },
+
+  card: {
     padding: 12,
+    borderRadius: 16,
+    border: "1px solid rgba(255,255,255,0.10)",
+    background: "rgba(255,255,255,0.04)",
+  },
+  cardTitle: { fontWeight: 950, fontSize: 16 },
+  cardSub: { marginTop: 4, color: "#A7B0C0", fontSize: 12 },
+
+  metaGrid: { marginTop: 10, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 },
+  meta: {
+    padding: 10,
     borderRadius: 14,
     background: "rgba(11,16,32,0.70)",
     border: "1px solid rgba(255,255,255,0.10)",
   },
-  taskNote: { marginTop: 8, color: "#C7CFDD", fontSize: 13, lineHeight: 1.35 },
-  kpiRow: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 10 },
-  kpi: {
-    padding: 12,
-    borderRadius: 14,
-    background: "rgba(255,255,255,0.05)",
-    border: "1px solid rgba(255,255,255,0.10)",
-  },
-  kpiLabel: { color: "#9CA3AF", fontSize: 12, fontWeight: 800 },
-  kpiValue: { marginTop: 6, fontSize: 16, fontWeight: 950 },
-  sectionTitle: { marginTop: 14, fontWeight: 950, color: "#E5E7EB", fontSize: 13 },
-  noteBox: {
-    marginTop: 10,
-    padding: 12,
-    borderRadius: 14,
-    background: "rgba(139,92,246,0.10)",
-    border: "1px solid rgba(139,92,246,0.22)",
-    color: "#E9D5FF",
-    fontSize: 13,
-    lineHeight: 1.35,
+  metaLabel: { fontSize: 11, color: "#9CA3AF", fontWeight: 900 },
+  metaValue: { marginTop: 6, fontSize: 13, fontWeight: 900 },
+
+  badge: {
+    fontSize: 12,
+    fontWeight: 950,
+    padding: "6px 10px",
+    borderRadius: 999,
+    background: "rgba(212,175,55,0.14)",
+    border: "1px solid rgba(212,175,55,0.28)",
+    color: "#FDE68A",
   },
 
-  modalOverlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.6)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 16,
-    zIndex: 50,
-  },
-  modal: {
-    width: "100%",
-    maxWidth: 720,
-    background: "rgba(11,16,32,0.96)",
-    border: "1px solid rgba(255,255,255,0.12)",
-    borderRadius: 18,
-    padding: 14,
-    boxShadow: "0 30px 80px rgba(0,0,0,0.55)",
-  },
-  modalTitle: { fontSize: 16, fontWeight: 950, color: "#FDE68A", marginBottom: 10 },
-  modalActions: { display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 12 },
-  smallNote: { fontSize: 12, color: "#A7B0C0" },
+  note: { color: "#C7CFDD", fontSize: 13, maxWidth: 520, textAlign: "right" },
+
+  footerNote: { color: "#A7B0C0", fontSize: 12, textAlign: "center", padding: 6 },
 };
