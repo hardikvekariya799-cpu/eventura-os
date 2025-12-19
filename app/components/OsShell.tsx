@@ -4,10 +4,11 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createClient, User } from "@supabase/supabase-js";
 
 /**
- * SAFE OsShell:
- * - Never crashes if env vars are missing
- * - Shows a setup message if Supabase URL/key not present (especially on Vercel)
- * - Includes CEO/Staff auth + role-based view inside the shell
+ * SAFE OsShell (clean):
+ * - No duplicate imports
+ * - Only ONE default export
+ * - Never crashes if env vars missing
+ * - Role-based CEO/Staff from public.profiles
  */
 
 type Role = "CEO" | "Staff";
@@ -41,11 +42,8 @@ function saveTasks(tasks: TaskItem[]) {
   localStorage.setItem(LS_TASKS, JSON.stringify(tasks));
 }
 
-// Read env safely
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-
-// Create client ONLY if env exists
 const supabase =
   supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
@@ -68,6 +66,7 @@ export default function OsShell() {
 
   const role: Role | null = profile?.role ?? null;
 
+  // tasks local
   useEffect(() => {
     setTasks(loadTasks());
   }, []);
@@ -75,7 +74,7 @@ export default function OsShell() {
     saveTasks(tasks);
   }, [tasks]);
 
-  // If env missing, don't try auth at all
+  // auth bootstrap
   useEffect(() => {
     (async () => {
       setLoading(false);
@@ -88,9 +87,8 @@ export default function OsShell() {
       const sessionUser = data.session?.user ?? null;
       setUser(sessionUser);
 
-      if (sessionUser) {
-        await fetchProfile(sessionUser.id);
-      }
+      if (sessionUser) await fetchProfile(sessionUser.id);
+
       setLoading(false);
 
       const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -100,9 +98,7 @@ export default function OsShell() {
         if (u) await fetchProfile(u.id);
       });
 
-      return () => {
-        sub.subscription.unsubscribe();
-      };
+      return () => sub.subscription.unsubscribe();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -122,6 +118,7 @@ export default function OsShell() {
       return;
     }
 
+    // fallback create if missing
     if (!data) {
       const me = (await supabase.auth.getUser()).data.user;
       const myEmail = me?.email ?? null;
@@ -138,6 +135,7 @@ export default function OsShell() {
         setErr(insErr.message);
         return;
       }
+
       setProfile(inserted as Profile);
       return;
     }
@@ -150,19 +148,14 @@ export default function OsShell() {
     setBusy(true);
 
     try {
-      if (!supabase) throw new Error("Missing Supabase env vars on Vercel.");
-
-      if (!email.trim() || !password.trim()) {
-        throw new Error("Email and password required.");
-      }
+      if (!supabase) throw new Error("Supabase env missing (set on Vercel & .env.local).");
+      if (!email.trim() || !password.trim()) throw new Error("Email and password required.");
 
       if (authMode === "signup") {
-        const { error } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-        });
+        const { error } = await supabase.auth.signUp({ email: email.trim(), password });
         if (error) throw error;
 
+        // attempt sign-in right away
         const { error: e2 } = await supabase.auth.signInWithPassword({
           email: email.trim(),
           password,
@@ -238,21 +231,16 @@ export default function OsShell() {
         <div style={styles.card}>
           <div style={styles.h1}>Eventura OS</div>
           <div style={styles.muted}>
-            Runtime Error fixed ✅ but Supabase environment variables are missing on this deployment.
+            Supabase environment variables are missing on this deployment.
           </div>
-
           <div style={styles.err}>
-            Add these in <b>Vercel → Project → Settings → Environment Variables</b> (Production +
-            Preview + Development):
+            Add in <b>Vercel → Settings → Environment Variables</b> (Production + Preview +
+            Development):
             <div style={{ marginTop: 8, fontFamily: "monospace", fontSize: 12, lineHeight: 1.5 }}>
               NEXT_PUBLIC_SUPABASE_URL
               <br />
               NEXT_PUBLIC_SUPABASE_ANON_KEY
             </div>
-          </div>
-
-          <div style={styles.smallNote}>
-            After adding env vars, redeploy once and refresh this page.
           </div>
         </div>
       </div>
@@ -407,14 +395,10 @@ export default function OsShell() {
                     Add Task
                   </button>
                 </div>
-                <div style={styles.smallNote}>
-                  CEO can create tasks for Staff. (Local storage so it works immediately.)
-                </div>
+                <div style={styles.smallNote}>CEO can create tasks for Staff.</div>
               </div>
             ) : (
-              <div style={styles.smallNote}>
-                Staff can update status and delete their tasks.
-              </div>
+              <div style={styles.smallNote}>Staff can update status and delete tasks.</div>
             )}
 
             <TaskList
@@ -434,17 +418,6 @@ export default function OsShell() {
                   <KPI label="Staff Tasks" value={staffTasks.length} />
                   <KPI label="CEO Tasks" value={ceoTasks.length} />
                 </div>
-                <div style={styles.sectionTitle}>Quick Actions</div>
-                <div style={styles.quickGrid}>
-                  <QuickCard title="Lead Pipeline" text="Track leads, follow-ups, conversion." />
-                  <QuickCard title="Finance Snapshot" text="Revenue, expenses, profit targets." />
-                  <QuickCard title="HR & Team" text="Assign workload, performance, hiring." />
-                  <QuickCard title="Vendor Hub" text="Preferred vendors, pricing, contracts." />
-                </div>
-                <div style={styles.sectionTitle}>CEO Notes</div>
-                <div style={styles.noteBox}>
-                  CEO access is automatic by email. Create staff accounts using “Create Account”.
-                </div>
               </>
             ) : (
               <>
@@ -459,10 +432,6 @@ export default function OsShell() {
                     label="In progress"
                     value={myTasks.filter((t) => t.status === "In progress").length}
                   />
-                </div>
-                <div style={styles.sectionTitle}>Today Focus</div>
-                <div style={styles.noteBox}>
-                  Update your task status after completion. Ask CEO for new tasks.
                 </div>
               </>
             )}
@@ -528,14 +497,6 @@ function KPI({ label, value }: { label: string; value: number }) {
     <div style={styles.kpi}>
       <div style={styles.kpiLabel}>{label}</div>
       <div style={styles.kpiValue}>{value}</div>
-    </div>
-  );
-}
-function QuickCard({ title, text }: { title: string; text: string }) {
-  return (
-    <div style={styles.quickCard}>
-      <div style={{ fontWeight: 900 }}>{title}</div>
-      <div style={styles.smallMuted}>{text}</div>
     </div>
   );
 }
@@ -733,22 +694,4 @@ const styles: Record<string, React.CSSProperties> = {
   },
   kpiLabel: { color: "#9CA3AF", fontSize: 12, fontWeight: 800 },
   kpiValue: { marginTop: 6, fontSize: 22, fontWeight: 950 },
-  sectionTitle: { marginTop: 14, fontWeight: 950, color: "#E5E7EB", fontSize: 13 },
-  quickGrid: { marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
-  quickCard: {
-    padding: 12,
-    borderRadius: 14,
-    background: "rgba(255,255,255,0.05)",
-    border: "1px solid rgba(255,255,255,0.10)",
-  },
-  noteBox: {
-    marginTop: 10,
-    padding: 12,
-    borderRadius: 14,
-    background: "rgba(139,92,246,0.10)",
-    border: "1px solid rgba(139,92,246,0.22)",
-    color: "#E9D5FF",
-    fontSize: 13,
-    lineHeight: 1.35,
-  },
 };
