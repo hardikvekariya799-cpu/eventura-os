@@ -17,14 +17,8 @@ export function middleware(req: NextRequest) {
   const url = req.nextUrl.clone();
 
   const cookies = req.cookies.getAll();
-
   const isLoggedIn =
-    cookies.some(
-      (c) =>
-        c.name.startsWith("sb-") &&
-        c.name.includes("auth-token") &&
-        !!c.value?.length
-    ) ||
+    cookies.some((c) => c.name.startsWith("sb-") && c.name.includes("auth-token") && !!c.value?.length) ||
     cookies.some((c) => c.name === "sb-access-token" && !!c.value?.length) ||
     cookies.some((c) => c.name === "sb-refresh-token" && !!c.value?.length) ||
     cookies.some((c) => c.name === "supabase-auth-token" && !!c.value?.length);
