@@ -81,15 +81,6 @@ function formatCurrency(amount: number, currency: "INR" | "CAD" | "USD" = "INR")
     return `${amount.toFixed(2)} ${currency}`;
   }
 }
-function exportJSON(filename: string, obj: any) {
-  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 function exportText(filename: string, text: string, mime = "text/plain;charset=utf-8") {
   const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -98,6 +89,9 @@ function exportText(filename: string, text: string, mime = "text/plain;charset=u
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+function exportJSON(filename: string, obj: any) {
+  exportText(filename, JSON.stringify(obj, null, 2), "application/json;charset=utf-8");
 }
 function exportCSV(filename: string, rows: Record<string, any>[]) {
   const keys = Array.from(new Set(rows.flatMap((r) => Object.keys(r))));
@@ -223,7 +217,7 @@ function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
   }
 }
 
-/* ================== AI OUTPUT FORMATTING ================== */
+/* ================== AI BLOCKS ================== */
 type AIBlock =
   | { type: "title"; text: string }
   | { type: "kpi"; label: string; value: string; tone?: "ok" | "warn" | "danger" }
@@ -351,8 +345,6 @@ export default function AIToolsPage() {
     return list.slice(0, 8);
   }, [vendors, eventCity]);
 
-  const busyStaff = useMemo(() => team.slice().sort((a, b) => (b.workload ?? 0) - (a.workload ?? 0)).slice(0, 8), [team]);
-
   const aiBlocks: AIBlock[] = useMemo(() => {
     const blocks: AIBlock[] = [];
 
@@ -371,7 +363,7 @@ export default function AIToolsPage() {
       const bullets: string[] = [];
       if (finTotals.net < 0) bullets.push("Finance alert: Net is negative. Reduce expenses OR add missing income entries.");
       if (finTotals.burn >= 90) bullets.push("High burn ratio: Expenses close to income. Tighten vendor costs and misc spending.");
-      if (hrKpis.highLoadCount > 0) bullets.push(`HR alert: ${hrKpis.highLoadCount} team member(s) at high workload. Reassign tasks or hire freelancer.`);
+      if (hrKpis.highLoadCount > 0) bullets.push(`HR alert: ${hrKpis.highLoadCount} member(s) at high workload. Reassign tasks or hire freelancer.`);
       if (!eventsInRange.length) bullets.push("No events found in range. Confirm event dates are saved as YYYY-MM-DD.");
       blocks.push({ type: "bullets", title: "Auto Insights", items: bullets.length ? bullets : ["All good. No critical alerts detected."] });
     }
@@ -391,7 +383,12 @@ export default function AIToolsPage() {
         ["Contingency", Math.round(budget * 0.08)],
       ];
 
-      blocks.push({ type: "table", title: "Suggested Budget Allocation", columns: ["Category", "Amount"], rows: alloc.map(([c, a]) => [c, formatCurrency(a, currency)]) });
+      blocks.push({
+        type: "table",
+        title: "Suggested Budget Allocation",
+        columns: ["Category", "Amount"],
+        rows: alloc.map(([c, a]) => [c, formatCurrency(a, currency)]),
+      });
 
       blocks.push({
         type: "table",
@@ -483,13 +480,11 @@ export default function AIToolsPage() {
   function onExportRawCSV() {
     exportCSV(`eventura_ai_raw_events_${from}_to_${to}.csv`, eventsInRange as any);
     exportCSV(`eventura_ai_raw_finance_${from}_to_${to}.csv`, txsInRange as any);
-    exportCSV(`eventura_ai_raw_hr_${todayYMD()}.csv`, normalizeHR(rawHR) as any);
-    exportCSV(`eventura_ai_raw_vendors_${todayYMD()}.csv`, normalizeVendors(rawVendors) as any);
+    exportCSV(`eventura_ai_raw_hr_${todayYMD()}.csv`, team as any);
+    exportCSV(`eventura_ai_raw_vendors_${todayYMD()}.csv`, vendors as any);
     setMsg("✅ Exported raw CSVs");
     window.setTimeout(() => setMsg(""), 1200);
   }
-
-  const txsInRange = useMemo(() => txs.filter((t) => inRange(t.date, from, to)), [txs, from, to]);
 
   return (
     <div style={S.app}>
@@ -612,7 +607,6 @@ export default function AIToolsPage() {
               {aiBlocks.map((b, idx) => {
                 if (b.type === "title") return <div key={idx} style={S.bigTitle}>{b.text}</div>;
                 if (b.type === "text") return <div key={idx} style={S.textLine}>{b.text}</div>;
-
                 if (b.type === "kpi") {
                   const box = b.tone === "ok" ? S.kpiOk : b.tone === "warn" ? S.kpiWarn : b.tone === "danger" ? S.kpiDanger : S.kpi;
                   return (
@@ -622,7 +616,6 @@ export default function AIToolsPage() {
                     </div>
                   );
                 }
-
                 if (b.type === "bullets") {
                   return (
                     <div key={idx} style={S.card}>
@@ -635,7 +628,6 @@ export default function AIToolsPage() {
                     </div>
                   );
                 }
-
                 if (b.type === "table") {
                   return (
                     <div key={idx} style={S.card}>
@@ -663,7 +655,6 @@ export default function AIToolsPage() {
                     </div>
                   );
                 }
-
                 return null;
               })}
             </div>
@@ -672,7 +663,7 @@ export default function AIToolsPage() {
           <section style={S.panel}>
             <div style={S.panelTitle}>Markdown Output</div>
             <textarea style={S.textarea} value={markdown} readOnly />
-            <div style={S.smallNote}>Copy and paste into Docs/Word to make a clean report.</div>
+            <div style={S.smallNote}>Copy to Docs/Word to create a clean company report.</div>
           </section>
         </div>
 
@@ -694,7 +685,6 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       color: T.text,
       fontFamily: 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
     },
-
     sidebar: {
       width: 290,
       position: "sticky",
@@ -708,7 +698,6 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       flexDirection: "column",
       gap: 12,
     },
-
     brandRow: { display: "flex", alignItems: "center", gap: 10, padding: "8px 8px" },
     logoCircle: {
       width: 38,
