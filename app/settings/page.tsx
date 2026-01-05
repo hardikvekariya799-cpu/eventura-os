@@ -2,19 +2,19 @@
 
 import React, { useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
 
-/* ================= SUPABASE (safe) ================= */
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-const supabase =
-  supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
+/* ================== STORAGE KEYS (same across app) ================== */
+const LS_EMAIL = "eventura_email";
+const LS_ROLE = "eventura_role"; // optional if you store it
+const LS_SETTINGS = "eventura_os_settings_v3";
 
-/* ================= SETTINGS (LOCAL) ================= */
-const LS_SETTINGS = "eventura_os_settings_v3"; // keep SAME key to avoid breaking your working app
+// Data keys used by other tabs (for backup/export only)
+const EVENT_KEYS = ["eventura-events", "eventura_os_events_v1", "eventura_events_v1"];
+const FIN_KEYS = ["eventura-finance-transactions", "eventura_os_fin_v1", "eventura_fin_v1", "eventura_os_fin_tx_v1"];
+const HR_KEYS = ["eventura-hr-team", "eventura_os_hr_v1", "eventura_hr_v1", "eventura_os_hr_team_v2"];
+const VENDOR_KEYS = ["eventura-vendors", "eventura_os_vendors_v1", "eventura_vendors_v1", "eventura-vendor-list"];
 
-type SidebarMode = "Icons + Text" | "Icons Only";
+/* ================== TYPES ================== */
 type Theme =
   | "Royal Gold"
   | "Midnight Purple"
@@ -25,131 +25,112 @@ type Theme =
   | "Ivory Light";
 
 type AppSettings = {
-  ceoEmail: string;
-  staffEmail: string;
-  theme: Theme;
-  sidebarMode: SidebarMode;
+  theme?: Theme;
+  highContrast?: boolean;
+  compactTables?: boolean;
 
-  compactTables: boolean;
-  confirmDeletes: boolean;
+  // Access
+  ceoEmail?: string;
+  staffEmail?: string;
 
-  reducedMotion: boolean;
-  highContrast: boolean;
-
-  // extra safe features
-  quickActions: boolean;
-  autoSaveLabel: boolean;
+  // UI prefs
+  hoverDark?: boolean; // hover background black instead of transparent
 };
 
-const SETTINGS_DEFAULTS: AppSettings = {
-  ceoEmail: "hardikvekariya799@gmail.com",
-  staffEmail: "eventurastaff@gmail.com",
-  theme: "Royal Gold",
-  sidebarMode: "Icons + Text",
-  compactTables: false,
-  confirmDeletes: true,
-  reducedMotion: false,
-  highContrast: false,
-  quickActions: true,
-  autoSaveLabel: true,
-};
-
-type Role = "CEO" | "Staff";
-
-type NavItem = { label: string; href: string; icon: string };
-const NAV: NavItem[] = [
-  { label: "Dashboard", href: "/dashboard", icon: "📊" },
-  { label: "Events", href: "/events", icon: "📅" },
-  { label: "Finance", href: "/finance", icon: "💰" },
-  { label: "Vendors", href: "/vendors", icon: "🏷️" },
-  { label: "AI", href: "/ai", icon: "🤖" },
-  { label: "HR", href: "/hr", icon: "🧑‍🤝‍🧑" },
-  { label: "Reports", href: "/reports", icon: "📈" },
-  { label: "Settings", href: "/settings", icon: "⚙️" },
-];
-
-/* ================= LOCAL HELPERS ================= */
-function safeLoad<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
+/* ================== HELPERS ================== */
+function safeParse<T>(raw: string | null, fallback: T): T {
   try {
-    const raw = localStorage.getItem(key);
     return raw ? (JSON.parse(raw) as T) : fallback;
   } catch {
     return fallback;
   }
 }
-function safeSave<T>(key: string, value: T) {
+
+function safeLoad<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  return safeParse<T>(localStorage.getItem(key), fallback);
+}
+
+function safeSave(key: string, value: any) {
   if (typeof window === "undefined") return;
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-function roleFromSettings(email: string, s: AppSettings): Role {
-  if (!email) return "Staff";
-  return email.toLowerCase() === s.ceoEmail.toLowerCase() ? "CEO" : "Staff";
+function loadFirstKey(keys: string[]) {
+  if (typeof window === "undefined") return { keyUsed: null as string | null, raw: null as string | null };
+  for (const k of keys) {
+    const raw = localStorage.getItem(k);
+    if (raw) return { keyUsed: k, raw };
+  }
+  return { keyUsed: null, raw: null };
 }
 
-function applyThemeToDom(s: AppSettings) {
-  if (typeof document === "undefined") return;
-  document.documentElement.setAttribute("data-ev-theme", s.theme);
-  document.documentElement.setAttribute("data-ev-sidebar", s.sidebarMode);
-  document.documentElement.setAttribute("data-ev-contrast", s.highContrast ? "high" : "normal");
-  document.documentElement.setAttribute("data-ev-motion", s.reducedMotion ? "reduced" : "normal");
+function downloadJSON(filename: string, obj: any) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
-/* ================= THEME TOKENS ================= */
-function ThemeTokens(theme: Theme, highContrast: boolean) {
+/* ================== THEME TOKENS ================== */
+function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
+  const hc = !!highContrast;
+
   const base = {
     text: "#F9FAFB",
     muted: "#9CA3AF",
     bg: "#050816",
-    panel: "rgba(11,16,32,0.60)",
-    panel2: "rgba(11,16,32,0.85)",
-    border: highContrast ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.10)",
-    soft: highContrast ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)",
-    inputBg: highContrast ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-    dangerBg: "rgba(248,113,113,0.10)",
-    dangerBd: highContrast ? "rgba(248,113,113,0.55)" : "rgba(248,113,113,0.30)",
-    dangerTx: "#FCA5A5",
+    panel: "rgba(11,16,32,0.70)",
+    panel2: "rgba(11,16,32,0.88)",
+    border: hc ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.10)",
+    soft: hc ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.05)",
+    inputBg: hc ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.07)",
     okBg: "rgba(34,197,94,0.12)",
-    okBd: highContrast ? "rgba(34,197,94,0.45)" : "rgba(34,197,94,0.28)",
+    okBd: hc ? "rgba(34,197,94,0.50)" : "rgba(34,197,94,0.28)",
     okTx: "#86EFAC",
+    warnBg: "rgba(245,158,11,0.12)",
+    warnBd: hc ? "rgba(245,158,11,0.50)" : "rgba(245,158,11,0.28)",
+    warnTx: "#FCD34D",
   };
 
   switch (theme) {
     case "Midnight Purple":
       return {
         ...base,
-        glow1: "rgba(139,92,246,0.22)",
+        glow1: "rgba(139,92,246,0.24)",
         glow2: "rgba(212,175,55,0.14)",
-        accentBg: "rgba(139,92,246,0.16)",
-        accentBd: highContrast ? "rgba(139,92,246,0.55)" : "rgba(139,92,246,0.30)",
+        accentBg: "rgba(139,92,246,0.18)",
+        accentBd: hc ? "rgba(139,92,246,0.60)" : "rgba(139,92,246,0.32)",
         accentTx: "#DDD6FE",
       };
     case "Emerald Night":
       return {
         ...base,
-        glow1: "rgba(16,185,129,0.18)",
+        glow1: "rgba(16,185,129,0.20)",
         glow2: "rgba(212,175,55,0.12)",
-        accentBg: "rgba(16,185,129,0.16)",
-        accentBd: highContrast ? "rgba(16,185,129,0.55)" : "rgba(16,185,129,0.30)",
+        accentBg: "rgba(16,185,129,0.18)",
+        accentBd: hc ? "rgba(16,185,129,0.60)" : "rgba(16,185,129,0.32)",
         accentTx: "#A7F3D0",
       };
     case "Ocean Blue":
       return {
         ...base,
-        glow1: "rgba(59,130,246,0.22)",
+        glow1: "rgba(59,130,246,0.24)",
         glow2: "rgba(34,211,238,0.14)",
-        accentBg: "rgba(59,130,246,0.16)",
-        accentBd: highContrast ? "rgba(59,130,246,0.55)" : "rgba(59,130,246,0.30)",
+        accentBg: "rgba(59,130,246,0.18)",
+        accentBd: hc ? "rgba(59,130,246,0.60)" : "rgba(59,130,246,0.32)",
         accentTx: "#BFDBFE",
       };
     case "Ruby Noir":
       return {
         ...base,
-        glow1: "rgba(244,63,94,0.18)",
+        glow1: "rgba(244,63,94,0.20)",
         glow2: "rgba(212,175,55,0.10)",
-        accentBg: "rgba(244,63,94,0.14)",
-        accentBd: highContrast ? "rgba(244,63,94,0.50)" : "rgba(244,63,94,0.26)",
+        accentBg: "rgba(244,63,94,0.16)",
+        accentBd: hc ? "rgba(244,63,94,0.56)" : "rgba(244,63,94,0.28)",
         accentTx: "#FDA4AF",
       };
     case "Carbon Black":
@@ -158,8 +139,8 @@ function ThemeTokens(theme: Theme, highContrast: boolean) {
         bg: "#03040A",
         glow1: "rgba(255,255,255,0.10)",
         glow2: "rgba(212,175,55,0.10)",
-        accentBg: "rgba(212,175,55,0.14)",
-        accentBd: highContrast ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)",
+        accentBg: "rgba(212,175,55,0.16)",
+        accentBd: hc ? "rgba(212,175,55,0.60)" : "rgba(212,175,55,0.30)",
         accentTx: "#FDE68A",
       };
     case "Ivory Light":
@@ -168,159 +149,188 @@ function ThemeTokens(theme: Theme, highContrast: boolean) {
         text: "#111827",
         muted: "#4B5563",
         bg: "#F9FAFB",
-        panel: "rgba(255,255,255,0.78)",
+        panel: "rgba(255,255,255,0.80)",
         panel2: "rgba(255,255,255,0.92)",
-        border: highContrast ? "rgba(17,24,39,0.22)" : "rgba(17,24,39,0.12)",
-        soft: highContrast ? "rgba(17,24,39,0.07)" : "rgba(17,24,39,0.04)",
-        inputBg: highContrast ? "rgba(17,24,39,0.08)" : "rgba(17,24,39,0.04)",
-        dangerTx: "#B91C1C",
+        border: hc ? "rgba(17,24,39,0.22)" : "rgba(17,24,39,0.12)",
+        soft: hc ? "rgba(17,24,39,0.08)" : "rgba(17,24,39,0.05)",
+        inputBg: hc ? "rgba(17,24,39,0.10)" : "rgba(17,24,39,0.06)",
         glow1: "rgba(212,175,55,0.16)",
         glow2: "rgba(59,130,246,0.14)",
-        accentBg: "rgba(212,175,55,0.16)",
-        accentBd: highContrast ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)",
+        accentBg: "rgba(212,175,55,0.20)",
+        accentBd: hc ? "rgba(212,175,55,0.60)" : "rgba(212,175,55,0.30)",
         accentTx: "#92400E",
         okTx: "#166534",
       };
-    case "Royal Gold":
     default:
       return {
         ...base,
         glow1: "rgba(255,215,110,0.18)",
         glow2: "rgba(120,70,255,0.18)",
-        accentBg: "rgba(212,175,55,0.12)",
-        accentBd: highContrast ? "rgba(212,175,55,0.50)" : "rgba(212,175,55,0.22)",
+        accentBg: "rgba(212,175,55,0.14)",
+        accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.26)",
         accentTx: "#FDE68A",
       };
   }
 }
 
-/* ================= PAGE ================= */
+/* ================== PAGE ================== */
 export default function SettingsPage() {
-  const router = useRouter();
-
-  const [settings, setSettings] = useState<AppSettings>(SETTINGS_DEFAULTS);
   const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [savedPulse, setSavedPulse] = useState(0);
+  const [role, setRole] = useState<"CEO" | "Staff">("Staff");
 
-  // load once
+  const [settings, setSettings] = useState<AppSettings>({
+    theme: "Royal Gold",
+    highContrast: false,
+    compactTables: false,
+    hoverDark: true,
+    ceoEmail: "hardikvekariya799@gmail.com",
+    staffEmail: "eventurastaff@gmail.com",
+  });
+
+  const [msg, setMsg] = useState("");
+
   useEffect(() => {
-    const s = safeLoad<AppSettings>(LS_SETTINGS, SETTINGS_DEFAULTS);
-    const merged: AppSettings = { ...SETTINGS_DEFAULTS, ...s };
-    setSettings(merged);
-    applyThemeToDom(merged);
+    const em = (localStorage.getItem(LS_EMAIL) || "").trim();
+    setEmail(em);
+
+    const storedRole = (localStorage.getItem(LS_ROLE) || "").toLowerCase();
+    const isCeoByEmail = em.toLowerCase() === "hardikvekariya799@gmail.com";
+    setRole(isCeoByEmail || storedRole === "ceo" ? "CEO" : "Staff");
+
+    const s = safeLoad<AppSettings>(LS_SETTINGS, {});
+    setSettings((prev) => ({
+      ...prev,
+      ...s,
+      ceoEmail: s.ceoEmail || prev.ceoEmail,
+      staffEmail: s.staffEmail || prev.staffEmail,
+    }));
   }, []);
 
-  // persist
-  useEffect(() => {
-    safeSave(LS_SETTINGS, settings);
-    applyThemeToDom(settings);
-    if (settings.autoSaveLabel) setSavedPulse((x) => x + 1);
-  }, [settings]);
+  const isCEO = useMemo(() => email.toLowerCase() === (settings.ceoEmail || "hardikvekariya799@gmail.com").toLowerCase(), [email, settings.ceoEmail]);
 
-  // session email
-  useEffect(() => {
-    (async () => {
-      try {
-        if (!supabase) {
-          setEmail(safeLoad<string>("eventura_email", ""));
-          return;
-        }
-        const { data } = await supabase.auth.getSession();
-        setEmail(data.session?.user?.email || "");
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  const T = ThemeTokens((settings.theme as Theme) || "Royal Gold", settings.highContrast);
+  const S = useMemo(() => makeStyles(T), [T]);
 
-  const role = useMemo(() => roleFromSettings(email, settings), [email, settings]);
-  const isCEO = role === "CEO";
-  const sidebarIconsOnly = settings.sidebarMode === "Icons Only";
-
-  const T = ThemeTokens(settings.theme, settings.highContrast);
-  const S = makeStyles(T);
-
-  async function signOut() {
-    try {
-      if (supabase) await supabase.auth.signOut();
-    } finally {
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("eventura_email");
-        document.cookie = `eventura_email=; Path=/; Max-Age=0`;
-      }
-      router.push("/login");
-    }
+  function saveSettings(next: AppSettings) {
+    setSettings(next);
+    safeSave(LS_SETTINGS, next);
+    setMsg("✅ Settings saved");
+    window.setTimeout(() => setMsg(""), 1200);
   }
 
-  function exportSettings() {
+  function exportBackup() {
+    // Pull latest raw data from LS (first existing key)
+    const ev = loadFirstKey(EVENT_KEYS);
+    const fi = loadFirstKey(FIN_KEYS);
+    const hr = loadFirstKey(HR_KEYS);
+    const ve = loadFirstKey(VENDOR_KEYS);
+
     const payload = {
-      version: "eventura-settings-backup-v1",
+      version: "eventura_local_backup_v1",
       exportedAt: new Date().toISOString(),
+      accountEmail: email || "unknown",
       settings,
+      keysUsed: {
+        events: ev.keyUsed,
+        finance: fi.keyUsed,
+        hr: hr.keyUsed,
+        vendors: ve.keyUsed,
+      },
+      raw: {
+        events: ev.raw ? safeParse<any>(ev.raw, []) : [],
+        finance: fi.raw ? safeParse<any>(fi.raw, []) : [],
+        hr: hr.raw ? safeParse<any>(hr.raw, []) : [],
+        vendors: ve.raw ? safeParse<any>(ve.raw, []) : [],
+      },
     };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `eventura_settings_${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+
+    downloadJSON(`eventura_backup_${new Date().toISOString().slice(0, 10)}.json`, payload);
+    setMsg("✅ Backup exported (JSON)");
+    window.setTimeout(() => setMsg(""), 1200);
   }
 
-  async function importSettings(file: File) {
-    try {
-      const json = JSON.parse(await file.text());
-      const incoming = (json?.settings ?? json) as Partial<AppSettings>;
-      const merged: AppSettings = { ...SETTINGS_DEFAULTS, ...incoming };
-      setSettings(merged);
-      alert("Imported ✅");
-    } catch {
-      alert("Import failed.");
+  function importBackup(file: File | null) {
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const obj = JSON.parse(String(reader.result || "{}"));
+
+        // restore settings
+        if (obj?.settings && typeof obj.settings === "object") {
+          const next = { ...settings, ...obj.settings };
+          safeSave(LS_SETTINGS, next);
+          setSettings(next);
+        }
+
+        // restore raw data into the PRIMARY keys (first in list) to keep app consistent
+        if (obj?.raw?.events) localStorage.setItem(EVENT_KEYS[0], JSON.stringify(obj.raw.events));
+        if (obj?.raw?.finance) localStorage.setItem(FIN_KEYS[0], JSON.stringify(obj.raw.finance));
+        if (obj?.raw?.hr) localStorage.setItem(HR_KEYS[0], JSON.stringify(obj.raw.hr));
+        if (obj?.raw?.vendors) localStorage.setItem(VENDOR_KEYS[0], JSON.stringify(obj.raw.vendors));
+
+        setMsg("✅ Backup imported (data restored)");
+        window.setTimeout(() => setMsg(""), 1400);
+      } catch {
+        setMsg("❌ Invalid backup file");
+        window.setTimeout(() => setMsg(""), 1600);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function clearLocalData() {
+    if (!isCEO) {
+      setMsg("❌ Only CEO can clear data");
+      window.setTimeout(() => setMsg(""), 1500);
+      return;
     }
-  }
+    const ok = window.confirm("This will clear Events/Finance/HR/Vendors data in THIS browser only. Continue?");
+    if (!ok) return;
 
-  function resetDefaults() {
-    if (!confirm("Reset Settings to defaults?")) return;
-    setSettings(SETTINGS_DEFAULTS);
+    // Clear known keys only (safe)
+    for (const k of [...EVENT_KEYS, ...FIN_KEYS, ...HR_KEYS, ...VENDOR_KEYS]) localStorage.removeItem(k);
+
+    setMsg("✅ Cleared local data (this device)");
+    window.setTimeout(() => setMsg(""), 1400);
   }
 
   return (
     <div style={S.app}>
-      <aside style={{ ...S.sidebar, width: sidebarIconsOnly ? 76 : 280 }}>
+      <aside style={S.sidebar}>
         <div style={S.brandRow}>
           <div style={S.logoCircle}>E</div>
-          {!sidebarIconsOnly ? (
-            <div>
-              <div style={S.brandName}>Eventura OS</div>
-              <div style={S.brandSub}>{settings.theme}</div>
-            </div>
-          ) : null}
+          <div>
+            <div style={S.brandName}>Eventura OS</div>
+            <div style={S.brandSub}>Settings</div>
+          </div>
         </div>
 
         <nav style={S.nav}>
-          {NAV.map((item) => (
-            <Link key={item.href} href={item.href} style={S.navItem as any}>
-              <span style={S.navIcon}>{item.icon}</span>
-              {!sidebarIconsOnly ? <span style={S.navLabel}>{item.label}</span> : null}
-            </Link>
-          ))}
+          <Link href="/dashboard" style={S.navItem as any}>📊 Dashboard</Link>
+          <Link href="/events" style={S.navItem as any}>📅 Events</Link>
+          <Link href="/finance" style={S.navItem as any}>💰 Finance</Link>
+          <Link href="/vendors" style={S.navItem as any}>🏷️ Vendors</Link>
+          <Link href="/hr" style={S.navItem as any}>🧑‍🤝‍🧑 HR</Link>
+          <Link href="/reports" style={S.navItem as any}>📈 Reports</Link>
+          <Link href="/settings" style={{ ...(S.navItem as any), border: `1px solid ${T.accentBd}`, background: T.accentBg }}>
+            ⚙️ Settings
+          </Link>
         </nav>
 
         <div style={S.sidebarFooter}>
-          {!sidebarIconsOnly ? (
-            <div style={S.userBox}>
-              <div style={S.userLabel}>Signed in</div>
-              <div style={S.userEmail}>{email || "Unknown"}</div>
-              <div style={S.roleBadge}>{role}</div>
-            </div>
-          ) : (
-            <div style={S.roleBadgeSmall}>{role}</div>
-          )}
+          <div style={S.userBox}>
+            <div style={S.userLabel}>Signed in</div>
+            <div style={S.userEmail}>{email || "Unknown"}</div>
+            <div style={S.roleBadge}>{isCEO ? "CEO" : role}</div>
+          </div>
 
-          <button style={S.signOutBtn} onClick={signOut}>
-            {sidebarIconsOnly ? "⎋" : "Sign Out"}
-          </button>
+          <div style={S.smallNote}>
+            Storage:
+            <div>Settings key: <b>{LS_SETTINGS}</b></div>
+            <div>Data saved in this browser localStorage.</div>
+          </div>
         </div>
       </aside>
 
@@ -328,266 +338,159 @@ export default function SettingsPage() {
         <div style={S.header}>
           <div>
             <div style={S.h1}>Settings</div>
-            <div style={S.muted}>
-              Logged in as <b>{email || "Unknown"}</b> • Role:{" "}
-              <span style={S.rolePill}>{role}</span>
-              {settings.autoSaveLabel ? (
-                <span key={savedPulse} style={S.savedPill}>
-                  Saved
-                </span>
-              ) : null}
-            </div>
-          </div>
-
-          <div style={S.headerRight}>
-            <button style={S.secondaryBtn} onClick={exportSettings}>
-              Export
-            </button>
-
-            <label style={S.secondaryBtn as any}>
-              Import
-              <input
-                type="file"
-                accept="application/json"
-                style={{ display: "none" }}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) importSettings(f);
-                  e.currentTarget.value = "";
-                }}
-              />
-            </label>
-
-            <button style={S.dangerBtn} onClick={resetDefaults}>
-              Reset
-            </button>
+            <div style={S.muted}>Deploy-safe • No cloud code • Saves instantly to localStorage</div>
           </div>
         </div>
 
-        {loading ? <div style={S.loadingBar}>Loading session…</div> : null}
+        {msg ? <div style={S.msg}>{msg}</div> : null}
 
         <div style={S.grid}>
           {/* Appearance */}
           <section style={S.panel}>
             <div style={S.panelTitle}>Appearance</div>
 
-            <div style={S.formGrid}>
-              <Field label="Theme" S={S}>
-                <select
-                  style={S.select}
-                  value={settings.theme}
-                  onChange={(e) => setSettings((p) => ({ ...p, theme: e.target.value as Theme }))}
-                >
-                  {(
-                    [
-                      "Royal Gold",
-                      "Midnight Purple",
-                      "Emerald Night",
-                      "Ocean Blue",
-                      "Ruby Noir",
-                      "Carbon Black",
-                      "Ivory Light",
-                    ] as Theme[]
-                  ).map((t) => (
-                    <option key={t} style={S.option}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label="Sidebar mode" S={S}>
-                <select
-                  style={S.select}
-                  value={settings.sidebarMode}
-                  onChange={(e) =>
-                    setSettings((p) => ({ ...p, sidebarMode: e.target.value as SidebarMode }))
-                  }
-                >
-                  <option style={S.option}>Icons + Text</option>
-                  <option style={S.option}>Icons Only</option>
-                </select>
-              </Field>
+            <div style={S.row}>
+              <div style={S.label}>Theme</div>
+              <select
+                style={S.select}
+                value={(settings.theme as Theme) || "Royal Gold"}
+                onChange={(e) => saveSettings({ ...settings, theme: e.target.value as Theme })}
+              >
+                <option>Royal Gold</option>
+                <option>Midnight Purple</option>
+                <option>Emerald Night</option>
+                <option>Ocean Blue</option>
+                <option>Ruby Noir</option>
+                <option>Carbon Black</option>
+                <option>Ivory Light</option>
+              </select>
             </div>
 
-            <div style={S.toggleRow}>
-              <Toggle
-                label="Compact tables"
-                value={settings.compactTables}
-                onChange={(v) => setSettings((p) => ({ ...p, compactTables: v }))}
-                S={S}
-              />
-              <Toggle
-                label="Confirm deletes"
-                value={settings.confirmDeletes}
-                onChange={(v) => setSettings((p) => ({ ...p, confirmDeletes: v }))}
-                S={S}
-              />
-              <Toggle
-                label="Reduced motion"
-                value={settings.reducedMotion}
-                onChange={(v) => setSettings((p) => ({ ...p, reducedMotion: v }))}
-                S={S}
-              />
-              <Toggle
-                label="High contrast"
-                value={settings.highContrast}
-                onChange={(v) => setSettings((p) => ({ ...p, highContrast: v }))}
-                S={S}
+            <div style={S.row}>
+              <div style={S.label}>High contrast</div>
+              <label style={S.switchWrap}>
+                <input
+                  type="checkbox"
+                  checked={!!settings.highContrast}
+                  onChange={(e) => saveSettings({ ...settings, highContrast: e.target.checked })}
+                />
+                <span style={S.switchText}>{settings.highContrast ? "On" : "Off"}</span>
+              </label>
+            </div>
+
+            <div style={S.row}>
+              <div style={S.label}>Compact tables</div>
+              <label style={S.switchWrap}>
+                <input
+                  type="checkbox"
+                  checked={!!settings.compactTables}
+                  onChange={(e) => saveSettings({ ...settings, compactTables: e.target.checked })}
+                />
+                <span style={S.switchText}>{settings.compactTables ? "On" : "Off"}</span>
+              </label>
+            </div>
+
+            <div style={S.row}>
+              <div style={S.label}>Hover color</div>
+              <label style={S.switchWrap}>
+                <input
+                  type="checkbox"
+                  checked={settings.hoverDark !== false}
+                  onChange={(e) => saveSettings({ ...settings, hoverDark: e.target.checked })}
+                />
+                <span style={S.switchText}>{settings.hoverDark !== false ? "Black hover" : "Soft hover"}</span>
+              </label>
+            </div>
+
+            <div style={S.noteBox}>
+              Tip: If you want hover black everywhere, we keep a single setting now (hoverDark).
+              Other pages can read it later.
+            </div>
+          </section>
+
+          {/* Access control */}
+          <section style={S.panel}>
+            <div style={S.panelTitle}>Access Control</div>
+
+            <div style={S.row}>
+              <div style={S.label}>CEO Email</div>
+              <input
+                style={S.input}
+                value={settings.ceoEmail || "hardikvekariya799@gmail.com"}
+                onChange={(e) => saveSettings({ ...settings, ceoEmail: e.target.value.trim() })}
+                placeholder="CEO email"
               />
             </div>
+
+            <div style={S.row}>
+              <div style={S.label}>Staff Email</div>
+              <input
+                style={S.input}
+                value={settings.staffEmail || "eventurastaff@gmail.com"}
+                onChange={(e) => saveSettings({ ...settings, staffEmail: e.target.value.trim() })}
+                placeholder="Staff email"
+              />
+            </div>
+
+            <div style={S.warnBox}>
+              Security note: This is a local app (localStorage). If someone logs in on the same browser/device,
+              they can see that browser’s data.
+            </div>
+          </section>
+
+          {/* Backup */}
+          <section style={S.panel}>
+            <div style={S.panelTitle}>Backup (Easy)</div>
 
             <div style={S.smallNote}>
-              Theme applies instantly across app pages that read DOM tokens.
-            </div>
-          </section>
-
-          {/* Access */}
-          <section style={S.panel}>
-            <div style={S.panelTitle}>Access</div>
-
-            <div style={S.formGrid}>
-              <Field label="CEO email" S={S}>
-                <input
-                  style={S.input}
-                  value={settings.ceoEmail}
-                  disabled={!isCEO}
-                  onChange={(e) => setSettings((p) => ({ ...p, ceoEmail: e.target.value }))}
-                />
-              </Field>
-
-              <Field label="Staff email" S={S}>
-                <input
-                  style={S.input}
-                  value={settings.staffEmail}
-                  disabled={!isCEO}
-                  onChange={(e) => setSettings((p) => ({ ...p, staffEmail: e.target.value }))}
-                />
-              </Field>
+              Export your full data + settings into a JSON file (keep it in your email/Drive). Import anytime.
             </div>
 
-            {!isCEO ? (
-              <div style={S.noteBox}>Only CEO can edit access emails.</div>
-            ) : (
-              <div style={S.noteBox}>
-                Tip: Keep CEO email exactly same as your login email.
-              </div>
-            )}
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+              <button style={S.btn} onClick={exportBackup}>Export Backup JSON</button>
 
-            <div style={S.sectionTitle}>Extra Settings</div>
-            <div style={S.toggleRow}>
-              <Toggle
-                label="Show quick actions"
-                value={settings.quickActions}
-                onChange={(v) => setSettings((p) => ({ ...p, quickActions: v }))}
-                S={S}
-              />
-              <Toggle
-                label="Show auto-save label"
-                value={settings.autoSaveLabel}
-                onChange={(v) => setSettings((p) => ({ ...p, autoSaveLabel: v }))}
-                S={S}
-              />
-            </div>
-          </section>
-
-          {/* Data Tools */}
-          <section style={S.panel}>
-            <div style={S.panelTitle}>Data Tools</div>
-            <div style={S.smallNote}>Export/import settings backup anytime.</div>
-            <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-              <button style={S.secondaryBtnFull} onClick={exportSettings}>
-                Download Settings Backup (JSON)
-              </button>
-
-              <label style={S.secondaryBtnFull as any}>
-                Import Backup (JSON)
+              <label style={S.fileBtn}>
+                Import Backup JSON
                 <input
                   type="file"
                   accept="application/json"
                   style={{ display: "none" }}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) importSettings(f);
-                    e.currentTarget.value = "";
-                  }}
+                  onChange={(e) => importBackup(e.target.files?.[0] || null)}
                 />
               </label>
 
-              <button style={S.dangerBtnFull} onClick={resetDefaults}>
-                Reset Settings to Defaults
+              <button style={S.dangerBtn} onClick={clearLocalData} title="CEO only">
+                Clear Local Data
               </button>
+            </div>
+
+            <div style={S.noteBox}>
+              ✅ This does NOT use any server, Supabase, or cloud. So deployment won’t fail.
             </div>
           </section>
 
-          {/* Status */}
+          {/* About */}
           <section style={S.panel}>
-            <div style={S.panelTitle}>System Status</div>
-            <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
-              <div style={S.statusRow}>
-                <span style={S.smallMuted}>Role</span>
-                <span style={S.statusPill}>{role}</span>
-              </div>
-              <div style={S.statusRow}>
-                <span style={S.smallMuted}>Theme</span>
-                <span style={S.statusPill}>{settings.theme}</span>
-              </div>
-              <div style={S.statusRow}>
-                <span style={S.smallMuted}>Storage Key</span>
-                <span style={S.statusPill}>{LS_SETTINGS}</span>
-              </div>
-              <div style={S.smallNote}>
-                This Settings page only touches localStorage and DOM theme tokens.
-              </div>
+            <div style={S.panelTitle}>About</div>
+            <div style={S.smallNote}>
+              Founder: <b>Hardik Vekariya</b> • Co-Founder: <b>Shubh Parekh</b> • Digital Head: <b>Dixit Bhuva</b>
+            </div>
+
+            <div style={{ marginTop: 10, ...S.smallNote }}>
+              Data location right now: <b>Browser localStorage</b> (per device/per browser).
+              If you want “save on your email for security”, easiest is:
+              <b> Export Backup JSON</b> and email it to yourself.
             </div>
           </section>
         </div>
+
+        <div style={S.footerNote}>✅ Settings saved in localStorage • ✅ No duplicate imports • ✅ Turbopack safe</div>
       </main>
     </div>
   );
 }
 
-/* ================= SMALL UI ================= */
-function Field({
-  label,
-  children,
-  S,
-}: {
-  label: string;
-  children: React.ReactNode;
-  S: Record<string, CSSProperties>;
-}) {
-  return (
-    <div style={{ display: "grid", gap: 6 }}>
-      <div style={{ fontSize: 12, fontWeight: 950, opacity: 0.9 }}>{label}</div>
-      {children}
-    </div>
-  );
-}
-
-function Toggle({
-  label,
-  value,
-  onChange,
-  S,
-}: {
-  label: string;
-  value: boolean;
-  onChange: (v: boolean) => void;
-  S: Record<string, CSSProperties>;
-}) {
-  return (
-    <button
-      type="button"
-      style={value ? S.toggleOnBtn : S.toggleOffBtn}
-      onClick={() => onChange(!value)}
-    >
-      {label}: {value ? "ON" : "OFF"}
-    </button>
-  );
-}
-
-/* ================= STYLES ================= */
+/* ================== STYLES ================== */
 function makeStyles(T: any): Record<string, CSSProperties> {
   return {
     app: {
@@ -602,6 +505,7 @@ function makeStyles(T: any): Record<string, CSSProperties> {
     },
 
     sidebar: {
+      width: 280,
       position: "sticky",
       top: 0,
       height: "100vh",
@@ -613,6 +517,7 @@ function makeStyles(T: any): Record<string, CSSProperties> {
       flexDirection: "column",
       gap: 12,
     },
+
     brandRow: { display: "flex", alignItems: "center", gap: 10, padding: "8px 8px" },
     logoCircle: {
       width: 38,
@@ -630,32 +535,24 @@ function makeStyles(T: any): Record<string, CSSProperties> {
 
     nav: { display: "grid", gap: 8 },
     navItem: {
-      display: "flex",
-      alignItems: "center",
-      gap: 10,
-      padding: "10px 10px",
+      display: "block",
+      padding: "10px 12px",
       borderRadius: 14,
       textDecoration: "none",
       color: T.text,
       border: `1px solid ${T.border}`,
       background: T.soft,
+      fontWeight: 900,
+      fontSize: 13,
     },
-    navIcon: { fontSize: 18, width: 22, textAlign: "center" },
-    navLabel: { fontWeight: 900, fontSize: 13 },
 
     sidebarFooter: { marginTop: "auto", display: "grid", gap: 10 },
-    userBox: {
-      padding: 12,
-      borderRadius: 16,
-      border: `1px solid ${T.border}`,
-      background: T.soft,
-    },
+    userBox: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft },
     userLabel: { fontSize: 12, color: T.muted, fontWeight: 900 },
-    userEmail: { fontSize: 13, fontWeight: 900, marginTop: 6, wordBreak: "break-word" },
+    userEmail: { fontSize: 13, fontWeight: 900, marginTop: 6, wordBreak: "break-word" as any },
     roleBadge: {
       marginTop: 10,
       display: "inline-flex",
-      alignItems: "center",
       padding: "5px 10px",
       borderRadius: 999,
       background: T.accentBg,
@@ -664,27 +561,8 @@ function makeStyles(T: any): Record<string, CSSProperties> {
       fontWeight: 950,
       width: "fit-content",
     },
-    roleBadgeSmall: {
-      display: "inline-flex",
-      justifyContent: "center",
-      padding: "6px 8px",
-      borderRadius: 999,
-      background: T.accentBg,
-      border: `1px solid ${T.accentBd}`,
-      color: T.accentTx,
-      fontWeight: 950,
-    },
-    signOutBtn: {
-      padding: "10px 12px",
-      borderRadius: 14,
-      border: `1px solid ${T.dangerBd}`,
-      background: T.dangerBg,
-      color: T.dangerTx,
-      fontWeight: 950,
-      cursor: "pointer",
-    },
 
-    main: { flex: 1, padding: 16, maxWidth: 1400, margin: "0 auto", width: "100%" },
+    main: { flex: 1, padding: 16, maxWidth: 1200, margin: "0 auto", width: "100%" },
     header: {
       display: "flex",
       alignItems: "flex-start",
@@ -696,42 +574,20 @@ function makeStyles(T: any): Record<string, CSSProperties> {
       background: T.panel,
       backdropFilter: "blur(10px)",
     },
-    headerRight: { display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" },
+
     h1: { fontSize: 26, fontWeight: 950 },
     muted: { color: T.muted, fontSize: 13, marginTop: 6 },
+    smallNote: { color: T.muted, fontSize: 12, lineHeight: 1.35 },
 
-    rolePill: {
-      display: "inline-block",
-      padding: "4px 10px",
-      borderRadius: 999,
-      fontWeight: 950,
-      background: T.accentBg,
-      border: `1px solid ${T.accentBd}`,
-      color: T.accentTx,
-      marginLeft: 8,
-    },
-    savedPill: {
-      display: "inline-block",
-      padding: "4px 10px",
-      borderRadius: 999,
-      fontWeight: 950,
-      background: T.okBg,
-      border: `1px solid ${T.okBd}`,
-      color: T.okTx,
-      marginLeft: 8,
-    },
+    msg: { marginTop: 12, padding: 10, borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft, color: T.text, fontSize: 13 },
 
     grid: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
-    panel: {
-      padding: 14,
-      borderRadius: 18,
-      border: `1px solid ${T.border}`,
-      background: T.panel,
-      backdropFilter: "blur(10px)",
-    },
+
+    panel: { padding: 14, borderRadius: 18, border: `1px solid ${T.border}`, background: T.panel, backdropFilter: "blur(10px)" },
     panelTitle: { fontWeight: 950, color: T.accentTx },
 
-    formGrid: { marginTop: 12, display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" },
+    row: { marginTop: 12, display: "grid", gridTemplateColumns: "140px 1fr", gap: 10, alignItems: "center" },
+    label: { fontWeight: 900, fontSize: 13, color: T.text },
 
     input: {
       width: "100%",
@@ -743,25 +599,22 @@ function makeStyles(T: any): Record<string, CSSProperties> {
       outline: "none",
       fontSize: 14,
     },
+
     select: {
       width: "100%",
-      padding: "10px 10px",
+      padding: "12px 12px",
       borderRadius: 14,
       border: `1px solid ${T.border}`,
       background: T.inputBg,
       color: T.text,
       outline: "none",
-      fontWeight: 900,
+      fontSize: 14,
     },
-    option: { backgroundColor: "#0B1020", color: "#F9FAFB" },
 
-    toggleRow: { marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" },
-    sectionTitle: { marginTop: 14, fontWeight: 950, fontSize: 13, color: T.text },
+    switchWrap: { display: "inline-flex", alignItems: "center", gap: 10 },
+    switchText: { fontWeight: 900, color: T.muted, fontSize: 13 },
 
-    smallMuted: { color: T.muted, fontSize: 12 },
-    smallNote: { color: T.muted, fontSize: 12, lineHeight: 1.35 },
-
-    secondaryBtn: {
+    btn: {
       padding: "10px 12px",
       borderRadius: 14,
       border: `1px solid ${T.border}`,
@@ -770,198 +623,32 @@ function makeStyles(T: any): Record<string, CSSProperties> {
       fontWeight: 950,
       cursor: "pointer",
     },
-    secondaryBtnFull: {
-      width: "100%",
-      padding: "12px 12px",
+
+    fileBtn: {
+      padding: "10px 12px",
       borderRadius: 14,
       border: `1px solid ${T.border}`,
       background: T.soft,
       color: T.text,
       fontWeight: 950,
       cursor: "pointer",
-      textAlign: "center",
+      display: "inline-flex",
+      alignItems: "center",
     },
+
     dangerBtn: {
       padding: "10px 12px",
       borderRadius: 14,
-      border: `1px solid ${T.dangerBd}`,
-      background: T.dangerBg,
-      color: T.dangerTx,
+      border: `1px solid rgba(248,113,113,0.40)`,
+      background: "rgba(248,113,113,0.10)",
+      color: "#FCA5A5",
       fontWeight: 950,
       cursor: "pointer",
     },
-    dangerBtnFull: {
-      width: "100%",
-      padding: "12px 12px",
-      borderRadius: 14,
-      border: `1px solid ${T.dangerBd}`,
-      background: T.dangerBg,
-      color: T.dangerTx,
-      fontWeight: 950,
-      cursor: "pointer",
-      textAlign: "center",
-    },
 
-    toggleOnBtn: {
-      padding: "9px 12px",
-      borderRadius: 999,
-      border: `1px solid ${T.okBd}`,
-      background: T.okBg,
-      color: T.okTx,
-      fontWeight: 950,
-      cursor: "pointer",
-      fontSize: 12,
-    },
-    toggleOffBtn: {
-      padding: "9px 12px",
-      borderRadius: 999,
-      border: `1px solid ${T.border}`,
-      background: T.soft,
-      color: T.text,
-      fontWeight: 950,
-      cursor: "pointer",
-      fontSize: 12,
-    },
+    noteBox: { marginTop: 12, padding: 12, borderRadius: 16, border: `1px solid ${T.okBd}`, background: T.okBg, color: T.okTx, fontSize: 13, lineHeight: 1.35 },
+    warnBox: { marginTop: 12, padding: 12, borderRadius: 16, border: `1px solid ${T.warnBd}`, background: T.warnBg, color: T.warnTx, fontSize: 13, lineHeight: 1.35 },
 
-    noteBox: {
-      marginTop: 12,
-      padding: 12,
-      borderRadius: 16,
-      border: `1px solid ${T.accentBd}`,
-      background: T.accentBg,
-      color: T.text,
-      fontSize: 13,
-      lineHeight: 1.35,
-    },
-
-    statusRow: {
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: 10,
-      padding: 12,
-      borderRadius: 16,
-      border: `1px solid ${T.border}`,
-      background: T.soft,
-    },
-    statusPill: {
-      padding: "5px 10px",
-      borderRadius: 999,
-      border: `1px solid ${T.accentBd}`,
-      background: T.accentBg,
-      color: T.accentTx,
-      fontWeight: 950,
-      fontSize: 12,
-    },
-
-    loadingBar: {
-      marginTop: 12,
-      padding: 10,
-      borderRadius: 14,
-      border: `1px solid ${T.border}`,
-      background: T.soft,
-      color: T.muted,
-      fontSize: 12,
-    },
+    footerNote: { color: T.muted, fontSize: 12, textAlign: "center", padding: 10 },
   };
-}
-import React, { useEffect, useState } from "react";
-import { cloudGet, cloudUpsert, getSessionEmail } from "@/lib/cloudBackup";
-
-const BACKUP_KEYS = [
-  "eventura-events",
-  "eventura-finance-transactions",
-  "eventura-hr-team",
-  "eventura-vendors",
-  "eventura_os_settings_v3",
-];
-
-function safeParse(raw: string | null) {
-  try {
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function prettyErr(e: any) {
-  return e?.message || "Unknown error";
-}
-
-export function CloudBackupPanel() {
-  const [email, setEmail] = useState("");
-  const [msg, setMsg] = useState("");
-  const [auto, setAuto] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      setEmail(await getSessionEmail());
-    })();
-  }, []);
-
-  async function backupNow() {
-    try {
-      setMsg("Backing up…");
-      for (const k of BACKUP_KEYS) {
-        const value = safeParse(typeof window !== "undefined" ? localStorage.getItem(k) : null);
-        await cloudUpsert(k, value ?? []);
-      }
-      setMsg("✅ Backup complete (saved to your account).");
-    } catch (e: any) {
-      setMsg("❌ Backup failed: " + prettyErr(e));
-    }
-  }
-
-  async function restoreNow() {
-    try {
-      setMsg("Restoring…");
-      for (const k of BACKUP_KEYS) {
-        const value = await cloudGet(k);
-        if (typeof window !== "undefined") {
-          localStorage.setItem(k, JSON.stringify(value ?? []));
-        }
-      }
-      setMsg("✅ Restore complete. Refresh the page.");
-    } catch (e: any) {
-      setMsg("❌ Restore failed: " + prettyErr(e));
-    }
-  }
-
-  // Auto backup every 30 seconds (safe)
-  useEffect(() => {
-    if (!auto) return;
-    const id = setInterval(() => {
-      backupNow().catch(() => {});
-    }, 30000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auto]);
-
-  return (
-    <div style={{ marginTop: 14, padding: 14, borderRadius: 16, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)" }}>
-      <div style={{ fontWeight: 900, fontSize: 14 }}>Cloud Backup (Your Email Security)</div>
-      <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85 }}>
-        Signed in as: <b>{email || "Unknown"}</b>
-      </div>
-
-      <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <button onClick={backupNow} style={{ padding: "10px 12px", borderRadius: 12, fontWeight: 900, cursor: "pointer" }}>
-          Backup Now
-        </button>
-        <button onClick={restoreNow} style={{ padding: "10px 12px", borderRadius: 12, fontWeight: 900, cursor: "pointer" }}>
-          Restore Now
-        </button>
-
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, opacity: 0.9 }}>
-          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
-          Auto-backup every 30s
-        </label>
-      </div>
-
-      {msg ? <div style={{ marginTop: 10, fontSize: 12 }}>{msg}</div> : null}
-      <div style={{ marginTop: 8, fontSize: 11, opacity: 0.75 }}>
-        Note: This backs up Events, Finance, HR, Vendors & Settings to Supabase under your login.
-      </div>
-    </div>
-  );
 }
