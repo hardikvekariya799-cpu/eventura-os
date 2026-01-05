@@ -3,9 +3,7 @@
 import React, { useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
 
-/* ================== STORAGE (READ ONLY) ==================
-   AI Tools reads existing module data from localStorage.
-*/
+/* ================== STORAGE (READ ONLY) ================== */
 const EVENT_KEYS = ["eventura-events", "eventura_os_events_v1", "eventura_events_v1"];
 const FIN_KEYS = ["eventura-finance-transactions", "eventura_os_fin_v1", "eventura_fin_v1", "eventura_os_fin_tx_v1"];
 const HR_KEYS = ["eventura-hr-team", "eventura_os_hr_v1", "eventura_hr_v1", "eventura_os_hr_team_v2", "eventura-hr"];
@@ -30,53 +28,12 @@ type AppSettings = {
   staffEmail?: string;
 };
 
-type KeysInfo = {
-  events: string | null;
-  finance: string | null;
-  hr: string | null;
-  vendors: string | null;
-};
+type KeysInfo = { events: string | null; finance: string | null; hr: string | null; vendors: string | null };
 
-type NormalEvent = {
-  id: string;
-  date: string; // YYYY-MM-DD
-  title: string;
-  status: string;
-  city?: string;
-  budget?: number;
-};
-
-type NormalTx = {
-  id: string;
-  date: string; // YYYY-MM-DD
-  type: "Income" | "Expense";
-  amount: number;
-  category?: string;
-  note?: string;
-  vendor?: string;
-};
-
-type NormalStaff = {
-  id: string;
-  name: string;
-  role?: string;
-  status?: string;
-  city?: string;
-  workload?: number;
-  monthlySalary?: number;
-  rating?: number;
-  skills?: string[];
-};
-
-type NormalVendor = {
-  id: string;
-  name: string;
-  category?: string;
-  city?: string;
-  phone?: string;
-  rating?: number;
-  status?: string;
-};
+type NormalEvent = { id: string; date: string; title: string; status: string; city?: string; budget?: number };
+type NormalTx = { id: string; date: string; type: "Income" | "Expense"; amount: number; category?: string; note?: string; vendor?: string };
+type NormalStaff = { id: string; name: string; role?: string; status?: string; city?: string; workload?: number; monthlySalary?: number; rating?: number; skills?: string[] };
+type NormalVendor = { id: string; name: string; category?: string; city?: string; phone?: string; rating?: number; status?: string };
 
 /* ================== SAFE HELPERS ================== */
 function safeParse<T>(raw: string | null, fallback: T): T {
@@ -86,12 +43,10 @@ function safeParse<T>(raw: string | null, fallback: T): T {
     return fallback;
   }
 }
-
 function safeLoad<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   return safeParse<T>(localStorage.getItem(key), fallback);
 }
-
 function loadFirstKey<T>(keys: string[], fallback: T): { keyUsed: string | null; data: T } {
   if (typeof window === "undefined") return { keyUsed: null, data: fallback };
   for (const k of keys) {
@@ -102,14 +57,12 @@ function loadFirstKey<T>(keys: string[], fallback: T): { keyUsed: string | null;
   }
   return { keyUsed: null, data: fallback };
 }
-
 function todayYMD(): string {
   const d = new Date();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
-
 function isoMinusDays(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() - days);
@@ -117,12 +70,10 @@ function isoMinusDays(days: number): string {
   const dd = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
-
 function inRange(dateStr: string, from: string, to: string) {
   if (!dateStr) return false;
-  return dateStr >= from && dateStr <= to; // YYYY-MM-DD lexicographic safe
+  return dateStr >= from && dateStr <= to;
 }
-
 function formatCurrency(amount: number, currency: "INR" | "CAD" | "USD" = "INR") {
   try {
     return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
@@ -130,7 +81,6 @@ function formatCurrency(amount: number, currency: "INR" | "CAD" | "USD" = "INR")
     return `${amount.toFixed(2)} ${currency}`;
   }
 }
-
 function exportJSON(filename: string, obj: any) {
   const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -140,7 +90,6 @@ function exportJSON(filename: string, obj: any) {
   a.click();
   URL.revokeObjectURL(url);
 }
-
 function exportText(filename: string, text: string, mime = "text/plain;charset=utf-8") {
   const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -150,7 +99,6 @@ function exportText(filename: string, text: string, mime = "text/plain;charset=u
   a.click();
   URL.revokeObjectURL(url);
 }
-
 function exportCSV(filename: string, rows: Record<string, any>[]) {
   const keys = Array.from(new Set(rows.flatMap((r) => Object.keys(r))));
   const esc = (v: any) => {
@@ -161,7 +109,6 @@ function exportCSV(filename: string, rows: Record<string, any>[]) {
   const csv = [keys.join(","), ...rows.map((r) => keys.map((k) => esc(r[k])).join(","))].join("\n");
   exportText(filename, csv, "text/csv;charset=utf-8");
 }
-
 async function copyToClipboard(text: string) {
   try {
     await navigator.clipboard.writeText(text);
@@ -186,7 +133,6 @@ function normalizeEvents(raw: any): NormalEvent[] {
     })
     .filter((e) => e.date && e.title);
 }
-
 function normalizeFinance(raw: any): NormalTx[] {
   const arr = Array.isArray(raw) ? raw : [];
   return arr
@@ -203,7 +149,6 @@ function normalizeFinance(raw: any): NormalTx[] {
     })
     .filter((t) => t.date && t.amount > 0);
 }
-
 function normalizeHR(raw: any): NormalStaff[] {
   const arr = Array.isArray(raw) ? raw : [];
   return arr
@@ -221,7 +166,6 @@ function normalizeHR(raw: any): NormalStaff[] {
     })
     .filter((m) => m.name);
 }
-
 function normalizeVendors(raw: any): NormalVendor[] {
   const arr = Array.isArray(raw) ? raw : [];
   return arr
@@ -269,7 +213,7 @@ function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
     case "Ocean Blue":
       return { ...base, glow1: "rgba(59,130,246,0.22)", glow2: "rgba(34,211,238,0.14)", accentBg: "rgba(59,130,246,0.16)", accentBd: hc ? "rgba(59,130,246,0.55)" : "rgba(59,130,246,0.30)", accentTx: "#BFDBFE" };
     case "Ruby Noir":
-      return { ...base, glow1: "rgba(244,63,94,0.18)", glow2: "rgba(212,175,55,0.10)", accentBg: "rgba(244,63,94,0.14)", accentBd: hc ? "rgba(244,63, hookup`?": "rgba(244,63,94,0.50)" : "rgba(244,63,94,0.26)", accentTx: "#FDA4AF" };
+      return { ...base, glow1: "rgba(244,63,94,0.18)", glow2: "rgba(212,175,55,0.10)", accentBg: "rgba(244,63,94,0.14)", accentBd: hc ? "rgba(244,63,94,0.50)" : "rgba(244,63,94,0.26)", accentTx: "#FDA4AF" };
     case "Carbon Black":
       return { ...base, bg: "#03040A", glow1: "rgba(255,255,255,0.10)", glow2: "rgba(212,175,55,0.10)", accentBg: "rgba(212,175,55,0.14)", accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)", accentTx: "#FDE68A" };
     case "Ivory Light":
@@ -362,17 +306,14 @@ export default function AIToolsPage() {
   const ceoEmail = (settings.ceoEmail || "hardikvekariya799@gmail.com").toLowerCase();
   const isCEO = (email || "").toLowerCase() === ceoEmail;
 
-  // Normalize
   const events = useMemo(() => normalizeEvents(rawEvents), [rawEvents]);
   const txs = useMemo(() => normalizeFinance(rawFin), [rawFin]);
   const team = useMemo(() => normalizeHR(rawHR), [rawHR]);
   const vendors = useMemo(() => normalizeVendors(rawVendors), [rawVendors]);
 
-  // Range filters
   const eventsInRange = useMemo(() => events.filter((e) => inRange(e.date, from, to)), [events, from, to]);
   const txsInRange = useMemo(() => txs.filter((t) => inRange(t.date, from, to)), [txs, from, to]);
 
-  // Metrics
   const finTotals = useMemo(() => {
     let income = 0;
     let expense = 0;
@@ -389,7 +330,7 @@ export default function AIToolsPage() {
     const total = team.length;
     const active = team.filter((m) => String(m.status || "").toLowerCase() !== "inactive").length;
     const avgWorkload = total ? Math.round((team.reduce((a, b) => a + (b.workload ?? 0), 0) / total) * 10) / 10 : 0;
-    const highLoadCount = team.filter((m) => (m.workload ?? 0) >= 80).length; // keep numeric only
+    const highLoadCount = team.filter((m) => (m.workload ?? 0) >= 80).length;
     const payroll = team.reduce((a, b) => a + (b.monthlySalary ?? 0), 0);
     return { total, active, avgWorkload, highLoadCount, payroll };
   }, [team]);
@@ -402,7 +343,6 @@ export default function AIToolsPage() {
     return { total, active, avgRating };
   }, [vendors]);
 
-  // Recommendations
   const topVendorsForCity = useMemo(() => {
     const list = vendors
       .filter((v) => (v.city || "").toLowerCase().includes(eventCity.toLowerCase()) || !v.city)
@@ -411,12 +351,7 @@ export default function AIToolsPage() {
     return list.slice(0, 8);
   }, [vendors, eventCity]);
 
-  const busyStaff = useMemo(() => {
-    return team
-      .slice()
-      .sort((a, b) => (b.workload ?? 0) - (a.workload ?? 0))
-      .slice(0, 8);
-  }, [team]);
+  const busyStaff = useMemo(() => team.slice().sort((a, b) => (b.workload ?? 0) - (a.workload ?? 0)).slice(0, 8), [team]);
 
   const aiBlocks: AIBlock[] = useMemo(() => {
     const blocks: AIBlock[] = [];
@@ -424,88 +359,29 @@ export default function AIToolsPage() {
     const commonHeader = () => {
       blocks.push({ type: "title", text: `AI Tools • ${mode}` });
       blocks.push({ type: "text", text: `Range: ${from} → ${to}` });
-      blocks.push({
-        type: "kpi",
-        label: "Events",
-        value: String(eventsInRange.length),
-        tone: eventsInRange.length ? "ok" : "warn",
-      });
-      blocks.push({
-        type: "kpi",
-        label: "Net",
-        value: formatCurrency(finTotals.net, currency),
-        tone: finTotals.net < 0 ? "danger" : "ok",
-      });
-      blocks.push({
-        type: "kpi",
-        label: "Team Active",
-        value: `${hrKpis.active}/${hrKpis.total}`,
-        tone: hrKpis.total ? "ok" : "warn",
-      });
-      blocks.push({
-        type: "kpi",
-        label: "Vendors",
-        value: String(vendorKpis.total),
-        tone: vendorKpis.total ? "ok" : "warn",
-      });
+      blocks.push({ type: "kpi", label: "Events", value: String(eventsInRange.length), tone: eventsInRange.length ? "ok" : "warn" });
+      blocks.push({ type: "kpi", label: "Net", value: formatCurrency(finTotals.net, currency), tone: finTotals.net < 0 ? "danger" : "ok" });
+      blocks.push({ type: "kpi", label: "Team Active", value: `${hrKpis.active}/${hrKpis.total}`, tone: hrKpis.total ? "ok" : "warn" });
+      blocks.push({ type: "kpi", label: "Vendors", value: String(vendorKpis.total), tone: vendorKpis.total ? "ok" : "warn" });
       blocks.push({ type: "text", text: "" });
     };
 
-    const executiveBrief = () => {
+    if (mode === "Executive Brief") {
       commonHeader();
-
       const bullets: string[] = [];
       if (finTotals.net < 0) bullets.push("Finance alert: Net is negative. Reduce expenses OR add missing income entries.");
       if (finTotals.burn >= 90) bullets.push("High burn ratio: Expenses close to income. Tighten vendor costs and misc spending.");
       if (hrKpis.highLoadCount > 0) bullets.push(`HR alert: ${hrKpis.highLoadCount} team member(s) at high workload. Reassign tasks or hire freelancer.`);
       if (!eventsInRange.length) bullets.push("No events found in range. Confirm event dates are saved as YYYY-MM-DD.");
+      blocks.push({ type: "bullets", title: "Auto Insights", items: bullets.length ? bullets : ["All good. No critical alerts detected."] });
+    }
 
-      const topStatuses = (() => {
-        const m = new Map<string, number>();
-        for (const e of eventsInRange) {
-          const k = (e.status || "Unknown").trim() || "Unknown";
-          m.set(k, (m.get(k) ?? 0) + 1);
-        }
-        return Array.from(m.entries()).sort((a, b) => b[1] - a[1]).slice(0, 6);
-      })();
-
-      blocks.push({
-        type: "bullets",
-        title: "Auto Insights",
-        items: bullets.length ? bullets : ["All good. No critical alerts detected."],
-      });
-
-      blocks.push({
-        type: "table",
-        title: "Top Event Status",
-        columns: ["Status", "Count"],
-        rows: topStatuses.map(([s, c]) => [s, c]),
-      });
-
-      blocks.push({
-        type: "table",
-        title: "Top Workload",
-        columns: ["Name", "Role", "Workload", "City"],
-        rows: busyStaff.slice(0, 6).map((m) => [m.name, m.role || "—", `${m.workload ?? 0}%`, m.city || "—"]),
-      });
-    };
-
-    const eventPlan = () => {
+    if (mode === "Event Plan") {
       blocks.push({ type: "title", text: "AI Tools • Event Plan Generator" });
-      blocks.push({
-        type: "bullets",
-        title: "Inputs",
-        items: [
-          `Goal: ${eventGoal}`,
-          `City: ${eventCity}`,
-          `Budget: ${formatCurrency(eventBudget || 0, currency)}`,
-          `Guests: ${eventGuests || 0}`,
-        ],
-      });
+      blocks.push({ type: "bullets", title: "Inputs", items: [`Goal: ${eventGoal}`, `City: ${eventCity}`, `Budget: ${formatCurrency(eventBudget || 0, currency)}`, `Guests: ${eventGuests || 0}`] });
 
-      // simple allocation model
       const budget = Math.max(0, Number(eventBudget) || 0);
-      const alloc = [
+      const alloc: [string, number][] = [
         ["Venue", Math.round(budget * 0.25)],
         ["Catering", Math.round(budget * 0.35)],
         ["Decor", Math.round(budget * 0.12)],
@@ -514,249 +390,70 @@ export default function AIToolsPage() {
         ["Logistics", Math.round(budget * 0.06)],
         ["Contingency", Math.round(budget * 0.08)],
       ];
-      blocks.push({
-        type: "table",
-        title: "Suggested Budget Allocation",
-        columns: ["Category", "Amount"],
-        rows: alloc.map(([c, a]) => [c as string, formatCurrency(a as number, currency)]),
-      });
 
-      const timeline = [
-        ["T-30", "Finalize venue, shortlist vendors, block key staff"],
-        ["T-21", "Confirm caterer/menu, decor theme, guest list draft"],
-        ["T-14", "Finalize vendors, logistics plan, rehearsal schedule"],
-        ["T-7", "Payments + confirmations, team runbook, backup plan"],
-        ["T-1", "Final walkthrough, inventory check, staff assignments"],
-        ["T+1", "Vendor settlement, client feedback, post-event report"],
-      ];
-      blocks.push({
-        type: "table",
-        title: "Execution Timeline",
-        columns: ["Day", "Action"],
-        rows: timeline,
-      });
+      blocks.push({ type: "table", title: "Suggested Budget Allocation", columns: ["Category", "Amount"], rows: alloc.map(([c, a]) => [c, formatCurrency(a, currency)]) });
 
       blocks.push({
         type: "table",
         title: "Recommended Vendors (Top Rated)",
         columns: ["Vendor", "Category", "City", "Rating", "Phone"],
-        rows: topVendorsForCity.slice(0, 6).map((v) => [
-          v.name,
-          v.category || "—",
-          v.city || "—",
-          typeof v.rating === "number" ? v.rating : "—",
-          v.phone || "—",
-        ]),
+        rows: topVendorsForCity.slice(0, 6).map((v) => [v.name, v.category || "—", v.city || "—", typeof v.rating === "number" ? v.rating : "—", v.phone || "—"]),
       });
-    };
+    }
 
-    const financeInsights = () => {
+    if (mode === "Finance Insights") {
       commonHeader();
-
-      const cats = (() => {
-        const m = new Map<string, { income: number; expense: number }>();
-        for (const t of txsInRange) {
-          const k = (t.category || "Other").trim() || "Other";
-          const cur = m.get(k) ?? { income: 0, expense: 0 };
-          if (t.type === "Income") cur.income += t.amount;
-          else cur.expense += t.amount;
-          m.set(k, cur);
-        }
-        return Array.from(m.entries()).map(([k, v]) => ({
-          category: k,
-          income: v.income,
-          expense: v.expense,
-          net: v.income - v.expense,
-        }));
-      })()
-        .sort((a, b) => Math.abs(b.net) - Math.abs(a.net))
-        .slice(0, 10);
-
       blocks.push({
         type: "bullets",
         title: "Finance Actions (Auto)",
         items: [
           finTotals.net < 0 ? "Net negative: check missing income entries and reduce vendor expenses." : "Net positive: keep expense controls tight.",
           finTotals.burn >= 90 ? "Burn is high: renegotiate vendor costs or reprice packages." : "Burn is healthy: keep current margin structure.",
-          "Tip: Use categories consistently (Venue, Catering, Decor, Marketing) for best reports.",
         ],
       });
+    }
 
-      blocks.push({
-        type: "table",
-        title: "Category P&L (Selected Range)",
-        columns: ["Category", "Income", "Expense", "Net"],
-        rows: cats.map((c) => [
-          c.category,
-          formatCurrency(c.income, currency),
-          formatCurrency(c.expense, currency),
-          formatCurrency(c.net, currency),
-        ]),
-      });
-
-      blocks.push({
-        type: "table",
-        title: "Recent Transactions",
-        columns: ["Date", "Type", "Category", "Amount", "Vendor", "Note"],
-        rows: txsInRange
-          .slice()
-          .sort((a, b) => (a.date < b.date ? 1 : -1))
-          .slice(0, 10)
-          .map((t) => [t.date, t.type, t.category || "Other", formatCurrency(t.amount, currency), t.vendor || "—", t.note || "—"]),
-      });
-    };
-
-    const hrPlanner = () => {
+    if (mode === "HR Planner") {
       commonHeader();
-
-      const high = team.filter((m) => (m.workload ?? 0) >= 80).slice().sort((a, b) => (b.workload ?? 0) - (a.workload ?? 0));
-      const low = team.filter((m) => (m.workload ?? 0) <= 30).slice().sort((a, b) => (a.workload ?? 0) - (b.workload ?? 0));
-
-      blocks.push({
-        type: "bullets",
-        title: "HR Suggestions (Auto)",
-        items: [
-          hrKpis.highLoadCount > 0
-            ? `Rebalance workload: move tasks from high workload to low workload team members.`
-            : "Workload looks balanced. Maintain assignments.",
-          hrKpis.payroll > 0 ? `Payroll approx: ${formatCurrency(hrKpis.payroll, currency)} / month.` : "Add salary to staff for payroll calculation.",
-          "Add skills for each staff member to enable training + assignment recommendations.",
-        ],
-      });
-
       blocks.push({
         type: "table",
-        title: `High Workload (≥ 80%)`,
-        columns: ["Name", "Role", "Workload", "City", "Status"],
-        rows: (high.length ? high : [{ name: "—", role: "—", workload: 0, city: "—", status: "—", id: "x" }]).slice(0, 8).map((m) => [
-          m.name,
-          m.role || "—",
-          `${m.workload ?? 0}%`,
-          m.city || "—",
-          m.status || "—",
-        ]),
-      });
-
-      blocks.push({
-        type: "table",
-        title: "Available Staff (≤ 30%)",
+        title: "High Workload (≥ 80%)",
         columns: ["Name", "Role", "Workload", "City"],
-        rows: (low.length ? low : [{ name: "—", role: "—", workload: 0, city: "—", id: "y" }]).slice(0, 8).map((m) => [
-          m.name,
-          m.role || "—",
-          `${m.workload ?? 0}%`,
-          m.city || "—",
-        ]),
+        rows: team
+          .filter((m) => (m.workload ?? 0) >= 80)
+          .slice(0, 10)
+          .map((m) => [m.name, m.role || "—", `${m.workload ?? 0}%`, m.city || "—"]),
       });
-    };
+    }
 
-    const vendorMatch = () => {
+    if (mode === "Vendor Match") {
       blocks.push({ type: "title", text: "AI Tools • Vendor Match" });
       blocks.push({ type: "text", text: `City: ${eventCity} • Goal: ${eventGoal}` });
-
-      const byCategory = (() => {
-        const m = new Map<string, NormalVendor[]>();
-        for (const v of topVendorsForCity) {
-          const k = (v.category || "Other").trim() || "Other";
-          m.set(k, [...(m.get(k) ?? []), v]);
-        }
-        return Array.from(m.entries())
-          .map(([cat, list]) => ({ cat, list: list.slice().sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0)).slice(0, 4) }))
-          .sort((a, b) => b.list.length - a.list.length)
-          .slice(0, 6);
-      })();
-
-      blocks.push({
-        type: "bullets",
-        title: "Matching Logic",
-        items: [
-          "Prefers vendors with higher ratings.",
-          "Matches by city (or shows vendor even if city missing).",
-          "Use vendor category to build the perfect vendor stack.",
-        ],
-      });
-
-      for (const g of byCategory) {
-        blocks.push({
-          type: "table",
-          title: `Top: ${g.cat}`,
-          columns: ["Vendor", "City", "Rating", "Phone", "Status"],
-          rows: g.list.map((v) => [
-            v.name,
-            v.city || "—",
-            typeof v.rating === "number" ? v.rating : "—",
-            v.phone || "—",
-            v.status || "—",
-          ]),
-        });
-      }
-    };
-
-    const reportWriter = () => {
-      commonHeader();
-
-      const topStatus = (() => {
-        const m = new Map<string, number>();
-        for (const e of eventsInRange) {
-          const k = (e.status || "Unknown").trim() || "Unknown";
-          m.set(k, (m.get(k) ?? 0) + 1);
-        }
-        return Array.from(m.entries()).sort((a, b) => b[1] - a[1])[0];
-      })();
-
-      const summary = [
-        `Period: ${from} to ${to}`,
-        `Events: ${eventsInRange.length}${topStatus ? ` (Top: ${topStatus[0]} • ${topStatus[1]})` : ""}`,
-        `Finance: Income ${formatCurrency(finTotals.income, currency)} • Expense ${formatCurrency(finTotals.expense, currency)} • Net ${formatCurrency(finTotals.net, currency)}`,
-        `HR: Team ${hrKpis.total} • Active ${hrKpis.active} • Avg workload ${hrKpis.avgWorkload}%`,
-        `Vendors: ${vendorKpis.total} • Active ${vendorKpis.active} • Avg rating ${vendorKpis.avgRating || "—"}`,
-      ];
-
-      blocks.push({ type: "bullets", title: "Company Summary", items: summary });
-
       blocks.push({
         type: "table",
-        title: "Key KPIs",
-        columns: ["Metric", "Value"],
-        rows: [
-          ["Events", eventsInRange.length],
-          ["Income", formatCurrency(finTotals.income, currency)],
-          ["Expense", formatCurrency(finTotals.expense, currency)],
-          ["Net", formatCurrency(finTotals.net, currency)],
-          ["Team", hrKpis.total],
-          ["High workload", hrKpis.highLoadCount],
-          ["Vendors", vendorKpis.total],
+        title: "Top Vendors",
+        columns: ["Vendor", "Category", "City", "Rating"],
+        rows: topVendorsForCity.map((v) => [v.name, v.category || "—", v.city || "—", typeof v.rating === "number" ? v.rating : "—"]),
+      });
+    }
+
+    if (mode === "Report Writer") {
+      commonHeader();
+      blocks.push({
+        type: "bullets",
+        title: "Company Summary",
+        items: [
+          `Period: ${from} to ${to}`,
+          `Events: ${eventsInRange.length}`,
+          `Finance: Income ${formatCurrency(finTotals.income, currency)} • Expense ${formatCurrency(finTotals.expense, currency)} • Net ${formatCurrency(finTotals.net, currency)}`,
+          `HR: Team ${hrKpis.total} • Active ${hrKpis.active} • Avg workload ${hrKpis.avgWorkload}%`,
+          `Vendors: ${vendorKpis.total} • Active ${vendorKpis.active} • Avg rating ${vendorKpis.avgRating || "—"}`,
         ],
       });
-    };
-
-    // Build blocks per mode
-    if (mode === "Executive Brief") executiveBrief();
-    if (mode === "Event Plan") eventPlan();
-    if (mode === "Finance Insights") financeInsights();
-    if (mode === "HR Planner") hrPlanner();
-    if (mode === "Vendor Match") vendorMatch();
-    if (mode === "Report Writer") reportWriter();
+    }
 
     return blocks;
-  }, [
-    mode,
-    from,
-    to,
-    currency,
-    eventsInRange,
-    txsInRange,
-    finTotals,
-    hrKpis,
-    vendorKpis,
-    eventGoal,
-    eventCity,
-    eventBudget,
-    eventGuests,
-    topVendorsForCity,
-    busyStaff,
-    team,
-  ]);
+  }, [mode, from, to, currency, eventsInRange.length, finTotals, hrKpis, vendorKpis, eventGoal, eventCity, eventBudget, eventGuests, topVendorsForCity, team]);
 
   const markdown = useMemo(() => blocksToMarkdown(aiBlocks), [aiBlocks]);
 
@@ -765,13 +462,11 @@ export default function AIToolsPage() {
     setMsg(ok ? "✅ Copied Markdown" : "❌ Copy failed (browser blocked)");
     window.setTimeout(() => setMsg(""), 1200);
   }
-
   function onExportMD() {
     exportText(`eventura_ai_${mode.replace(/\s+/g, "_").toLowerCase()}_${todayYMD()}.md`, markdown, "text/markdown;charset=utf-8");
     setMsg("✅ Exported Markdown");
     window.setTimeout(() => setMsg(""), 1200);
   }
-
   function onExportJSON() {
     exportJSON(`eventura_ai_${mode.replace(/\s+/g, "_").toLowerCase()}_${todayYMD()}.json`, {
       version: "eventura-ai-tools-v1",
@@ -785,19 +480,19 @@ export default function AIToolsPage() {
     setMsg("✅ Exported JSON");
     window.setTimeout(() => setMsg(""), 1200);
   }
-
   function onExportRawCSV() {
-    exportCSV(`eventura_ai_raw_events_${from}_to_${to}.csv`, eventsInRange);
-    exportCSV(`eventura_ai_raw_finance_${from}_to_${to}.csv`, txsInRange);
-    exportCSV(`eventura_ai_raw_hr_${todayYMD()}.csv`, team);
-    exportCSV(`eventura_ai_raw_vendors_${todayYMD()}.csv`, vendors);
+    exportCSV(`eventura_ai_raw_events_${from}_to_${to}.csv`, eventsInRange as any);
+    exportCSV(`eventura_ai_raw_finance_${from}_to_${to}.csv`, txsInRange as any);
+    exportCSV(`eventura_ai_raw_hr_${todayYMD()}.csv`, normalizeHR(rawHR) as any);
+    exportCSV(`eventura_ai_raw_vendors_${todayYMD()}.csv`, normalizeVendors(rawVendors) as any);
     setMsg("✅ Exported raw CSVs");
     window.setTimeout(() => setMsg(""), 1200);
   }
 
+  const txsInRange = useMemo(() => txs.filter((t) => inRange(t.date, from, to)), [txs, from, to]);
+
   return (
     <div style={S.app}>
-      {/* Sidebar */}
       <aside style={S.sidebar}>
         <div style={S.brandRow}>
           <div style={S.logoCircle}>E</div>
@@ -835,14 +530,11 @@ export default function AIToolsPage() {
         </div>
       </aside>
 
-      {/* Main */}
       <main style={S.main}>
         <div style={S.header}>
           <div>
             <div style={S.h1}>AI Tools Command Center</div>
-            <div style={S.muted}>
-              Advanced insights + formatted outputs • Markdown/JSON export • Deploy-safe (no external API)
-            </div>
+            <div style={S.muted}>Advanced insights + Markdown/JSON export • Deploy-safe</div>
           </div>
 
           <div style={S.headerRight}>
@@ -856,7 +548,6 @@ export default function AIToolsPage() {
 
         {msg ? <div style={S.msg}>{msg}</div> : null}
 
-        {/* Controls */}
         <div style={S.controls}>
           <div style={S.controlGrid}>
             <div style={S.controlBox}>
@@ -891,9 +582,8 @@ export default function AIToolsPage() {
             </div>
           </div>
 
-          {/* Event plan extra inputs */}
           <div style={S.subControls}>
-            <div style={S.subTitle}>Planner Inputs (used in Event Plan / Vendor Match)</div>
+            <div style={S.subTitle}>Planner Inputs (Event Plan / Vendor Match)</div>
             <div style={S.subGrid}>
               <div style={S.controlBox}>
                 <div style={S.smallMuted}>Goal</div>
@@ -905,40 +595,26 @@ export default function AIToolsPage() {
               </div>
               <div style={S.controlBox}>
                 <div style={S.smallMuted}>Budget</div>
-                <input
-                  style={S.inputWide}
-                  type="number"
-                  value={eventBudget}
-                  onChange={(e) => setEventBudget(Number(e.target.value || 0))}
-                />
+                <input style={S.inputWide} type="number" value={eventBudget} onChange={(e) => setEventBudget(Number(e.target.value || 0))} />
               </div>
               <div style={S.controlBox}>
                 <div style={S.smallMuted}>Guests</div>
-                <input
-                  style={S.inputWide}
-                  type="number"
-                  value={eventGuests}
-                  onChange={(e) => setEventGuests(Number(e.target.value || 0))}
-                />
+                <input style={S.inputWide} type="number" value={eventGuests} onChange={(e) => setEventGuests(Number(e.target.value || 0))} />
               </div>
             </div>
           </div>
         </div>
 
-        {/* Output */}
         <div style={S.grid}>
           <section style={S.panel}>
-            <div style={S.panelTitle}>Formatted Output (Cards/Tables)</div>
-
+            <div style={S.panelTitle}>Formatted Output</div>
             <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
               {aiBlocks.map((b, idx) => {
                 if (b.type === "title") return <div key={idx} style={S.bigTitle}>{b.text}</div>;
-
                 if (b.type === "text") return <div key={idx} style={S.textLine}>{b.text}</div>;
 
                 if (b.type === "kpi") {
-                  const box =
-                    b.tone === "ok" ? S.kpiOk : b.tone === "warn" ? S.kpiWarn : b.tone === "danger" ? S.kpiDanger : S.kpi;
+                  const box = b.tone === "ok" ? S.kpiOk : b.tone === "warn" ? S.kpiWarn : b.tone === "danger" ? S.kpiDanger : S.kpi;
                   return (
                     <div key={idx} style={box}>
                       <div style={S.kpiLabel}>{b.label}</div>
@@ -994,15 +670,13 @@ export default function AIToolsPage() {
           </section>
 
           <section style={S.panel}>
-            <div style={S.panelTitle}>Markdown Output (Ready for Email / PDF / Proposal)</div>
+            <div style={S.panelTitle}>Markdown Output</div>
             <textarea style={S.textarea} value={markdown} readOnly />
-            <div style={S.smallNote}>
-              Tip: Copy Markdown and paste into Google Docs / Word to create a professional report quickly.
-            </div>
+            <div style={S.smallNote}>Copy and paste into Docs/Word to make a clean report.</div>
           </section>
         </div>
 
-        <div style={S.footerNote}>✅ AI Tools upgraded • ✅ Advanced formatting • ✅ Exports • ✅ Deploy-safe</div>
+        <div style={S.footerNote}>✅ Deploy-safe • ✅ No external API • ✅ Advanced formatting + exports</div>
       </main>
     </div>
   );
@@ -1018,8 +692,7 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
                    radial-gradient(900px 700px at 80% 20%, ${T.glow2}, transparent 55%),
                    ${T.bg}`,
       color: T.text,
-      fontFamily:
-        'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
+      fontFamily: 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial',
     },
 
     sidebar: {
@@ -1068,30 +741,10 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
     userBox: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft },
     userLabel: { fontSize: 12, color: T.muted, fontWeight: 900 },
     userEmail: { fontSize: 13, fontWeight: 900, marginTop: 6, wordBreak: "break-word" },
-    roleBadge: {
-      marginTop: 10,
-      display: "inline-flex",
-      padding: "5px 10px",
-      borderRadius: 999,
-      background: T.accentBg,
-      border: `1px solid ${T.accentBd}`,
-      color: T.accentTx,
-      fontWeight: 950,
-      width: "fit-content",
-    },
+    roleBadge: { marginTop: 10, display: "inline-flex", padding: "5px 10px", borderRadius: 999, background: T.accentBg, border: `1px solid ${T.accentBd}`, color: T.accentTx, fontWeight: 950, width: "fit-content" },
 
     main: { flex: 1, padding: 16, maxWidth: 1500, margin: "0 auto", width: "100%" },
-    header: {
-      display: "flex",
-      alignItems: "flex-start",
-      justifyContent: "space-between",
-      gap: 12,
-      padding: 12,
-      borderRadius: 18,
-      border: `1px solid ${T.border}`,
-      background: T.panel,
-      backdropFilter: "blur(10px)",
-    },
+    header: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: 12, borderRadius: 18, border: `1px solid ${T.border}`, background: T.panel, backdropFilter: "blur(10px)" },
     headerRight: { display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" },
 
     h1: { fontSize: 26, fontWeight: 950 },
@@ -1101,16 +754,7 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
 
     msg: { marginTop: 12, padding: 10, borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft, color: T.text, fontSize: 13 },
 
-    secondaryBtn: {
-      padding: "10px 12px",
-      borderRadius: 14,
-      border: `1px solid ${T.border}`,
-      background: T.soft,
-      color: T.text,
-      fontWeight: 950,
-      cursor: "pointer",
-      whiteSpace: "nowrap",
-    },
+    secondaryBtn: { padding: "10px 12px", borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft, color: T.text, fontWeight: 950, cursor: "pointer", whiteSpace: "nowrap" },
 
     controls: { marginTop: 12, padding: 12, borderRadius: 18, border: `1px solid ${T.border}`, background: T.soft },
     controlGrid: { display: "grid", gridTemplateColumns: "1.2fr 0.8fr 1fr 1fr", gap: 12 },
@@ -1120,37 +764,9 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
     subTitle: { fontWeight: 950, color: T.accentTx, marginBottom: 10 },
     subGrid: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12 },
 
-    input: {
-      width: "100%",
-      padding: compact ? "10px 10px" : "12px 12px",
-      borderRadius: 14,
-      border: `1px solid ${T.border}`,
-      background: T.inputBg,
-      color: T.text,
-      outline: "none",
-      fontSize: 14,
-    },
-    inputWide: {
-      width: "100%",
-      padding: compact ? "10px 10px" : "12px 12px",
-      borderRadius: 14,
-      border: `1px solid ${T.border}`,
-      background: T.inputBg,
-      color: T.text,
-      outline: "none",
-      fontSize: 14,
-    },
-    select: {
-      width: "100%",
-      padding: compact ? "10px 10px" : "12px 12px",
-      borderRadius: 14,
-      border: `1px solid ${T.border}`,
-      background: T.inputBg,
-      color: T.text,
-      outline: "none",
-      fontSize: 14,
-      fontWeight: 800,
-    },
+    input: { width: "100%", padding: compact ? "10px 10px" : "12px 12px", borderRadius: 14, border: `1px solid ${T.border}`, background: T.inputBg, color: T.text, outline: "none", fontSize: 14 },
+    inputWide: { width: "100%", padding: compact ? "10px 10px" : "12px 12px", borderRadius: 14, border: `1px solid ${T.border}`, background: T.inputBg, color: T.text, outline: "none", fontSize: 14 },
+    select: { width: "100%", padding: compact ? "10px 10px" : "12px 12px", borderRadius: 14, border: `1px solid ${T.border}`, background: T.inputBg, color: T.text, outline: "none", fontSize: 14, fontWeight: 800 },
 
     grid: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
     panel: { padding: 14, borderRadius: 18, border: `1px solid ${T.border}`, background: T.panel, backdropFilter: "blur(10px)" },
@@ -1168,7 +784,6 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
 
     card: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft },
     cardTitle: { fontWeight: 950, marginBottom: 8 },
-
     ul: { margin: 0, paddingLeft: 18, display: "grid", gap: 6 },
     li: { fontWeight: 800 },
 
