@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState, type CSSProperties } from "react";
+import React, { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 
 /* ================== STORAGE (DO NOT TOUCH OTHER PAGES) ==================
@@ -8,7 +8,7 @@ import Link from "next/link";
 */
 const EVENT_KEYS = ["eventura-events", "eventura_os_events_v1", "eventura_events_v1"];
 const FIN_KEYS = ["eventura-finance-transactions", "eventura_os_fin_v1", "eventura_fin_v1", "eventura_os_fin_tx_v1"];
-const HR_KEYS = ["eventura-hr-team", "eventura_os_hr_v1", "eventura_hr_v1", "eventura_hr_v1", "eventura_os_hr_team_v2"];
+const HR_KEYS = ["eventura-hr-team", "eventura_os_hr_v1", "eventura_hr_v1", "eventura_os_hr_team_v2"];
 const VENDOR_KEYS = ["eventura-vendors", "eventura_os_vendors_v1", "eventura_vendors_v1", "eventura-vendor-list"];
 
 const LS_SETTINGS = "eventura_os_settings_v3"; // optional (if exists)
@@ -90,10 +90,9 @@ function safeParse<T>(raw: string | null, fallback: T): T {
 function loadFirstKey<T>(keys: string[], fallback: T): { keyUsed: string | null; data: T } {
   if (typeof window === "undefined") return { keyUsed: null, data: fallback };
   for (const k of keys) {
-    const raw = localStorage.getItem(k);
+    const raw = window.localStorage.getItem(k);
     if (!raw) continue;
     const parsed = safeParse<T>(raw, fallback);
-    // accept arrays/objects only if it looks valid
     if (parsed && (Array.isArray(parsed) || typeof parsed === "object")) {
       return { keyUsed: k, data: parsed };
     }
@@ -103,7 +102,7 @@ function loadFirstKey<T>(keys: string[], fallback: T): { keyUsed: string | null;
 
 function safeLoad<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
-  return safeParse<T>(localStorage.getItem(key), fallback);
+  return safeParse<T>(window.localStorage.getItem(key), fallback);
 }
 
 function todayYMD(): string {
@@ -123,7 +122,6 @@ function isoMinusDays(days: number): string {
 
 function inRange(dateStr: string, from: string, to: string) {
   if (!dateStr) return false;
-  // expects YYYY-MM-DD (lexicographic compare works)
   return dateStr >= from && dateStr <= to;
 }
 
@@ -250,19 +248,79 @@ function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
 
   switch (theme) {
     case "Midnight Purple":
-      return { ...base, glow1: "rgba(139,92,246,0.22)", glow2: "rgba(212,175,55,0.14)", accentBg: "rgba(139,92,246,0.16)", accentBd: hc ? "rgba(139,92,246,0.55)" : "rgba(139,92,246,0.30)", accentTx: "#DDD6FE" };
+      return {
+        ...base,
+        glow1: "rgba(139,92,246,0.22)",
+        glow2: "rgba(212,175,55,0.14)",
+        accentBg: "rgba(139,92,246,0.16)",
+        accentBd: hc ? "rgba(139,92,246,0.55)" : "rgba(139,92,246,0.30)",
+        accentTx: "#DDD6FE",
+      };
     case "Emerald Night":
-      return { ...base, glow1: "rgba(16,185,129,0.18)", glow2: "rgba(212,175,55,0.12)", accentBg: "rgba(16,185,129,0.16)", accentBd: hc ? "rgba(16,185,129,0.55)" : "rgba(16,185,129,0.30)", accentTx: "#A7F3D0" };
+      return {
+        ...base,
+        glow1: "rgba(16,185,129,0.18)",
+        glow2: "rgba(212,175,55,0.12)",
+        accentBg: "rgba(16,185,129,0.16)",
+        accentBd: hc ? "rgba(16,185,129,0.55)" : "rgba(16,185,129,0.30)",
+        accentTx: "#A7F3D0",
+      };
     case "Ocean Blue":
-      return { ...base, glow1: "rgba(59,130,246,0.22)", glow2: "rgba(34,211,238,0.14)", accentBg: "rgba(59,130,246,0.16)", accentBd: hc ? "rgba(59,130,246,0.55)" : "rgba(59,130,246,0.30)", accentTx: "#BFDBFE" };
+      return {
+        ...base,
+        glow1: "rgba(59,130,246,0.22)",
+        glow2: "rgba(34,211,238,0.14)",
+        accentBg: "rgba(59,130,246,0.16)",
+        accentBd: hc ? "rgba(59,130,246,0.55)" : "rgba(59,130,246,0.30)",
+        accentTx: "#BFDBFE",
+      };
     case "Ruby Noir":
-      return { ...base, glow1: "rgba(244,63,94,0.18)", glow2: "rgba(212,175,55,0.10)", accentBg: "rgba(244,63,94,0.14)", accentBd: hc ? "rgba(244,63,94,0.50)" : "rgba(244,63,94,0.26)", accentTx: "#FDA4AF" };
+      return {
+        ...base,
+        glow1: "rgba(244,63,94,0.18)",
+        glow2: "rgba(212,175,55,0.10)",
+        accentBg: "rgba(244,63,94,0.14)",
+        accentBd: hc ? "rgba(244,63,94,0.50)" : "rgba(244,63,94,0.26)",
+        accentTx: "#FDA4AF",
+      };
     case "Carbon Black":
-      return { ...base, bg: "#03040A", glow1: "rgba(255,255,255,0.10)", glow2: "rgba(212,175,55,0.10)", accentBg: "rgba(212,175,55,0.14)", accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)", accentTx: "#FDE68A" };
+      return {
+        ...base,
+        bg: "#03040A",
+        glow1: "rgba(255,255,255,0.10)",
+        glow2: "rgba(212,175,55,0.10)",
+        accentBg: "rgba(212,175,55,0.14)",
+        accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)",
+        accentTx: "#FDE68A",
+      };
     case "Ivory Light":
-      return { ...base, text: "#111827", muted: "#4B5563", bg: "#F9FAFB", panel: "rgba(255,255,255,0.78)", panel2: "rgba(255,255,255,0.92)", border: hc ? "rgba(17,24,39,0.22)" : "rgba(17,24,39,0.12)", soft: hc ? "rgba(17,24,39,0.07)" : "rgba(17,24,39,0.04)", inputBg: hc ? "rgba(17,24,39,0.08)" : "rgba(17,24,39,0.04)", dangerTx: "#B91C1C", glow1: "rgba(212,175,55,0.16)", glow2: "rgba(59,130,246,0.14)", accentBg: "rgba(212,175,55,0.16)", accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)", accentTx: "#92400E", okTx: "#166534" };
+      return {
+        ...base,
+        text: "#111827",
+        muted: "#4B5563",
+        bg: "#F9FAFB",
+        panel: "rgba(255,255,255,0.78)",
+        panel2: "rgba(255,255,255,0.92)",
+        border: hc ? "rgba(17,24,39,0.22)" : "rgba(17,24,39,0.12)",
+        soft: hc ? "rgba(17,24,39,0.07)" : "rgba(17,24,39,0.04)",
+        inputBg: hc ? "rgba(17,24,39,0.08)" : "rgba(17,24,39,0.04)",
+        dangerTx: "#B91C1C",
+        glow1: "rgba(212,175,55,0.16)",
+        glow2: "rgba(59,130,246,0.14)",
+        accentBg: "rgba(212,175,55,0.16)",
+        accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)",
+        accentTx: "#92400E",
+        okTx: "#166534",
+      };
     default:
-      return { ...base, glow1: "rgba(255,215,110,0.18)", glow2: "rgba(120,70,255,0.18)", accentBg: "rgba(212,175,55,0.12)", accentBd: hc ? "rgba(212,175,55,0.50)" : "rgba(212,175,55,0.22)", accentTx: "#FDE68A" };
+      return {
+        ...base,
+        glow1: "rgba(255,215,110,0.18)",
+        glow2: "rgba(120,70,255,0.18)",
+        accentBg: "rgba(212,175,55,0.12)",
+        accentBd: hc ? "rgba(212,175,55,0.50)" : "rgba(212,175,55,0.22)",
+        accentTx: "#FDE68A",
+      };
   }
 }
 
@@ -304,43 +362,60 @@ export default function ReportsPage() {
   const [to, setTo] = useState(todayYMD());
   const [msg, setMsg] = useState("");
 
+  // ✅ deploy-safe timer handling (avoids DOM vs Node Timeout type errors)
+  const msgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
-    setEmail(localStorage.getItem("eventura_email") || "");
+    if (typeof window === "undefined") return;
+
+    setEmail(window.localStorage.getItem("eventura_email") || "");
     setSettings(safeLoad<AppSettings>(LS_SETTINGS, {}));
-    refreshRead(); // first load
+    refreshRead();
+
+    return () => {
+      if (msgTimer.current) clearTimeout(msgTimer.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  function flash(text: string) {
+    setMsg(text);
+    if (typeof window === "undefined") return;
+    if (msgTimer.current) clearTimeout(msgTimer.current);
+    msgTimer.current = setTimeout(() => setMsg(""), 1500);
+  }
+
   function refreshRead() {
+    if (typeof window === "undefined") return;
+
     const e = loadFirstKey<any[]>(EVENT_KEYS, []);
     const f = loadFirstKey<any[]>(FIN_KEYS, []);
     const h = loadFirstKey<any[]>(HR_KEYS, []);
     const v = loadFirstKey<any[]>(VENDOR_KEYS, []);
+
     setKeysInfo({ events: e.keyUsed, finance: f.keyUsed, hr: h.keyUsed, vendors: v.keyUsed });
     setRawEvents(Array.isArray(e.data) ? e.data : []);
     setRawFin(Array.isArray(f.data) ? f.data : []);
     setRawHR(Array.isArray(h.data) ? h.data : []);
     setRawVendors(Array.isArray(v.data) ? v.data : []);
-    setMsg("✅ Refreshed data from storage");
-    setTimeout(() => setMsg(""), 1500);
+
+    flash("✅ Refreshed data from storage");
   }
 
-  const isCEO = useMemo(() => (email || "").toLowerCase() === "hardikvekariya799@gmail.com", [email]);
+  const ceoEmail = (settings.ceoEmail || "hardikvekariya799@gmail.com").toLowerCase();
+  const isCEO = useMemo(() => (email || "").toLowerCase() === ceoEmail, [email, ceoEmail]);
 
   const T = ThemeTokens((settings.theme as Theme) || "Royal Gold", settings.highContrast);
   const S = useMemo(() => makeStyles(T, !!settings.compactTables), [T, settings.compactTables]);
 
-  // Normalize
   const events = useMemo(() => normalizeEvents(rawEvents), [rawEvents]);
   const txs = useMemo(() => normalizeFinance(rawFin), [rawFin]);
   const team = useMemo(() => normalizeHR(rawHR), [rawHR]);
   const vendors = useMemo(() => normalizeVendors(rawVendors), [rawVendors]);
 
-  // Filter range (Events + Finance only)
   const eventsInRange = useMemo(() => events.filter((e) => inRange(e.date, from, to)), [events, from, to]);
   const txsInRange = useMemo(() => txs.filter((t) => inRange(t.date, from, to)), [txs, from, to]);
 
-  // Finance totals
   const finTotals = useMemo(() => {
     let income = 0;
     let expense = 0;
@@ -351,7 +426,6 @@ export default function ReportsPage() {
     return { income, expense, net: income - expense };
   }, [txsInRange]);
 
-  // Event status breakdown
   const eventStatus = useMemo(() => {
     const m = new Map<string, number>();
     for (const e of eventsInRange) {
@@ -361,18 +435,20 @@ export default function ReportsPage() {
     return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
   }, [eventsInRange]);
 
-  // HR metrics
   const hrKpis = useMemo(() => {
     const total = team.length;
     const active = team.filter((m) => String(m.status || "").toLowerCase() !== "inactive").length;
     const avgWorkload =
-      total === 0 ? 0 : Math.round((team.reduce((a, b) => a + (Number.isFinite(b.workload as any) ? (b.workload as number) : 0), 0) / total) * 10) / 10;
+      total === 0
+        ? 0
+        : Math.round(
+            (team.reduce((a, b) => a + (Number.isFinite(b.workload as any) ? (b.workload as number) : 0), 0) / total) * 10
+          ) / 10;
     const payroll = team.reduce((a, b) => a + (Number.isFinite(b.monthlySalary as any) ? (b.monthlySalary as number) : 0), 0);
     const highLoad = team.filter((m) => (m.workload ?? 0) >= 80).length;
     return { total, active, avgWorkload, payroll, highLoad };
   }, [team]);
 
-  // Vendor metrics
   const vendorKpis = useMemo(() => {
     const total = vendors.length;
     const active = vendors.filter((v) => String(v.status || "").toLowerCase() !== "inactive").length;
@@ -381,7 +457,6 @@ export default function ReportsPage() {
     return { total, active, avgRating };
   }, [vendors]);
 
-  // “AI-like” Executive Summary (no external AI, deploy-safe)
   const execSummary = useMemo(() => {
     const lines: string[] = [];
     lines.push(`Range: ${from} → ${to}`);
@@ -390,9 +465,7 @@ export default function ReportsPage() {
     lines.push(`HR: ${hrKpis.total} team • ${hrKpis.active} active • Avg workload ${hrKpis.avgWorkload}%${hrKpis.highLoad ? ` • ⚠ High load: ${hrKpis.highLoad}` : ""}`);
     if (hrKpis.payroll > 0) lines.push(`Estimated monthly payroll: ${formatCurrency(hrKpis.payroll)}`);
     lines.push(`Vendors: ${vendorKpis.total} total • ${vendorKpis.active} active • Avg rating ${vendorKpis.avgRating || "—"}`);
-    if (!events.length && !txs.length && !team.length && !vendors.length) {
-      lines.push(`No data found yet. Add at least 1 record in each module so Reports can read it.`);
-    }
+    if (!events.length && !txs.length && !team.length && !vendors.length) lines.push(`No data found yet. Add at least 1 record in each module so Reports can read it.`);
     return lines;
   }, [from, to, eventsInRange.length, eventStatus, finTotals, hrKpis, vendorKpis, events.length, txs.length, team.length, vendors.length]);
 
@@ -403,19 +476,12 @@ export default function ReportsPage() {
       range: { from, to },
       keysUsed: keysInfo,
       summary: execSummary,
-      data: {
-        events: eventsInRange,
-        finance: txsInRange,
-        hr: team,
-        vendors,
-      },
+      data: { events: eventsInRange, finance: txsInRange, hr: team, vendors },
     });
-    setMsg("✅ Exported JSON");
-    setTimeout(() => setMsg(""), 1500);
+    flash("✅ Exported JSON");
   }
 
   function exportAllCSV() {
-    // combined “overview rows” (safe)
     const rows = [
       { section: "SUMMARY", item: "Range", value: `${from} → ${to}` },
       { section: "SUMMARY", item: "Events", value: eventsInRange.length },
@@ -425,8 +491,7 @@ export default function ReportsPage() {
       { section: "SUMMARY", item: "High Workload", value: hrKpis.highLoad },
     ];
     exportCSV(`eventura_company_overview_${from}_to_${to}.csv`, rows);
-    setMsg("✅ Exported CSV");
-    setTimeout(() => setMsg(""), 1500);
+    flash("✅ Exported CSV");
   }
 
   return (
@@ -458,6 +523,7 @@ export default function ReportsPage() {
             <div style={S.userEmail}>{email || "Unknown"}</div>
             <div style={S.roleBadge}>{isCEO ? "CEO" : "Staff"}</div>
           </div>
+
           <div style={S.smallNote}>
             Reading keys:
             <div>Events: <b>{keysInfo.events ?? "not found"}</b></div>
@@ -472,9 +538,7 @@ export default function ReportsPage() {
         <div style={S.header}>
           <div>
             <div style={S.h1}>Company Reports</div>
-            <div style={S.muted}>
-              Connected to Events + Finance + HR + Vendors (read-only) • Export JSON/CSV • Deploy-safe
-            </div>
+            <div style={S.muted}>Connected to Events + Finance + HR + Vendors (read-only) • Export JSON/CSV • Deploy-safe</div>
           </div>
 
           <div style={S.headerRight}>
@@ -503,7 +567,6 @@ export default function ReportsPage() {
         </div>
 
         <div style={S.grid}>
-          {/* Executive Summary */}
           <section style={S.panel}>
             <div style={S.panelTitle}>Executive Summary (Auto)</div>
             <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
@@ -513,7 +576,6 @@ export default function ReportsPage() {
             </div>
           </section>
 
-          {/* KPIs */}
           <section style={S.panel}>
             <div style={S.panelTitle}>Company KPIs</div>
             <div style={S.kpiRow}>
@@ -522,12 +584,9 @@ export default function ReportsPage() {
               <KPI label="Team" value={String(hrKpis.total)} S={S} />
               <KPI label="Vendors" value={String(vendorKpis.total)} S={S} />
             </div>
-            <div style={S.smallNote}>
-              HR/Vendors usually don’t have dates → shown as overall totals. Events/Finance follow the range.
-            </div>
+            <div style={S.smallNote}>HR/Vendors usually don’t have dates → shown as overall totals. Events/Finance follow the range.</div>
           </section>
 
-          {/* Events */}
           <section style={S.panel}>
             <div style={S.panelTitle}>Events Report</div>
             {!eventsInRange.length ? (
@@ -572,7 +631,6 @@ export default function ReportsPage() {
             )}
           </section>
 
-          {/* Finance */}
           <section style={S.panel}>
             <div style={S.panelTitle}>Finance Report</div>
             <div style={S.kpiRow}>
@@ -594,9 +652,7 @@ export default function ReportsPage() {
                   .map((t) => (
                     <div key={t.id} style={S.itemCard}>
                       <div style={S.rowBetween}>
-                        <div style={{ fontWeight: 950 }}>
-                          {t.type} • {t.category || "Uncategorized"}
-                        </div>
+                        <div style={{ fontWeight: 950 }}>{t.type} • {t.category || "Uncategorized"}</div>
                         <span style={S.pill}>{formatCurrency(t.amount)}</span>
                       </div>
                       <div style={S.smallMuted}>
@@ -617,7 +673,6 @@ export default function ReportsPage() {
             ) : null}
           </section>
 
-          {/* HR */}
           <section style={S.panel}>
             <div style={S.panelTitle}>HR Report</div>
             <div style={S.kpiRow}>
@@ -627,9 +682,7 @@ export default function ReportsPage() {
               <KPI label="High Workload" value={String(hrKpis.highLoad)} S={S} />
             </div>
 
-            {hrKpis.payroll > 0 ? (
-              <div style={S.noteBox}>Estimated Monthly Payroll: {formatCurrency(hrKpis.payroll)}</div>
-            ) : null}
+            {hrKpis.payroll > 0 ? <div style={S.noteBox}>Estimated Monthly Payroll: {formatCurrency(hrKpis.payroll)}</div> : null}
 
             <div style={S.sectionTitle}>High workload (>= 80%)</div>
             {team.filter((m) => (m.workload ?? 0) >= 80).length ? (
@@ -643,9 +696,7 @@ export default function ReportsPage() {
                         <div style={{ fontWeight: 950 }}>{m.name}</div>
                         <span style={S.pill}>{(m.workload ?? 0) + "%"}</span>
                       </div>
-                      <div style={S.smallMuted}>
-                        {m.role || "—"} • {m.city || "—"} • {m.status || "—"}
-                      </div>
+                      <div style={S.smallMuted}>{m.role || "—"} • {m.city || "—"} • {m.status || "—"}</div>
                     </div>
                   ))}
               </div>
@@ -663,7 +714,6 @@ export default function ReportsPage() {
             ) : null}
           </section>
 
-          {/* Vendors */}
           <section style={S.panel}>
             <div style={S.panelTitle}>Vendors Report</div>
             <div style={S.kpiRow}>
@@ -674,11 +724,7 @@ export default function ReportsPage() {
             </div>
 
             <div style={S.sectionTitle}>Top rated vendors</div>
-            {vendors
-              .filter((v) => Number.isFinite(v.rating as any))
-              .slice()
-              .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
-              .slice(0, 8).length ? (
+            {vendors.filter((v) => Number.isFinite(v.rating as any)).length ? (
               <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
                 {vendors
                   .filter((v) => Number.isFinite(v.rating as any))
@@ -691,9 +737,7 @@ export default function ReportsPage() {
                         <div style={{ fontWeight: 950 }}>{v.name}</div>
                         <span style={S.pill}>{typeof v.rating === "number" ? `⭐ ${v.rating}` : "—"}</span>
                       </div>
-                      <div style={S.smallMuted}>
-                        {v.category || "—"} • {v.city || "—"} • {v.phone || "—"}
-                      </div>
+                      <div style={S.smallMuted}>{v.category || "—"} • {v.city || "—"} • {v.phone || "—"}</div>
                     </div>
                   ))}
               </div>
@@ -731,7 +775,6 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       fontFamily:
         'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
     },
-
     sidebar: {
       width: 280,
       position: "sticky",
@@ -745,7 +788,6 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       flexDirection: "column",
       gap: 12,
     },
-
     brandRow: { display: "flex", alignItems: "center", gap: 10, padding: "8px 8px" },
     logoCircle: {
       width: 38,
@@ -760,7 +802,6 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
     },
     brandName: { fontWeight: 950, lineHeight: 1.1 },
     brandSub: { color: T.muted, fontSize: 12, marginTop: 2 },
-
     nav: { display: "grid", gap: 8 },
     navItem: {
       display: "block",
@@ -773,26 +814,40 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       fontWeight: 900,
       fontSize: 13,
     },
-
     sidebarFooter: { marginTop: "auto", display: "grid", gap: 10 },
     userBox: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft },
     userLabel: { fontSize: 12, color: T.muted, fontWeight: 900 },
     userEmail: { fontSize: 13, fontWeight: 900, marginTop: 6, wordBreak: "break-word" },
-    roleBadge: { marginTop: 10, display: "inline-flex", padding: "5px 10px", borderRadius: 999, background: T.accentBg, border: `1px solid ${T.accentBd}`, color: T.accentTx, fontWeight: 950, width: "fit-content" },
-
+    roleBadge: {
+      marginTop: 10,
+      display: "inline-flex",
+      padding: "5px 10px",
+      borderRadius: 999,
+      background: T.accentBg,
+      border: `1px solid ${T.accentBd}`,
+      color: T.accentTx,
+      fontWeight: 950,
+      width: "fit-content",
+    },
     main: { flex: 1, padding: 16, maxWidth: 1400, margin: "0 auto", width: "100%" },
-    header: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: 12, borderRadius: 18, border: `1px solid ${T.border}`, background: T.panel, backdropFilter: "blur(10px)" },
+    header: {
+      display: "flex",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: 12,
+      padding: 12,
+      borderRadius: 18,
+      border: `1px solid ${T.border}`,
+      background: T.panel,
+      backdropFilter: "blur(10px)",
+    },
     headerRight: { display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" },
-
     h1: { fontSize: 26, fontWeight: 950 },
     muted: { color: T.muted, fontSize: 13, marginTop: 6 },
     smallMuted: { color: T.muted, fontSize: 12 },
     smallNote: { color: T.muted, fontSize: 12, lineHeight: 1.35 },
-
     msg: { marginTop: 12, padding: 10, borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft, color: T.text, fontSize: 13 },
-
     rangeBar: { marginTop: 12, padding: 12, borderRadius: 18, border: `1px solid ${T.border}`, background: T.soft, display: "grid", gap: 10 },
-
     input: {
       width: 210,
       padding: compact ? "10px 10px" : "12px 12px",
@@ -803,7 +858,6 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       outline: "none",
       fontSize: 14,
     },
-
     secondaryBtn: {
       padding: "10px 12px",
       borderRadius: 14,
@@ -813,31 +867,40 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       fontWeight: 950,
       cursor: "pointer",
     },
-
     grid: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
     panel: { padding: 14, borderRadius: 18, border: `1px solid ${T.border}`, background: T.panel, backdropFilter: "blur(10px)" },
     panelTitle: { fontWeight: 950, color: T.accentTx },
-
     kpiRow: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 },
     kpi: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft },
     kpiLabel: { color: T.muted, fontSize: 12, fontWeight: 900 },
     kpiValue: { marginTop: 6, fontSize: 18, fontWeight: 950 },
-
     sectionTitle: { marginTop: 14, fontWeight: 950, fontSize: 13 },
-
     itemCard: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft },
     rowBetween: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 },
-
-    pill: { padding: "5px 10px", borderRadius: 999, border: `1px solid ${T.accentBd}`, background: T.accentBg, color: T.accentTx, fontWeight: 950, fontSize: 12, whiteSpace: "nowrap" },
-
-    noteBox: { marginTop: 12, padding: 12, borderRadius: 16, border: `1px solid ${T.okBd}`, background: T.okBg, color: T.okTx, fontSize: 13, lineHeight: 1.35 },
-
+    pill: {
+      padding: "5px 10px",
+      borderRadius: 999,
+      border: `1px solid ${T.accentBd}`,
+      background: T.accentBg,
+      color: T.accentTx,
+      fontWeight: 950,
+      fontSize: 12,
+      whiteSpace: "nowrap",
+    },
+    noteBox: {
+      marginTop: 12,
+      padding: 12,
+      borderRadius: 16,
+      border: `1px solid ${T.okBd}`,
+      background: T.okBg,
+      color: T.okTx,
+      fontSize: 13,
+      lineHeight: 1.35,
+    },
     summaryLine: { padding: "10px 12px", borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft, fontWeight: 900, color: T.text },
-
     barRow: { display: "grid", gridTemplateColumns: "1fr 2fr 50px", gap: 10, alignItems: "center" },
     barWrap: { height: 10, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" },
     barFill: { height: "100%", borderRadius: 999, background: T.accentTx, opacity: 0.9 },
-
     footerNote: { color: T.muted, fontSize: 12, textAlign: "center", padding: 10 },
   };
 }
