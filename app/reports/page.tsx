@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState, type CSSProperties, useCallback } from "react";
+import React, { useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
 
 /* ================== STORAGE (DO NOT TOUCH OTHER PAGES) ==================
@@ -8,7 +8,7 @@ import Link from "next/link";
 */
 const EVENT_KEYS = ["eventura-events", "eventura_os_events_v1", "eventura_events_v1"];
 const FIN_KEYS = ["eventura-finance-transactions", "eventura_os_fin_v1", "eventura_fin_v1", "eventura_os_fin_tx_v1"];
-const HR_KEYS = ["eventura-hr-team", "eventura_os_hr_v1", "eventura_hr_v1", "eventura_os_hr_team_v2"];
+const HR_KEYS = ["eventura-hr-team", "eventura_os_hr_v1", "eventura_hr_v1", "eventura_hr_v1", "eventura_os_hr_team_v2"];
 const VENDOR_KEYS = ["eventura-vendors", "eventura_os_vendors_v1", "eventura_vendors_v1", "eventura-vendor-list"];
 
 const LS_SETTINGS = "eventura_os_settings_v3"; // optional (if exists)
@@ -87,23 +87,22 @@ function safeParse<T>(raw: string | null, fallback: T): T {
   }
 }
 
-function safeLoad<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  return safeParse<T>(window.localStorage.getItem(key), fallback);
-}
-
 function loadFirstKey<T>(keys: string[], fallback: T): { keyUsed: string | null; data: T } {
   if (typeof window === "undefined") return { keyUsed: null, data: fallback };
   for (const k of keys) {
-    const raw = window.localStorage.getItem(k);
+    const raw = localStorage.getItem(k);
     if (!raw) continue;
     const parsed = safeParse<T>(raw, fallback);
-    // accept arrays/objects only if it looks valid
     if (parsed && (Array.isArray(parsed) || typeof parsed === "object")) {
       return { keyUsed: k, data: parsed };
     }
   }
   return { keyUsed: null, data: fallback };
+}
+
+function safeLoad<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  return safeParse<T>(localStorage.getItem(key), fallback);
 }
 
 function todayYMD(): string {
@@ -123,7 +122,7 @@ function isoMinusDays(days: number): string {
 
 function inRange(dateStr: string, from: string, to: string) {
   if (!dateStr) return false;
-  return dateStr >= from && dateStr <= to; // YYYY-MM-DD lexicographic compare ok
+  return dateStr >= from && dateStr <= to;
 }
 
 function formatCurrency(amount: number, currency: "INR" | "CAD" | "USD" = "INR") {
@@ -135,7 +134,6 @@ function formatCurrency(amount: number, currency: "INR" | "CAD" | "USD" = "INR")
 }
 
 function exportCSV(filename: string, rows: Record<string, any>[]) {
-  if (typeof window === "undefined") return;
   const keys = Array.from(new Set(rows.flatMap((r) => Object.keys(r))));
   const esc = (v: any) => {
     const s = String(v ?? "");
@@ -153,7 +151,6 @@ function exportCSV(filename: string, rows: Record<string, any>[]) {
 }
 
 function exportJSON(filename: string, obj: any) {
-  if (typeof window === "undefined") return;
   const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -337,17 +334,7 @@ function KPI({ label, value, S }: { label: string; value: string; S: Record<stri
   );
 }
 
-function BarRow({
-  label,
-  value,
-  max,
-  S,
-}: {
-  label: string;
-  value: number;
-  max: number;
-  S: Record<string, CSSProperties>;
-}) {
+function BarRow({ label, value, max, S }: { label: string; value: number; max: number; S: Record<string, CSSProperties> }) {
   const pct = max ? Math.round((value / max) * 100) : 0;
   return (
     <div style={S.barRow}>
@@ -375,49 +362,40 @@ export default function ReportsPage() {
   const [to, setTo] = useState(todayYMD());
   const [msg, setMsg] = useState("");
 
-  const refreshRead = useCallback(() => {
-    if (typeof window === "undefined") return;
+  useEffect(() => {
+    setEmail(localStorage.getItem("eventura_email") || "");
+    setSettings(safeLoad<AppSettings>(LS_SETTINGS, {}));
+    refreshRead();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  function refreshRead() {
     const e = loadFirstKey<any[]>(EVENT_KEYS, []);
     const f = loadFirstKey<any[]>(FIN_KEYS, []);
     const h = loadFirstKey<any[]>(HR_KEYS, []);
     const v = loadFirstKey<any[]>(VENDOR_KEYS, []);
-
     setKeysInfo({ events: e.keyUsed, finance: f.keyUsed, hr: h.keyUsed, vendors: v.keyUsed });
     setRawEvents(Array.isArray(e.data) ? e.data : []);
     setRawFin(Array.isArray(f.data) ? f.data : []);
     setRawHR(Array.isArray(h.data) ? h.data : []);
     setRawVendors(Array.isArray(v.data) ? v.data : []);
-
     setMsg("✅ Refreshed data from storage");
-    // IMPORTANT: use window.setTimeout for consistent client typing
-    window.setTimeout(() => setMsg(""), 1400);
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    setEmail(window.localStorage.getItem("eventura_email") || "");
-    setSettings(safeLoad<AppSettings>(LS_SETTINGS, {}));
-    refreshRead();
-  }, [refreshRead]);
+    setTimeout(() => setMsg(""), 1500);
+  }
 
   const isCEO = useMemo(() => (email || "").toLowerCase() === "hardikvekariya799@gmail.com", [email]);
 
   const T = ThemeTokens((settings.theme as Theme) || "Royal Gold", settings.highContrast);
   const S = useMemo(() => makeStyles(T, !!settings.compactTables), [T, settings.compactTables]);
 
-  // Normalize
   const events = useMemo(() => normalizeEvents(rawEvents), [rawEvents]);
   const txs = useMemo(() => normalizeFinance(rawFin), [rawFin]);
   const team = useMemo(() => normalizeHR(rawHR), [rawHR]);
   const vendors = useMemo(() => normalizeVendors(rawVendors), [rawVendors]);
 
-  // Filter range (Events + Finance only)
   const eventsInRange = useMemo(() => events.filter((e) => inRange(e.date, from, to)), [events, from, to]);
   const txsInRange = useMemo(() => txs.filter((t) => inRange(t.date, from, to)), [txs, from, to]);
 
-  // Finance totals
   const finTotals = useMemo(() => {
     let income = 0;
     let expense = 0;
@@ -428,7 +406,6 @@ export default function ReportsPage() {
     return { income, expense, net: income - expense };
   }, [txsInRange]);
 
-  // Event status breakdown
   const eventStatus = useMemo(() => {
     const m = new Map<string, number>();
     for (const e of eventsInRange) {
@@ -438,22 +415,18 @@ export default function ReportsPage() {
     return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
   }, [eventsInRange]);
 
-  // HR metrics
   const hrKpis = useMemo(() => {
     const total = team.length;
     const active = team.filter((m) => String(m.status || "").toLowerCase() !== "inactive").length;
     const avgWorkload =
       total === 0
         ? 0
-        : Math.round(
-            (team.reduce((a, b) => a + (Number.isFinite(b.workload as any) ? (b.workload as number) : 0), 0) / total) * 10
-          ) / 10;
+        : Math.round((team.reduce((a, b) => a + (Number.isFinite(b.workload as any) ? (b.workload as number) : 0), 0) / total) * 10) / 10;
     const payroll = team.reduce((a, b) => a + (Number.isFinite(b.monthlySalary as any) ? (b.monthlySalary as number) : 0), 0);
     const highLoad = team.filter((m) => (m.workload ?? 0) >= 80).length;
     return { total, active, avgWorkload, payroll, highLoad };
   }, [team]);
 
-  // Vendor metrics
   const vendorKpis = useMemo(() => {
     const total = vendors.length;
     const active = vendors.filter((v) => String(v.status || "").toLowerCase() !== "inactive").length;
@@ -462,7 +435,6 @@ export default function ReportsPage() {
     return { total, active, avgRating };
   }, [vendors]);
 
-  // “AI-like” Executive Summary (deploy-safe)
   const execSummary = useMemo(() => {
     const lines: string[] = [];
     lines.push(`Range: ${from} → ${to}`);
@@ -471,9 +443,7 @@ export default function ReportsPage() {
       `Finance Net: ${formatCurrency(finTotals.net)} (Income ${formatCurrency(finTotals.income)} • Expense ${formatCurrency(finTotals.expense)})`
     );
     lines.push(
-      `HR: ${hrKpis.total} team • ${hrKpis.active} active • Avg workload ${hrKpis.avgWorkload}%${
-        hrKpis.highLoad ? ` • ⚠ High load: ${hrKpis.highLoad}` : ""
-      }`
+      `HR: ${hrKpis.total} team • ${hrKpis.active} active • Avg workload ${hrKpis.avgWorkload}%${hrKpis.highLoad ? ` • ⚠ High load: ${hrKpis.highLoad}` : ""}`
     );
     if (hrKpis.payroll > 0) lines.push(`Estimated monthly payroll: ${formatCurrency(hrKpis.payroll)}`);
     lines.push(`Vendors: ${vendorKpis.total} total • ${vendorKpis.active} active • Avg rating ${vendorKpis.avgRating || "—"}`);
@@ -498,7 +468,7 @@ export default function ReportsPage() {
       },
     });
     setMsg("✅ Exported JSON");
-    if (typeof window !== "undefined") window.setTimeout(() => setMsg(""), 1400);
+    setTimeout(() => setMsg(""), 1500);
   }
 
   function exportAllCSV() {
@@ -512,7 +482,7 @@ export default function ReportsPage() {
     ];
     exportCSV(`eventura_company_overview_${from}_to_${to}.csv`, rows);
     setMsg("✅ Exported CSV");
-    if (typeof window !== "undefined") window.setTimeout(() => setMsg(""), 1400);
+    setTimeout(() => setMsg(""), 1500);
   }
 
   return (
@@ -527,15 +497,30 @@ export default function ReportsPage() {
         </div>
 
         <nav style={S.nav}>
-          <Link href="/dashboard" style={S.navItem as any}>📊 Dashboard</Link>
-          <Link href="/events" style={S.navItem as any}>📅 Events</Link>
-          <Link href="/finance" style={S.navItem as any}>💰 Finance</Link>
-          <Link href="/vendors" style={S.navItem as any}>🏷️ Vendors</Link>
-          <Link href="/hr" style={S.navItem as any}>🧑‍🤝‍🧑 HR</Link>
-          <Link href="/reports" style={{ ...(S.navItem as any), border: `1px solid ${T.accentBd}`, background: T.accentBg }}>
+          <Link href="/dashboard" style={S.navItem as any}>
+            📊 Dashboard
+          </Link>
+          <Link href="/events" style={S.navItem as any}>
+            📅 Events
+          </Link>
+          <Link href="/finance" style={S.navItem as any}>
+            💰 Finance
+          </Link>
+          <Link href="/vendors" style={S.navItem as any}>
+            🏷️ Vendors
+          </Link>
+          <Link href="/hr" style={S.navItem as any}>
+            🧑‍🤝‍🧑 HR
+          </Link>
+          <Link
+            href="/reports"
+            style={{ ...(S.navItem as any), border: `1px solid ${T.accentBd}`, background: T.accentBg }}
+          >
             📈 Reports
           </Link>
-          <Link href="/settings" style={S.navItem as any}>⚙️ Settings</Link>
+          <Link href="/settings" style={S.navItem as any}>
+            ⚙️ Settings
+          </Link>
         </nav>
 
         <div style={S.sidebarFooter}>
@@ -544,13 +529,20 @@ export default function ReportsPage() {
             <div style={S.userEmail}>{email || "Unknown"}</div>
             <div style={S.roleBadge}>{isCEO ? "CEO" : "Staff"}</div>
           </div>
-
           <div style={S.smallNote}>
             Reading keys:
-            <div>Events: <b>{keysInfo.events ?? "not found"}</b></div>
-            <div>Finance: <b>{keysInfo.finance ?? "not found"}</b></div>
-            <div>HR: <b>{keysInfo.hr ?? "not found"}</b></div>
-            <div>Vendors: <b>{keysInfo.vendors ?? "not found"}</b></div>
+            <div>
+              Events: <b>{keysInfo.events ?? "not found"}</b>
+            </div>
+            <div>
+              Finance: <b>{keysInfo.finance ?? "not found"}</b>
+            </div>
+            <div>
+              HR: <b>{keysInfo.hr ?? "not found"}</b>
+            </div>
+            <div>
+              Vendors: <b>{keysInfo.vendors ?? "not found"}</b>
+            </div>
           </div>
         </div>
       </aside>
@@ -563,9 +555,15 @@ export default function ReportsPage() {
           </div>
 
           <div style={S.headerRight}>
-            <button style={S.secondaryBtn} onClick={refreshRead}>Refresh</button>
-            <button style={S.secondaryBtn} onClick={exportAllJSON}>Export JSON</button>
-            <button style={S.secondaryBtn} onClick={exportAllCSV}>Export CSV</button>
+            <button style={S.secondaryBtn} onClick={refreshRead}>
+              Refresh
+            </button>
+            <button style={S.secondaryBtn} onClick={exportAllJSON}>
+              Export JSON
+            </button>
+            <button style={S.secondaryBtn} onClick={exportAllCSV}>
+              Export CSV
+            </button>
           </div>
         </div>
 
@@ -588,15 +586,19 @@ export default function ReportsPage() {
         </div>
 
         <div style={S.grid}>
+          {/* Executive Summary */}
           <section style={S.panel}>
             <div style={S.panelTitle}>Executive Summary (Auto)</div>
             <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
               {execSummary.map((line, i) => (
-                <div key={i} style={S.summaryLine}>{line}</div>
+                <div key={i} style={S.summaryLine}>
+                  {line}
+                </div>
               ))}
             </div>
           </section>
 
+          {/* KPIs */}
           <section style={S.panel}>
             <div style={S.panelTitle}>Company KPIs</div>
             <div style={S.kpiRow}>
@@ -608,6 +610,7 @@ export default function ReportsPage() {
             <div style={S.smallNote}>HR/Vendors usually don’t have dates → shown as overall totals. Events/Finance follow the range.</div>
           </section>
 
+          {/* Events */}
           <section style={S.panel}>
             <div style={S.panelTitle}>Events Report</div>
             {!eventsInRange.length ? (
@@ -652,6 +655,7 @@ export default function ReportsPage() {
             )}
           </section>
 
+          {/* Finance */}
           <section style={S.panel}>
             <div style={S.panelTitle}>Finance Report</div>
             <div style={S.kpiRow}>
@@ -673,7 +677,9 @@ export default function ReportsPage() {
                   .map((t) => (
                     <div key={t.id} style={S.itemCard}>
                       <div style={S.rowBetween}>
-                        <div style={{ fontWeight: 950 }}>{t.type} • {t.category || "Uncategorized"}</div>
+                        <div style={{ fontWeight: 950 }}>
+                          {t.type} • {t.category || "Uncategorized"}
+                        </div>
                         <span style={S.pill}>{formatCurrency(t.amount)}</span>
                       </div>
                       <div style={S.smallMuted}>
@@ -694,6 +700,7 @@ export default function ReportsPage() {
             ) : null}
           </section>
 
+          {/* HR */}
           <section style={S.panel}>
             <div style={S.panelTitle}>HR Report</div>
             <div style={S.kpiRow}>
@@ -705,7 +712,9 @@ export default function ReportsPage() {
 
             {hrKpis.payroll > 0 ? <div style={S.noteBox}>Estimated Monthly Payroll: {formatCurrency(hrKpis.payroll)}</div> : null}
 
-            <div style={S.sectionTitle}>High workload (>= 80%)</div>
+            {/* ✅ FIXED: Turbopack JSX parsing issue (escape '>') */}
+            <div style={S.sectionTitle}>High workload (&gt;= 80%)</div>
+
             {team.filter((m) => (m.workload ?? 0) >= 80).length ? (
               <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
                 {team
@@ -717,7 +726,9 @@ export default function ReportsPage() {
                         <div style={{ fontWeight: 950 }}>{m.name}</div>
                         <span style={S.pill}>{(m.workload ?? 0) + "%"}</span>
                       </div>
-                      <div style={S.smallMuted}>{m.role || "—"} • {m.city || "—"} • {m.status || "—"}</div>
+                      <div style={S.smallMuted}>
+                        {m.role || "—"} • {m.city || "—"} • {m.status || "—"}
+                      </div>
                     </div>
                   ))}
               </div>
@@ -735,6 +746,7 @@ export default function ReportsPage() {
             ) : null}
           </section>
 
+          {/* Vendors */}
           <section style={S.panel}>
             <div style={S.panelTitle}>Vendors Report</div>
             <div style={S.kpiRow}>
@@ -745,7 +757,11 @@ export default function ReportsPage() {
             </div>
 
             <div style={S.sectionTitle}>Top rated vendors</div>
-            {vendors.filter((v) => Number.isFinite(v.rating as any)).length ? (
+            {vendors
+              .filter((v) => Number.isFinite(v.rating as any))
+              .slice()
+              .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
+              .slice(0, 8).length ? (
               <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
                 {vendors
                   .filter((v) => Number.isFinite(v.rating as any))
@@ -758,7 +774,9 @@ export default function ReportsPage() {
                         <div style={{ fontWeight: 950 }}>{v.name}</div>
                         <span style={S.pill}>{typeof v.rating === "number" ? `⭐ ${v.rating}` : "—"}</span>
                       </div>
-                      <div style={S.smallMuted}>{v.category || "—"} • {v.city || "—"} • {v.phone || "—"}</div>
+                      <div style={S.smallMuted}>
+                        {v.category || "—"} • {v.city || "—"} • {v.phone || "—"}
+                      </div>
                     </div>
                   ))}
               </div>
@@ -924,25 +942,9 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       whiteSpace: "nowrap",
     },
 
-    noteBox: {
-      marginTop: 12,
-      padding: 12,
-      borderRadius: 16,
-      border: `1px solid ${T.okBd}`,
-      background: T.okBg,
-      color: T.okTx,
-      fontSize: 13,
-      lineHeight: 1.35,
-    },
+    noteBox: { marginTop: 12, padding: 12, borderRadius: 16, border: `1px solid ${T.okBd}`, background: T.okBg, color: T.okTx, fontSize: 13, lineHeight: 1.35 },
 
-    summaryLine: {
-      padding: "10px 12px",
-      borderRadius: 14,
-      border: `1px solid ${T.border}`,
-      background: T.soft,
-      fontWeight: 900,
-      color: T.text,
-    },
+    summaryLine: { padding: "10px 12px", borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft, fontWeight: 900, color: T.text },
 
     barRow: { display: "grid", gridTemplateColumns: "1fr 2fr 50px", gap: 10, alignItems: "center" },
     barWrap: { height: 10, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" },
