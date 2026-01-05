@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
 
-/* ===== storage keys (NO UI debug shown) ===== */
+/* ================== STORAGE KEYS (NO UI DEBUG) ================== */
 const LS_EMAIL = "eventura_email";
 const LS_SETTINGS = "eventura_os_settings_v3";
 
@@ -12,7 +12,7 @@ const FIN_KEYS = ["eventura-finance-transactions", "eventura_os_fin_v1", "eventu
 const HR_KEYS = ["eventura-hr-team", "eventura_os_hr_v1", "eventura_hr_v1", "eventura_os_hr_team_v2"];
 const VENDOR_KEYS = ["eventura-vendors", "eventura_os_vendors_v1", "eventura_vendors_v1", "eventura-vendor-list"];
 
-/* ===== types ===== */
+/* ================== TYPES ================== */
 type Theme =
   | "Royal Gold"
   | "Midnight Purple"
@@ -26,7 +26,6 @@ type AppSettings = {
   theme?: Theme;
   highContrast?: boolean;
   compactTables?: boolean;
-  hoverDark?: boolean;
   ceoEmail?: string;
 };
 
@@ -70,7 +69,7 @@ type NormalVendor = {
   status?: string;
 };
 
-/* ===== helpers ===== */
+/* ================== SAFE HELPERS ================== */
 function safeParse<T>(raw: string | null, fallback: T): T {
   try {
     return raw ? (JSON.parse(raw) as T) : fallback;
@@ -79,15 +78,20 @@ function safeParse<T>(raw: string | null, fallback: T): T {
   }
 }
 
-function loadFirstKey<T>(keys: string[], fallback: T): T {
+function safeLoad<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
+  return safeParse<T>(localStorage.getItem(key), fallback);
+}
+
+function loadFirstKey<T>(keys: string[], fallback: T): { keyUsed: string | null; data: T } {
+  if (typeof window === "undefined") return { keyUsed: null, data: fallback };
   for (const k of keys) {
     const raw = localStorage.getItem(k);
     if (!raw) continue;
     const parsed = safeParse<T>(raw, fallback);
-    if (parsed && (Array.isArray(parsed) || typeof parsed === "object")) return parsed;
+    if (parsed && (Array.isArray(parsed) || typeof parsed === "object")) return { keyUsed: k, data: parsed };
   }
-  return fallback;
+  return { keyUsed: null, data: fallback };
 }
 
 function todayYMD(): string {
@@ -107,7 +111,7 @@ function isoMinusDays(days: number): string {
 
 function inRange(dateStr: string, from: string, to: string) {
   if (!dateStr) return false;
-  return dateStr >= from && dateStr <= to; // YYYY-MM-DD safe lexicographic
+  return dateStr >= from && dateStr <= to;
 }
 
 function formatCurrency(amount: number, currency: "INR" | "CAD" | "USD" = "INR") {
@@ -118,7 +122,7 @@ function formatCurrency(amount: number, currency: "INR" | "CAD" | "USD" = "INR")
   }
 }
 
-/* ===== normalizers ===== */
+/* ================== NORMALIZERS ================== */
 function normalizeEvents(raw: any): NormalEvent[] {
   const arr = Array.isArray(raw) ? raw : [];
   return arr
@@ -184,133 +188,172 @@ function normalizeVendors(raw: any): NormalVendor[] {
     .filter((v) => v.name);
 }
 
-/* ===== corporate tokens (less “game”, more business) ===== */
-function tokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
+/* ================== THEME TOKENS (SAME FAMILY AS REPORTS) ================== */
+function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
   const hc = !!highContrast;
   const base = {
-    text: "#0B1220",
-    muted: "#5B6472",
-    bg: "#F3F5F8",
-    panel: "#FFFFFF",
-    border: hc ? "rgba(15,23,42,0.28)" : "rgba(15,23,42,0.14)",
-    soft: "rgba(15,23,42,0.04)",
-    shadow: "0 10px 30px rgba(15,23,42,0.08)",
-    hover: "rgba(0,0,0,0.06)",
-    hoverBlack: "rgba(0,0,0,0.10)",
-    accent: "#B8922B",
-    accentSoft: "rgba(184,146,43,0.12)",
-    good: "#166534",
-    warn: "#92400E",
-    bad: "#B91C1C",
+    text: "#F9FAFB",
+    muted: "#9CA3AF",
+    bg: "#050816",
+    panel: "rgba(11,16,32,0.60)",
+    panel2: "rgba(11,16,32,0.85)",
+    border: hc ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.10)",
+    soft: hc ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)",
+    inputBg: hc ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
+    hoverBlack: "rgba(0,0,0,0.55)", // ✅ strong black hover
+    dangerBg: "rgba(248,113,113,0.10)",
+    dangerBd: hc ? "rgba(248,113,113,0.55)" : "rgba(248,113,113,0.30)",
+    dangerTx: "#FCA5A5",
+    okBg: "rgba(34,197,94,0.12)",
+    okBd: hc ? "rgba(34,197,94,0.45)" : "rgba(34,197,94,0.28)",
+    okTx: "#86EFAC",
   };
 
-  // keep your themes but still corporate
-  if (theme === "Carbon Black") {
-    return {
-      ...base,
-      text: "#F8FAFC",
-      muted: "#94A3B8",
-      bg: "#070A12",
-      panel: "rgba(17,24,39,0.85)",
-      border: hc ? "rgba(255,255,255,0.26)" : "rgba(255,255,255,0.12)",
-      soft: "rgba(255,255,255,0.05)",
-      shadow: "0 12px 36px rgba(0,0,0,0.50)",
-      hover: "rgba(255,255,255,0.06)",
-      hoverBlack: "rgba(0,0,0,0.55)",
-      accent: "#D4AF37",
-      accentSoft: "rgba(212,175,55,0.14)",
-      good: "#86EFAC",
-      warn: "#FCD34D",
-      bad: "#FCA5A5",
-    };
+  switch (theme) {
+    case "Midnight Purple":
+      return { ...base, glow1: "rgba(139,92,246,0.22)", glow2: "rgba(212,175,55,0.14)", accentBg: "rgba(139,92,246,0.16)", accentBd: hc ? "rgba(139,92,246,0.55)" : "rgba(139,92,246,0.30)", accentTx: "#DDD6FE" };
+    case "Emerald Night":
+      return { ...base, glow1: "rgba(16,185,129,0.18)", glow2: "rgba(212,175,55,0.12)", accentBg: "rgba(16,185,129,0.16)", accentBd: hc ? "rgba(16,185,129,0.55)" : "rgba(16,185,129,0.30)", accentTx: "#A7F3D0" };
+    case "Ocean Blue":
+      return { ...base, glow1: "rgba(59,130,246,0.22)", glow2: "rgba(34,211,238,0.14)", accentBg: "rgba(59,130,246,0.16)", accentBd: hc ? "rgba(59,130,246,0.55)" : "rgba(59,130,246,0.30)", accentTx: "#BFDBFE" };
+    case "Ruby Noir":
+      return { ...base, glow1: "rgba(244,63,94,0.18)", glow2: "rgba(212,175,55,0.10)", accentBg: "rgba(244,63,94,0.14)", accentBd: hc ? "rgba(244,63,94,0.50)" : "rgba(244,63,94,0.26)", accentTx: "#FDA4AF" };
+    case "Carbon Black":
+      return { ...base, bg: "#03040A", glow1: "rgba(255,255,255,0.10)", glow2: "rgba(212,175,55,0.10)", accentBg: "rgba(212,175,55,0.14)", accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)", accentTx: "#FDE68A" };
+    case "Ivory Light":
+      return {
+        ...base,
+        text: "#111827",
+        muted: "#4B5563",
+        bg: "#F9FAFB",
+        panel: "rgba(255,255,255,0.78)",
+        panel2: "rgba(255,255,255,0.92)",
+        border: hc ? "rgba(17,24,39,0.22)" : "rgba(17,24,39,0.12)",
+        soft: hc ? "rgba(17,24,39,0.07)" : "rgba(17,24,39,0.04)",
+        inputBg: hc ? "rgba(17,24,39,0.08)" : "rgba(17,24,39,0.04)",
+        dangerTx: "#B91C1C",
+        glow1: "rgba(212,175,55,0.16)",
+        glow2: "rgba(59,130,246,0.14)",
+        accentBg: "rgba(212,175,55,0.16)",
+        accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)",
+        accentTx: "#92400E",
+        okTx: "#166534",
+        hoverBlack: "rgba(0,0,0,0.08)",
+      };
+    default:
+      return { ...base, glow1: "rgba(255,215,110,0.18)", glow2: "rgba(120,70,255,0.18)", accentBg: "rgba(212,175,55,0.12)", accentBd: hc ? "rgba(212,175,55,0.50)" : "rgba(212,175,55,0.22)", accentTx: "#FDE68A" };
   }
-
-  if (theme === "Ivory Light") return base;
-
-  // other themes just adjust accent
-  const accentMap: Record<string, string> = {
-    "Royal Gold": "#B8922B",
-    "Midnight Purple": "#6D28D9",
-    "Emerald Night": "#059669",
-    "Ocean Blue": "#2563EB",
-    "Ruby Noir": "#E11D48",
-  };
-  const a = accentMap[theme] || base.accent;
-  return { ...base, accent: a, accentSoft: hexToRgba(a, 0.12) };
 }
 
-function hexToRgba(hex: string, a: number) {
-  const h = hex.replace("#", "").trim();
-  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
-  const n = parseInt(full, 16);
-  const r = (n >> 16) & 255;
-  const g = (n >> 8) & 255;
-  const b = n & 255;
-  return `rgba(${r},${g},${b},${a})`;
-}
-
-/* ===== UI bits ===== */
-function Pill({ text, tone, S }: { text: string; tone: "good" | "warn" | "bad" | "neutral"; S: Record<string, CSSProperties> }) {
+/* ================== UI HELPERS ================== */
+function Chip({ text, tone, S, T }: { text: string; tone: "ok" | "warn" | "bad" | "neutral"; S: any; T: any }) {
   const st =
-    tone === "good"
-      ? S.pillGood
-      : tone === "warn"
-      ? S.pillWarn
-      : tone === "bad"
-      ? S.pillBad
-      : S.pill;
+    tone === "ok" ? S.chipOk : tone === "bad" ? S.chipBad : tone === "warn" ? S.chipWarn : S.chip;
   return <span style={st}>{text}</span>;
 }
 
-function StatCard({ title, value, sub, S }: { title: string; value: string; sub?: string; S: Record<string, CSSProperties> }) {
+function Stat({ label, value, sub, S }: { label: string; value: string; sub?: string; S: any }) {
   return (
     <div style={S.statCard}>
-      <div style={S.statTitle}>{title}</div>
+      <div style={S.statLabel}>{label}</div>
       <div style={S.statValue}>{value}</div>
       {sub ? <div style={S.statSub}>{sub}</div> : null}
     </div>
   );
 }
 
+function HoverLink({
+  href,
+  active,
+  icon,
+  label,
+  S,
+  hoverKey,
+  hovered,
+  setHovered,
+}: {
+  href: string;
+  active?: boolean;
+  icon: string;
+  label: string;
+  S: any;
+  hoverKey: string;
+  hovered: string | null;
+  setHovered: (v: string | null) => void;
+}) {
+  const isHover = hovered === hoverKey;
+  const style = active
+    ? S.navActive
+    : isHover
+    ? S.navHover
+    : S.navItem;
+
+  return (
+    <Link
+      href={href}
+      style={style as any}
+      onMouseEnter={() => setHovered(hoverKey)}
+      onMouseLeave={() => setHovered(null)}
+    >
+      <span style={S.navIcon}>{icon}</span>
+      <span>{label}</span>
+    </Link>
+  );
+}
+
+/* ================== PAGE ================== */
 export default function DashboardPage() {
   const [email, setEmail] = useState("");
   const [settings, setSettings] = useState<AppSettings>({});
-  const [range, setRange] = useState<{ from: string; to: string }>({ from: isoMinusDays(30), to: todayYMD() });
+  const [hoveredNav, setHoveredNav] = useState<string | null>(null);
+
+  const [from, setFrom] = useState(isoMinusDays(30));
+  const [to, setTo] = useState(todayYMD());
+
+  const [rawEvents, setRawEvents] = useState<any[]>([]);
+  const [rawFin, setRawFin] = useState<any[]>([]);
+  const [rawHR, setRawHR] = useState<any[]>([]);
+  const [rawVendors, setRawVendors] = useState<any[]>([]);
+  const [msg, setMsg] = useState("");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     setEmail(localStorage.getItem(LS_EMAIL) || "");
-    setSettings(safeParse<AppSettings>(localStorage.getItem(LS_SETTINGS), {}));
+    setSettings(safeLoad<AppSettings>(LS_SETTINGS, {}));
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const T = tokens((settings.theme as Theme) || "Ivory Light", settings.highContrast);
-  const S = useMemo(() => makeStyles(T, settings.hoverDark !== false), [T, settings.hoverDark]);
-
-  const rawEvents = useMemo(() => loadFirstKey<any[]>(EVENT_KEYS, []), []);
-  const rawFin = useMemo(() => loadFirstKey<any[]>(FIN_KEYS, []), []);
-  const rawHR = useMemo(() => loadFirstKey<any[]>(HR_KEYS, []), []);
-  const rawVendors = useMemo(() => loadFirstKey<any[]>(VENDOR_KEYS, []), []);
-
-  const events = useMemo(() => normalizeEvents(rawEvents), [rawEvents]);
-  const txs = useMemo(() => normalizeFinance(rawFin), [rawFin]);
-  const team = useMemo(() => normalizeHR(rawHR), [rawHR]);
-  const vendors = useMemo(() => normalizeVendors(rawVendors), [rawVendors]);
+  function refresh() {
+    const e = loadFirstKey<any[]>(EVENT_KEYS, []);
+    const f = loadFirstKey<any[]>(FIN_KEYS, []);
+    const h = loadFirstKey<any[]>(HR_KEYS, []);
+    const v = loadFirstKey<any[]>(VENDOR_KEYS, []);
+    setRawEvents(Array.isArray(e.data) ? e.data : []);
+    setRawFin(Array.isArray(f.data) ? f.data : []);
+    setRawHR(Array.isArray(h.data) ? h.data : []);
+    setRawVendors(Array.isArray(v.data) ? v.data : []);
+    setMsg("✅ Dashboard refreshed");
+    setTimeout(() => setMsg(""), 1200);
+  }
 
   const isCEO = useMemo(() => {
     const ceo = (settings.ceoEmail || "hardikvekariya799@gmail.com").toLowerCase();
     return (email || "").toLowerCase() === ceo;
   }, [email, settings.ceoEmail]);
 
-  const eventsInRange = useMemo(
-    () => events.filter((e) => inRange(e.date, range.from, range.to)),
-    [events, range.from, range.to]
-  );
-  const txsInRange = useMemo(
-    () => txs.filter((t) => inRange(t.date, range.from, range.to)),
-    [txs, range.from, range.to]
-  );
+  const T = ThemeTokens((settings.theme as Theme) || "Royal Gold", settings.highContrast);
+  const S = useMemo(() => makeStyles(T, !!settings.compactTables), [T, settings.compactTables]);
 
-  const finance = useMemo(() => {
+  const events = useMemo(() => normalizeEvents(rawEvents), [rawEvents]);
+  const txs = useMemo(() => normalizeFinance(rawFin), [rawFin]);
+  const team = useMemo(() => normalizeHR(rawHR), [rawHR]);
+  const vendors = useMemo(() => normalizeVendors(rawVendors), [rawVendors]);
+
+  const eventsInRange = useMemo(() => events.filter((e) => inRange(e.date, from, to)), [events, from, to]);
+  const txsInRange = useMemo(() => txs.filter((t) => inRange(t.date, from, to)), [txs, from, to]);
+
+  const finTotals = useMemo(() => {
     let income = 0;
     let expense = 0;
     for (const t of txsInRange) {
@@ -321,23 +364,29 @@ export default function DashboardPage() {
   }, [txsInRange]);
 
   const pipeline = useMemo(() => {
-    const map = new Map<string, number>();
+    const m = new Map<string, number>();
     for (const e of eventsInRange) {
       const k = (e.status || "Unknown").trim() || "Unknown";
-      map.set(k, (map.get(k) ?? 0) + 1);
+      m.set(k, (m.get(k) ?? 0) + 1);
     }
-    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+    return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
   }, [eventsInRange]);
 
-  const hr = useMemo(() => {
+  const hrKpis = useMemo(() => {
     const total = team.length;
     const active = team.filter((m) => String(m.status || "").toLowerCase() !== "inactive").length;
-    const avgWorkload = total ? Math.round((team.reduce((a, b) => a + (b.workload ?? 0), 0) / total) * 10) / 10 : 0;
+    const payroll = team.reduce((a, b) => a + (Number.isFinite(b.monthlySalary as any) ? (b.monthlySalary as number) : 0), 0);
+    const avgWorkload =
+      total === 0
+        ? 0
+        : Math.round(
+            (team.reduce((a, b) => a + (Number.isFinite(b.workload as any) ? (b.workload as number) : 0), 0) / total) * 10
+          ) / 10;
     const highLoad = team.filter((m) => (m.workload ?? 0) >= 80).length;
-    return { total, active, avgWorkload, highLoad };
+    return { total, active, payroll, avgWorkload, highLoad };
   }, [team]);
 
-  const vendor = useMemo(() => {
+  const vendorKpis = useMemo(() => {
     const total = vendors.length;
     const active = vendors.filter((v) => String(v.status || "").toLowerCase() !== "inactive").length;
     const rated = vendors.filter((v) => Number.isFinite(v.rating as any));
@@ -345,457 +394,386 @@ export default function DashboardPage() {
     return { total, active, avgRating };
   }, [vendors]);
 
-  const health = useMemo(() => {
-    const risks: string[] = [];
-    if (finance.net < 0) risks.push("Negative net cashflow in selected range");
-    if (hr.highLoad > 0) risks.push(`High workload: ${hr.highLoad} team member(s)`);
-    const unconfirmed = pipeline.find(([s]) => s.toLowerCase().includes("tent") || s.toLowerCase().includes("plan"));
-    if (unconfirmed && unconfirmed[1] >= 3) risks.push("Many events are still tentative/planned");
-    return risks;
-  }, [finance.net, hr.highLoad, pipeline]);
+  const insights = useMemo(() => {
+    const lines: { tone: "ok" | "warn" | "bad"; text: string }[] = [];
+    if (finTotals.net < 0) lines.push({ tone: "bad", text: "Cashflow is negative in the selected range. Review expenses." });
+    else lines.push({ tone: "ok", text: "Cashflow looks healthy for the selected range." });
+
+    if (hrKpis.highLoad > 0) lines.push({ tone: "warn", text: `High workload: ${hrKpis.highLoad} team member(s) ≥ 80%.` });
+    else lines.push({ tone: "ok", text: "Team workload is balanced." });
+
+    const planned = pipeline.find(([s]) => s.toLowerCase().includes("plan") || s.toLowerCase().includes("tent"));
+    if (planned && planned[1] >= 3) lines.push({ tone: "warn", text: "Many events are still planned/tentative. Confirm them." });
+
+    if (!events.length && !txs.length && !team.length && !vendors.length) {
+      lines.push({ tone: "warn", text: "No data found yet. Add events/finance/hr/vendors to see metrics." });
+    }
+    return lines.slice(0, 5);
+  }, [finTotals.net, hrKpis.highLoad, pipeline, events.length, txs.length, team.length, vendors.length]);
 
   return (
     <div style={S.app}>
+      {/* Sidebar */}
       <aside style={S.sidebar}>
-        <div style={S.brand}>
-          <div style={S.brandLogo}>Eventura</div>
-          <div style={S.brandTag}>Management Console</div>
+        <div style={S.brandRow}>
+          <div style={S.logoCircle}>E</div>
+          <div>
+            <div style={S.brandName}>Eventura</div>
+            <div style={S.brandSub}>Company Dashboard</div>
+          </div>
         </div>
 
-        <div style={S.nav}>
-          <Link href="/dashboard" style={S.navItemActive as any}>Dashboard</Link>
-          <Link href="/events" style={S.navItem as any}>Events</Link>
-          <Link href="/finance" style={S.navItem as any}>Finance</Link>
-          <Link href="/vendors" style={S.navItem as any}>Vendors</Link>
-          <Link href="/hr" style={S.navItem as any}>HR</Link>
-          <Link href="/reports" style={S.navItem as any}>Reports</Link>
-          <Link href="/settings" style={S.navItem as any}>Settings</Link>
-        </div>
+        <nav style={S.nav}>
+          <HoverLink href="/dashboard" active icon="📊" label="Dashboard" S={S} hoverKey="dash" hovered={hoveredNav} setHovered={setHoveredNav} />
+          <HoverLink href="/events" icon="📅" label="Events" S={S} hoverKey="events" hovered={hoveredNav} setHovered={setHoveredNav} />
+          <HoverLink href="/finance" icon="💰" label="Finance" S={S} hoverKey="fin" hovered={hoveredNav} setHovered={setHoveredNav} />
+          <HoverLink href="/vendors" icon="🏷️" label="Vendors" S={S} hoverKey="vendors" hovered={hoveredNav} setHovered={setHoveredNav} />
+          <HoverLink href="/hr" icon="🧑‍🤝‍🧑" label="HR" S={S} hoverKey="hr" hovered={hoveredNav} setHovered={setHoveredNav} />
+          <HoverLink href="/reports" icon="📈" label="Reports" S={S} hoverKey="reports" hovered={hoveredNav} setHovered={setHoveredNav} />
+          <HoverLink href="/settings" icon="⚙️" label="Settings" S={S} hoverKey="settings" hovered={hoveredNav} setHovered={setHoveredNav} />
+        </nav>
 
-        <div style={S.sideFooter}>
-          <div style={S.identityCard}>
-            <div style={S.identityTop}>
-              <div style={S.avatar}>{(email || "E").slice(0, 1).toUpperCase()}</div>
-              <div>
-                <div style={S.identityName}>{isCEO ? "Hardik Vekariya" : "Team Member"}</div>
-                <div style={S.identitySub}>{email || "Not signed in"}</div>
-              </div>
-            </div>
-            <div style={{ marginTop: 10 }}>
-              <Pill text={isCEO ? "CEO Access" : "Staff Access"} tone={isCEO ? "good" : "neutral"} S={S} />
-            </div>
+        <div style={S.sidebarFooter}>
+          <div style={S.userBox}>
+            <div style={S.userLabel}>Signed in</div>
+            <div style={S.userEmail}>{email || "Unknown"}</div>
+            <div style={S.roleBadge}>{isCEO ? "CEO" : "Staff"}</div>
+          </div>
+
+          <div style={S.footerBrand}>
+            Founder: Hardik Vekariya • Co-Founder: Shubh Parekh • Digital Head: Dixit Bhuva
           </div>
         </div>
       </aside>
 
+      {/* Main */}
       <main style={S.main}>
-        <div style={S.topbar}>
+        <div style={S.header}>
           <div>
-            <div style={S.pageTitle}>Dashboard</div>
-            <div style={S.pageSub}>Company overview • quick decisions • action-focused</div>
+            <div style={S.h1}>Company Command Center</div>
+            <div style={S.muted}>
+              Clean executive view • No tech/debug text • Black hover • Theme-aware • Deploy-safe
+            </div>
           </div>
 
-          <div style={S.range}>
-            <div style={S.rangeItem}>
-              <div style={S.smallLabel}>From</div>
-              <input
-                type="date"
-                value={range.from}
-                onChange={(e) => setRange((p) => ({ ...p, from: e.target.value }))}
-                style={S.input}
-              />
+          <div style={S.headerRight}>
+            <div style={S.rangeBox}>
+              <div style={S.smallMuted}>From</div>
+              <input style={S.input} type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
             </div>
-            <div style={S.rangeItem}>
-              <div style={S.smallLabel}>To</div>
-              <input
-                type="date"
-                value={range.to}
-                onChange={(e) => setRange((p) => ({ ...p, to: e.target.value }))}
-                style={S.input}
-              />
+            <div style={S.rangeBox}>
+              <div style={S.smallMuted}>To</div>
+              <input style={S.input} type="date" value={to} onChange={(e) => setTo(e.target.value)} />
             </div>
+            <button style={S.primaryBtn} onClick={refresh}>Refresh</button>
           </div>
         </div>
 
-        <div style={S.statsGrid}>
-          <StatCard title="Events (range)" value={String(eventsInRange.length)} sub="Total scheduled in range" S={S} />
-          <StatCard title="Net Cashflow" value={formatCurrency(finance.net)} sub={`Income ${formatCurrency(finance.income)} • Expense ${formatCurrency(finance.expense)}`} S={S} />
-          <StatCard title="Team" value={`${hr.active}/${hr.total}`} sub={`Avg workload ${hr.avgWorkload}%`} S={S} />
-          <StatCard title="Vendors" value={String(vendor.total)} sub={vendor.avgRating ? `Avg rating ${vendor.avgRating}` : "No ratings yet"} S={S} />
+        {msg ? <div style={S.msg}>{msg}</div> : null}
+
+        {/* KPI Row */}
+        <div style={S.kpiGrid}>
+          <Stat label="Events (range)" value={String(eventsInRange.length)} sub={pipeline[0] ? `Top: ${pipeline[0][0]} (${pipeline[0][1]})` : "—"} S={S} />
+          <Stat label="Net Cashflow" value={formatCurrency(finTotals.net)} sub={`Income ${formatCurrency(finTotals.income)} • Expense ${formatCurrency(finTotals.expense)}`} S={S} />
+          <Stat label="Team" value={`${hrKpis.active}/${hrKpis.total}`} sub={`Avg workload ${hrKpis.avgWorkload}%`} S={S} />
+          <Stat label="Vendors" value={String(vendorKpis.total)} sub={vendorKpis.avgRating ? `Avg rating ${vendorKpis.avgRating}` : "No ratings yet"} S={S} />
         </div>
 
-        <div style={S.contentGrid}>
-          {/* Left: pipeline + risks */}
+        {/* Panels */}
+        <div style={S.grid}>
+          {/* Insights */}
           <section style={S.panel}>
-            <div style={S.panelHeader}>
-              <div style={S.panelTitle}>Event Pipeline</div>
-              <div style={S.panelHint}>Status breakdown (range)</div>
+            <div style={S.panelTitle}>Executive Insights</div>
+            <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+              {insights.map((x, i) => (
+                <div key={i} style={S.insightRow}>
+                  <Chip text={x.tone === "ok" ? "OK" : x.tone === "warn" ? "ATTN" : "RISK"} tone={x.tone} S={S} T={T} />
+                  <div style={S.insightText}>{x.text}</div>
+                </div>
+              ))}
             </div>
+            <div style={S.quickLinks}>
+              <Link href="/reports" style={S.quickBtn as any}>Open Reports</Link>
+              <Link href="/finance" style={S.quickBtn as any}>Review Finance</Link>
+              <Link href="/events" style={S.quickBtn as any}>Manage Events</Link>
+            </div>
+          </section>
 
-            {pipeline.length ? (
-              <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+          {/* Pipeline */}
+          <section style={S.panel}>
+            <div style={S.panelTitle}>Event Pipeline</div>
+            {!pipeline.length ? (
+              <div style={S.mutedBox}>No events in this range.</div>
+            ) : (
+              <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
                 {pipeline.slice(0, 8).map(([st, c]) => {
                   const max = pipeline[0]?.[1] ?? c;
                   const pct = max ? Math.round((c / max) * 100) : 0;
-                  const tone =
-                    st.toLowerCase().includes("complete") ? "good" :
-                    st.toLowerCase().includes("cancel") ? "bad" :
-                    st.toLowerCase().includes("tent") || st.toLowerCase().includes("plan") ? "warn" : "neutral";
                   return (
-                    <div key={st} style={S.row}>
-                      <div style={S.rowLeft}>
-                        <div style={S.rowTitle}>{st}</div>
-                        <Pill text={`${c}`} tone={tone as any} S={S} />
+                    <div key={st} style={S.pipeRow}>
+                      <div style={S.pipeTop}>
+                        <div style={S.pipeLabel}>{st}</div>
+                        <div style={S.pipeCount}>{c}</div>
                       </div>
-                      <div style={S.barWrap}>
-                        <div style={{ ...S.barFill, width: `${pct}%` }} />
+                      <div style={S.pipeBarWrap}>
+                        <div style={{ ...S.pipeBarFill, width: `${pct}%` }} />
                       </div>
                     </div>
                   );
                 })}
               </div>
-            ) : (
-              <div style={S.empty}>No events found in this range.</div>
-            )}
-
-            <div style={S.divider} />
-
-            <div style={S.panelHeader}>
-              <div style={S.panelTitle}>Attention</div>
-              <div style={S.panelHint}>Auto insights (safe rules)</div>
-            </div>
-
-            {health.length ? (
-              <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-                {health.map((r) => (
-                  <div key={r} style={S.alertWarn}>
-                    {r}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={S.alertGood}>No major risks detected for this range.</div>
             )}
           </section>
 
-          {/* Right: recent activity */}
+          {/* Recent Events */}
           <section style={S.panel}>
-            <div style={S.panelHeader}>
-              <div style={S.panelTitle}>Recent Activity</div>
-              <div style={S.panelHint}>Latest events & transactions</div>
-            </div>
+            <div style={S.panelTitle}>Recent Events</div>
+            {!eventsInRange.length ? (
+              <div style={S.mutedBox}>No events found.</div>
+            ) : (
+              <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                {eventsInRange
+                  .slice()
+                  .sort((a, b) => (a.date < b.date ? 1 : -1))
+                  .slice(0, 7)
+                  .map((e) => (
+                    <div key={e.id} style={S.itemCard}>
+                      <div style={S.rowBetween}>
+                        <div style={S.itemTitle}>{e.title}</div>
+                        <span style={S.pill}>{e.status}</span>
+                      </div>
+                      <div style={S.smallMuted}>
+                        {e.date} • {e.city || "—"} {typeof e.budget === "number" ? `• Budget ${formatCurrency(e.budget)}` : ""}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </section>
 
-            <div style={S.twoCol}>
-              <div>
-                <div style={S.blockTitle}>Recent Events</div>
-                {eventsInRange.length ? (
-                  <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
-                    {eventsInRange
-                      .slice()
-                      .sort((a, b) => (a.date < b.date ? 1 : -1))
-                      .slice(0, 6)
-                      .map((e) => (
-                        <div key={e.id} style={S.item}>
-                          <div style={S.itemTop}>
-                            <div style={S.itemTitle}>{e.title}</div>
-                            <Pill
-                              text={e.status}
-                              tone={
-                                e.status.toLowerCase().includes("complete")
-                                  ? "good"
-                                  : e.status.toLowerCase().includes("cancel")
-                                  ? "bad"
-                                  : e.status.toLowerCase().includes("tent") || e.status.toLowerCase().includes("plan")
-                                  ? "warn"
-                                  : "neutral"
-                              }
-                              S={S}
-                            />
-                          </div>
-                          <div style={S.itemSub}>
-                            {e.date} • {e.city || "—"} {typeof e.budget === "number" ? `• Budget ${formatCurrency(e.budget)}` : ""}
-                          </div>
+          {/* Recent Finance */}
+          <section style={S.panel}>
+            <div style={S.panelTitle}>Recent Finance</div>
+            {!txsInRange.length ? (
+              <div style={S.mutedBox}>No transactions found.</div>
+            ) : (
+              <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                {txsInRange
+                  .slice()
+                  .sort((a, b) => (a.date < b.date ? 1 : -1))
+                  .slice(0, 8)
+                  .map((t) => (
+                    <div key={t.id} style={S.itemCard}>
+                      <div style={S.rowBetween}>
+                        <div style={S.itemTitle}>
+                          {t.type} • {t.category || "General"}
                         </div>
-                      ))}
-                  </div>
-                ) : (
-                  <div style={S.empty}>No events yet.</div>
-                )}
+                        <span style={S.pill}>{formatCurrency(t.amount)}</span>
+                      </div>
+                      <div style={S.smallMuted}>
+                        {t.date} {t.vendor ? `• ${t.vendor}` : ""} {t.note ? `• ${t.note}` : ""}
+                      </div>
+                    </div>
+                  ))}
               </div>
-
-              <div>
-                <div style={S.blockTitle}>Recent Finance</div>
-                {txsInRange.length ? (
-                  <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
-                    {txsInRange
-                      .slice()
-                      .sort((a, b) => (a.date < b.date ? 1 : -1))
-                      .slice(0, 6)
-                      .map((t) => (
-                        <div key={t.id} style={S.item}>
-                          <div style={S.itemTop}>
-                            <div style={S.itemTitle}>
-                              {t.type} • {t.category || "General"}
-                            </div>
-                            <Pill text={formatCurrency(t.amount)} tone={t.type === "Income" ? "good" : "warn"} S={S} />
-                          </div>
-                          <div style={S.itemSub}>
-                            {t.date} {t.vendor ? `• ${t.vendor}` : ""} {t.note ? `• ${t.note}` : ""}
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                ) : (
-                  <div style={S.empty}>No transactions yet.</div>
-                )}
-              </div>
-            </div>
-
-            <div style={S.divider} />
-
-            <div style={S.quickActions}>
-              <div style={S.panelHeader}>
-                <div style={S.panelTitle}>Quick Actions</div>
-                <div style={S.panelHint}>Jump to modules</div>
-              </div>
-
-              <div style={S.actionGrid}>
-                <Link href="/events" style={S.action as any}>Create / Update Events</Link>
-                <Link href="/finance" style={S.action as any}>Add Income / Expense</Link>
-                <Link href="/vendors" style={S.action as any}>Manage Vendors</Link>
-                <Link href="/hr" style={S.action as any}>Team & Workload</Link>
-              </div>
-            </div>
+            )}
           </section>
         </div>
 
-        <div style={S.footer}>Eventura • Founder: Hardik Vekariya • Co-Founder: Shubh Parekh • Digital Head: Dixit Bhuva</div>
+        <div style={S.footerNote}>✅ Professional UI • ✅ Theme applied • ✅ Black hover • ✅ Deploy-safe</div>
       </main>
     </div>
   );
 }
 
-/* ===== styles ===== */
-function makeStyles(T: any, hoverBlack: boolean): Record<string, CSSProperties> {
-  const hoverBg = hoverBlack ? T.hoverBlack : T.hover;
-
+/* ================== STYLES ================== */
+function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
   return {
     app: {
       minHeight: "100vh",
       display: "flex",
-      background: T.bg,
+      background: `radial-gradient(1200px 800px at 20% 10%, ${T.glow1}, transparent 60%),
+                   radial-gradient(900px 700px at 80% 20%, ${T.glow2}, transparent 55%),
+                   ${T.bg}`,
       color: T.text,
       fontFamily:
         'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
     },
 
     sidebar: {
-      width: 280,
+      width: 290,
+      position: "sticky",
+      top: 0,
+      height: "100vh",
+      padding: 12,
       borderRight: `1px solid ${T.border}`,
-      background: T.panel,
-      padding: 18,
+      background: T.panel2,
+      backdropFilter: "blur(10px)",
       display: "flex",
       flexDirection: "column",
-      gap: 16,
+      gap: 12,
     },
 
-    brand: { paddingBottom: 10, borderBottom: `1px solid ${T.border}` },
-    brandLogo: { fontSize: 18, fontWeight: 950, letterSpacing: 0.2, color: T.text },
-    brandTag: { marginTop: 4, fontSize: 12, color: T.muted, fontWeight: 700 },
-
-    nav: { display: "grid", gap: 8 },
-    navItem: {
-      padding: "12px 12px",
-      borderRadius: 12,
-      textDecoration: "none",
-      color: T.text,
-      border: `1px solid ${T.border}`,
-      background: "transparent",
-      fontWeight: 850,
-      fontSize: 13,
-      transition: "background 120ms ease",
-    },
-    navItemActive: {
-      padding: "12px 12px",
-      borderRadius: 12,
-      textDecoration: "none",
-      color: T.text,
-      border: `1px solid ${T.border}`,
-      background: T.accentSoft,
-      fontWeight: 950,
-      fontSize: 13,
-    },
-
-    sideFooter: { marginTop: "auto" },
-    identityCard: {
-      border: `1px solid ${T.border}`,
-      borderRadius: 16,
-      padding: 14,
-      background: T.soft,
-    },
-    identityTop: { display: "flex", gap: 12, alignItems: "center" },
-    avatar: {
-      width: 38,
-      height: 38,
-      borderRadius: 12,
+    brandRow: { display: "flex", alignItems: "center", gap: 10, padding: "8px 8px" },
+    logoCircle: {
+      width: 40,
+      height: 40,
+      borderRadius: 14,
       display: "grid",
       placeItems: "center",
       fontWeight: 950,
-      background: T.accentSoft,
-      color: T.text,
-      border: `1px solid ${T.border}`,
+      background: `linear-gradient(135deg, ${T.accentBg}, rgba(255,255,255,0.06))`,
+      border: `1px solid ${T.accentBd}`,
+      color: T.accentTx,
     },
-    identityName: { fontWeight: 950, fontSize: 13 },
-    identitySub: { fontSize: 12, color: T.muted, marginTop: 2 },
+    brandName: { fontWeight: 950, lineHeight: 1.1 },
+    brandSub: { color: T.muted, fontSize: 12, marginTop: 2 },
 
-    main: { flex: 1, padding: 22, maxWidth: 1400, margin: "0 auto", width: "100%" },
+    nav: { display: "grid", gap: 8, marginTop: 6 },
+    navIcon: { width: 22, display: "inline-block" },
 
-    topbar: {
+    navItem: {
       display: "flex",
-      justifyContent: "space-between",
-      gap: 14,
-      alignItems: "flex-start",
-      padding: 16,
-      borderRadius: 18,
-      border: `1px solid ${T.border}`,
-      background: T.panel,
-      boxShadow: T.shadow,
-    },
-
-    pageTitle: { fontSize: 22, fontWeight: 950 },
-    pageSub: { marginTop: 6, color: T.muted, fontSize: 13, fontWeight: 650 },
-
-    range: { display: "flex", gap: 10, flexWrap: "wrap" },
-    rangeItem: { display: "grid", gap: 6 },
-    smallLabel: { fontSize: 12, color: T.muted, fontWeight: 800 },
-
-    input: {
-      padding: "10px 12px",
-      borderRadius: 12,
+      alignItems: "center",
+      gap: 10,
+      padding: "12px 12px",
+      borderRadius: 14,
+      textDecoration: "none",
+      color: T.text,
       border: `1px solid ${T.border}`,
       background: T.soft,
+      fontWeight: 900,
+      fontSize: 13,
+      transition: "background 120ms ease, transform 120ms ease",
+    },
+
+    navHover: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      padding: "12px 12px",
+      borderRadius: 14,
+      textDecoration: "none",
       color: T.text,
-      outline: "none",
+      border: `1px solid ${T.border}`,
+      background: T.hoverBlack, // ✅ BLACK HOVER (not transparent)
+      fontWeight: 900,
+      fontSize: 13,
+      transform: "translateY(-1px)",
+    },
+
+    navActive: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      padding: "12px 12px",
+      borderRadius: 14,
+      textDecoration: "none",
+      color: T.text,
+      border: `1px solid ${T.accentBd}`,
+      background: T.accentBg,
+      fontWeight: 950,
       fontSize: 13,
     },
 
-    statsGrid: {
-      marginTop: 14,
-      display: "grid",
-      gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-      gap: 12,
+    sidebarFooter: { marginTop: "auto", display: "grid", gap: 10 },
+    userBox: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft },
+    userLabel: { fontSize: 12, color: T.muted, fontWeight: 900 },
+    userEmail: { fontSize: 13, fontWeight: 900, marginTop: 6, wordBreak: "break-word" },
+    roleBadge: {
+      marginTop: 10,
+      display: "inline-flex",
+      padding: "5px 10px",
+      borderRadius: 999,
+      background: T.accentBg,
+      border: `1px solid ${T.accentBd}`,
+      color: T.accentTx,
+      fontWeight: 950,
+      width: "fit-content",
     },
-    statCard: {
+    footerBrand: { color: T.muted, fontSize: 11, lineHeight: 1.4, padding: "0 6px" },
+
+    main: { flex: 1, padding: 16, maxWidth: 1500, margin: "0 auto", width: "100%" },
+
+    header: {
+      display: "flex",
+      alignItems: "flex-start",
+      justifyContent: "space-between",
+      gap: 12,
       padding: 14,
       borderRadius: 18,
       border: `1px solid ${T.border}`,
       background: T.panel,
-      boxShadow: T.shadow,
+      backdropFilter: "blur(10px)",
     },
-    statTitle: { fontSize: 12, color: T.muted, fontWeight: 900 },
-    statValue: { marginTop: 8, fontSize: 20, fontWeight: 950, letterSpacing: 0.2 },
-    statSub: { marginTop: 6, fontSize: 12, color: T.muted, fontWeight: 700 },
+    headerRight: { display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "end" },
 
-    contentGrid: {
-      marginTop: 14,
-      display: "grid",
-      gridTemplateColumns: "1fr 1.35fr",
-      gap: 12,
-      alignItems: "start",
-    },
+    h1: { fontSize: 26, fontWeight: 950 },
+    muted: { color: T.muted, fontSize: 13, marginTop: 6 },
+    smallMuted: { color: T.muted, fontSize: 12 },
 
-    panel: {
-      padding: 16,
-      borderRadius: 18,
-      border: `1px solid ${T.border}`,
-      background: T.panel,
-      boxShadow: T.shadow,
-    },
-    panelHeader: { display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" },
-    panelTitle: { fontWeight: 950, fontSize: 14 },
-    panelHint: { color: T.muted, fontSize: 12, fontWeight: 700 },
+    rangeBox: { display: "grid", gap: 6 },
 
-    row: {
-      border: `1px solid ${T.border}`,
+    input: {
+      width: 210,
+      padding: compact ? "10px 10px" : "12px 12px",
       borderRadius: 14,
-      padding: "10px 12px",
-      background: T.soft,
-    },
-    rowLeft: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 },
-    rowTitle: { fontWeight: 900, fontSize: 13 },
-
-    barWrap: { marginTop: 10, height: 8, borderRadius: 999, background: "rgba(0,0,0,0.08)", overflow: "hidden" },
-    barFill: { height: "100%", borderRadius: 999, background: T.accent },
-
-    divider: { height: 1, background: T.border, margin: "14px 0" },
-
-    twoCol: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 },
-
-    blockTitle: { fontWeight: 950, fontSize: 13 },
-    item: {
       border: `1px solid ${T.border}`,
-      borderRadius: 14,
-      padding: "10px 12px",
-      background: T.soft,
-      transition: "background 120ms ease",
-    },
-    itemTop: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 },
-    itemTitle: { fontWeight: 900, fontSize: 13 },
-    itemSub: { marginTop: 6, color: T.muted, fontSize: 12, fontWeight: 650 },
-
-    empty: { marginTop: 10, color: T.muted, fontWeight: 700, fontSize: 13 },
-
-    pill: {
-      padding: "6px 10px",
-      borderRadius: 999,
-      fontSize: 12,
-      fontWeight: 900,
-      border: `1px solid ${T.border}`,
-      background: "transparent",
-      whiteSpace: "nowrap",
-    },
-    pillGood: { padding: "6px 10px", borderRadius: 999, fontSize: 12, fontWeight: 900, border: `1px solid ${T.border}`, background: "rgba(22,101,52,0.10)", color: T.good, whiteSpace: "nowrap" },
-    pillWarn: { padding: "6px 10px", borderRadius: 999, fontSize: 12, fontWeight: 900, border: `1px solid ${T.border}`, background: "rgba(146,64,14,0.10)", color: T.warn, whiteSpace: "nowrap" },
-    pillBad: { padding: "6px 10px", borderRadius: 999, fontSize: 12, fontWeight: 900, border: `1px solid ${T.border}`, background: "rgba(185,28,28,0.10)", color: T.bad, whiteSpace: "nowrap" },
-
-    alertWarn: {
-      border: `1px solid ${T.border}`,
-      borderRadius: 14,
-      padding: "10px 12px",
-      background: "rgba(146,64,14,0.08)",
+      background: T.inputBg,
       color: T.text,
-      fontWeight: 800,
-      fontSize: 13,
-    },
-    alertGood: {
-      marginTop: 12,
-      border: `1px solid ${T.border}`,
-      borderRadius: 14,
-      padding: "10px 12px",
-      background: "rgba(22,101,52,0.08)",
-      color: T.text,
-      fontWeight: 800,
-      fontSize: 13,
+      outline: "none",
+      fontSize: 14,
     },
 
-    quickActions: {},
-    actionGrid: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
-    action: {
-      border: `1px solid ${T.border}`,
+    primaryBtn: {
+      padding: "12px 14px",
       borderRadius: 14,
-      padding: "12px 12px",
-      background: T.accentSoft,
-      textDecoration: "none",
-      color: T.text,
+      border: `1px solid ${T.accentBd}`,
+      background: T.accentBg,
+      color: T.accentTx,
       fontWeight: 950,
-      fontSize: 13,
-      transition: "background 120ms ease",
+      cursor: "pointer",
     },
 
-    footer: { marginTop: 16, textAlign: "center", color: T.muted, fontSize: 12, fontWeight: 700 },
+    msg: { marginTop: 12, padding: 10, borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft, color: T.text, fontSize: 13 },
 
-    /* hover effects (BLACK hover option) */
-    // applied by inline pseudo? we simulate via onMouse in next step if needed.
-    // For now: use background blocks, and your browser will still look clean.
+    kpiGrid: { marginTop: 12, display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 },
+    statCard: { padding: 14, borderRadius: 18, border: `1px solid ${T.border}`, background: T.panel, backdropFilter: "blur(10px)" },
+    statLabel: { color: T.muted, fontSize: 12, fontWeight: 900 },
+    statValue: { marginTop: 8, fontSize: 20, fontWeight: 950 },
+    statSub: { marginTop: 6, color: T.muted, fontSize: 12, lineHeight: 1.3 },
+
+    grid: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
+
+    panel: { padding: 14, borderRadius: 18, border: `1px solid ${T.border}`, background: T.panel, backdropFilter: "blur(10px)" },
+    panelTitle: { fontWeight: 950, color: T.accentTx },
+
+    mutedBox: { marginTop: 12, padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft, color: T.muted, fontWeight: 800 },
+
+    insightRow: { display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft },
+    insightText: { fontWeight: 850, lineHeight: 1.35, fontSize: 13 },
+
+    chip: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.border}`, fontWeight: 950, fontSize: 12, background: "transparent" },
+    chipOk: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.okBd}`, fontWeight: 950, fontSize: 12, background: T.okBg, color: T.okTx },
+    chipWarn: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.accentBd}`, fontWeight: 950, fontSize: 12, background: T.accentBg, color: T.accentTx },
+    chipBad: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.dangerBd}`, fontWeight: 950, fontSize: 12, background: T.dangerBg, color: T.dangerTx },
+
+    quickLinks: { marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" },
+    quickBtn: { padding: "10px 12px", borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft, color: T.text, textDecoration: "none", fontWeight: 950 },
+
+    pipeRow: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft },
+    pipeTop: { display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" },
+    pipeLabel: { fontWeight: 950 },
+    pipeCount: { fontWeight: 950, color: T.muted },
+    pipeBarWrap: { marginTop: 10, height: 10, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" },
+    pipeBarFill: { height: "100%", borderRadius: 999, background: T.accentTx, opacity: 0.9 },
+
+    itemCard: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft },
+    rowBetween: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 },
+    itemTitle: { fontWeight: 950 },
+
+    pill: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.accentBd}`, background: T.accentBg, color: T.accentTx, fontWeight: 950, fontSize: 12, whiteSpace: "nowrap" },
+
+    footerNote: { color: T.muted, fontSize: 12, textAlign: "center", padding: 10 },
   };
 }
