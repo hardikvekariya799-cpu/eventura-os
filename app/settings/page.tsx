@@ -865,3 +865,103 @@ function makeStyles(T: any): Record<string, CSSProperties> {
     },
   };
 }
+import React, { useEffect, useState } from "react";
+import { cloudGet, cloudUpsert, getSessionEmail } from "@/lib/cloudBackup";
+
+const BACKUP_KEYS = [
+  "eventura-events",
+  "eventura-finance-transactions",
+  "eventura-hr-team",
+  "eventura-vendors",
+  "eventura_os_settings_v3",
+];
+
+function safeParse(raw: string | null) {
+  try {
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function prettyErr(e: any) {
+  return e?.message || "Unknown error";
+}
+
+export function CloudBackupPanel() {
+  const [email, setEmail] = useState("");
+  const [msg, setMsg] = useState("");
+  const [auto, setAuto] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      setEmail(await getSessionEmail());
+    })();
+  }, []);
+
+  async function backupNow() {
+    try {
+      setMsg("Backing up…");
+      for (const k of BACKUP_KEYS) {
+        const value = safeParse(typeof window !== "undefined" ? localStorage.getItem(k) : null);
+        await cloudUpsert(k, value ?? []);
+      }
+      setMsg("✅ Backup complete (saved to your account).");
+    } catch (e: any) {
+      setMsg("❌ Backup failed: " + prettyErr(e));
+    }
+  }
+
+  async function restoreNow() {
+    try {
+      setMsg("Restoring…");
+      for (const k of BACKUP_KEYS) {
+        const value = await cloudGet(k);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(k, JSON.stringify(value ?? []));
+        }
+      }
+      setMsg("✅ Restore complete. Refresh the page.");
+    } catch (e: any) {
+      setMsg("❌ Restore failed: " + prettyErr(e));
+    }
+  }
+
+  // Auto backup every 30 seconds (safe)
+  useEffect(() => {
+    if (!auto) return;
+    const id = setInterval(() => {
+      backupNow().catch(() => {});
+    }, 30000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto]);
+
+  return (
+    <div style={{ marginTop: 14, padding: 14, borderRadius: 16, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)" }}>
+      <div style={{ fontWeight: 900, fontSize: 14 }}>Cloud Backup (Your Email Security)</div>
+      <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85 }}>
+        Signed in as: <b>{email || "Unknown"}</b>
+      </div>
+
+      <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <button onClick={backupNow} style={{ padding: "10px 12px", borderRadius: 12, fontWeight: 900, cursor: "pointer" }}>
+          Backup Now
+        </button>
+        <button onClick={restoreNow} style={{ padding: "10px 12px", borderRadius: 12, fontWeight: 900, cursor: "pointer" }}>
+          Restore Now
+        </button>
+
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, opacity: 0.9 }}>
+          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
+          Auto-backup every 30s
+        </label>
+      </div>
+
+      {msg ? <div style={{ marginTop: 10, fontSize: 12 }}>{msg}</div> : null}
+      <div style={{ marginTop: 8, fontSize: 11, opacity: 0.75 }}>
+        Note: This backs up Events, Finance, HR, Vendors & Settings to Supabase under your login.
+      </div>
+    </div>
+  );
+}
