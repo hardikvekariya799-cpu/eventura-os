@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import React, { useEffect, useMemo, useState, type CSSProperties, useCallback } from "react";
 import Link from "next/link";
 
 /* ================== STORAGE (DO NOT TOUCH OTHER PAGES) ==================
@@ -87,22 +87,23 @@ function safeParse<T>(raw: string | null, fallback: T): T {
   }
 }
 
+function safeLoad<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  return safeParse<T>(window.localStorage.getItem(key), fallback);
+}
+
 function loadFirstKey<T>(keys: string[], fallback: T): { keyUsed: string | null; data: T } {
   if (typeof window === "undefined") return { keyUsed: null, data: fallback };
   for (const k of keys) {
     const raw = window.localStorage.getItem(k);
     if (!raw) continue;
     const parsed = safeParse<T>(raw, fallback);
+    // accept arrays/objects only if it looks valid
     if (parsed && (Array.isArray(parsed) || typeof parsed === "object")) {
       return { keyUsed: k, data: parsed };
     }
   }
   return { keyUsed: null, data: fallback };
-}
-
-function safeLoad<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  return safeParse<T>(window.localStorage.getItem(key), fallback);
 }
 
 function todayYMD(): string {
@@ -122,7 +123,7 @@ function isoMinusDays(days: number): string {
 
 function inRange(dateStr: string, from: string, to: string) {
   if (!dateStr) return false;
-  return dateStr >= from && dateStr <= to;
+  return dateStr >= from && dateStr <= to; // YYYY-MM-DD lexicographic compare ok
 }
 
 function formatCurrency(amount: number, currency: "INR" | "CAD" | "USD" = "INR") {
@@ -134,6 +135,7 @@ function formatCurrency(amount: number, currency: "INR" | "CAD" | "USD" = "INR")
 }
 
 function exportCSV(filename: string, rows: Record<string, any>[]) {
+  if (typeof window === "undefined") return;
   const keys = Array.from(new Set(rows.flatMap((r) => Object.keys(r))));
   const esc = (v: any) => {
     const s = String(v ?? "");
@@ -151,6 +153,7 @@ function exportCSV(filename: string, rows: Record<string, any>[]) {
 }
 
 function exportJSON(filename: string, obj: any) {
+  if (typeof window === "undefined") return;
   const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -334,7 +337,17 @@ function KPI({ label, value, S }: { label: string; value: string; S: Record<stri
   );
 }
 
-function BarRow({ label, value, max, S }: { label: string; value: number; max: number; S: Record<string, CSSProperties> }) {
+function BarRow({
+  label,
+  value,
+  max,
+  S,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  S: Record<string, CSSProperties>;
+}) {
   const pct = max ? Math.round((value / max) * 100) : 0;
   return (
     <div style={S.barRow}>
@@ -362,30 +375,7 @@ export default function ReportsPage() {
   const [to, setTo] = useState(todayYMD());
   const [msg, setMsg] = useState("");
 
-  // ✅ deploy-safe timer handling (avoids DOM vs Node Timeout type errors)
-  const msgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    setEmail(window.localStorage.getItem("eventura_email") || "");
-    setSettings(safeLoad<AppSettings>(LS_SETTINGS, {}));
-    refreshRead();
-
-    return () => {
-      if (msgTimer.current) clearTimeout(msgTimer.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function flash(text: string) {
-    setMsg(text);
-    if (typeof window === "undefined") return;
-    if (msgTimer.current) clearTimeout(msgTimer.current);
-    msgTimer.current = setTimeout(() => setMsg(""), 1500);
-  }
-
-  function refreshRead() {
+  const refreshRead = useCallback(() => {
     if (typeof window === "undefined") return;
 
     const e = loadFirstKey<any[]>(EVENT_KEYS, []);
@@ -399,23 +389,35 @@ export default function ReportsPage() {
     setRawHR(Array.isArray(h.data) ? h.data : []);
     setRawVendors(Array.isArray(v.data) ? v.data : []);
 
-    flash("✅ Refreshed data from storage");
-  }
+    setMsg("✅ Refreshed data from storage");
+    // IMPORTANT: use window.setTimeout for consistent client typing
+    window.setTimeout(() => setMsg(""), 1400);
+  }, []);
 
-  const ceoEmail = (settings.ceoEmail || "hardikvekariya799@gmail.com").toLowerCase();
-  const isCEO = useMemo(() => (email || "").toLowerCase() === ceoEmail, [email, ceoEmail]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    setEmail(window.localStorage.getItem("eventura_email") || "");
+    setSettings(safeLoad<AppSettings>(LS_SETTINGS, {}));
+    refreshRead();
+  }, [refreshRead]);
+
+  const isCEO = useMemo(() => (email || "").toLowerCase() === "hardikvekariya799@gmail.com", [email]);
 
   const T = ThemeTokens((settings.theme as Theme) || "Royal Gold", settings.highContrast);
   const S = useMemo(() => makeStyles(T, !!settings.compactTables), [T, settings.compactTables]);
 
+  // Normalize
   const events = useMemo(() => normalizeEvents(rawEvents), [rawEvents]);
   const txs = useMemo(() => normalizeFinance(rawFin), [rawFin]);
   const team = useMemo(() => normalizeHR(rawHR), [rawHR]);
   const vendors = useMemo(() => normalizeVendors(rawVendors), [rawVendors]);
 
+  // Filter range (Events + Finance only)
   const eventsInRange = useMemo(() => events.filter((e) => inRange(e.date, from, to)), [events, from, to]);
   const txsInRange = useMemo(() => txs.filter((t) => inRange(t.date, from, to)), [txs, from, to]);
 
+  // Finance totals
   const finTotals = useMemo(() => {
     let income = 0;
     let expense = 0;
@@ -426,6 +428,7 @@ export default function ReportsPage() {
     return { income, expense, net: income - expense };
   }, [txsInRange]);
 
+  // Event status breakdown
   const eventStatus = useMemo(() => {
     const m = new Map<string, number>();
     for (const e of eventsInRange) {
@@ -435,6 +438,7 @@ export default function ReportsPage() {
     return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
   }, [eventsInRange]);
 
+  // HR metrics
   const hrKpis = useMemo(() => {
     const total = team.length;
     const active = team.filter((m) => String(m.status || "").toLowerCase() !== "inactive").length;
@@ -449,6 +453,7 @@ export default function ReportsPage() {
     return { total, active, avgWorkload, payroll, highLoad };
   }, [team]);
 
+  // Vendor metrics
   const vendorKpis = useMemo(() => {
     const total = vendors.length;
     const active = vendors.filter((v) => String(v.status || "").toLowerCase() !== "inactive").length;
@@ -457,15 +462,24 @@ export default function ReportsPage() {
     return { total, active, avgRating };
   }, [vendors]);
 
+  // “AI-like” Executive Summary (deploy-safe)
   const execSummary = useMemo(() => {
     const lines: string[] = [];
     lines.push(`Range: ${from} → ${to}`);
     lines.push(`Events: ${eventsInRange.length}${eventStatus[0] ? ` (Top: ${eventStatus[0][0]} • ${eventStatus[0][1]})` : ""}`);
-    lines.push(`Finance Net: ${formatCurrency(finTotals.net)} (Income ${formatCurrency(finTotals.income)} • Expense ${formatCurrency(finTotals.expense)})`);
-    lines.push(`HR: ${hrKpis.total} team • ${hrKpis.active} active • Avg workload ${hrKpis.avgWorkload}%${hrKpis.highLoad ? ` • ⚠ High load: ${hrKpis.highLoad}` : ""}`);
+    lines.push(
+      `Finance Net: ${formatCurrency(finTotals.net)} (Income ${formatCurrency(finTotals.income)} • Expense ${formatCurrency(finTotals.expense)})`
+    );
+    lines.push(
+      `HR: ${hrKpis.total} team • ${hrKpis.active} active • Avg workload ${hrKpis.avgWorkload}%${
+        hrKpis.highLoad ? ` • ⚠ High load: ${hrKpis.highLoad}` : ""
+      }`
+    );
     if (hrKpis.payroll > 0) lines.push(`Estimated monthly payroll: ${formatCurrency(hrKpis.payroll)}`);
     lines.push(`Vendors: ${vendorKpis.total} total • ${vendorKpis.active} active • Avg rating ${vendorKpis.avgRating || "—"}`);
-    if (!events.length && !txs.length && !team.length && !vendors.length) lines.push(`No data found yet. Add at least 1 record in each module so Reports can read it.`);
+    if (!events.length && !txs.length && !team.length && !vendors.length) {
+      lines.push(`No data found yet. Add at least 1 record in each module so Reports can read it.`);
+    }
     return lines;
   }, [from, to, eventsInRange.length, eventStatus, finTotals, hrKpis, vendorKpis, events.length, txs.length, team.length, vendors.length]);
 
@@ -476,9 +490,15 @@ export default function ReportsPage() {
       range: { from, to },
       keysUsed: keysInfo,
       summary: execSummary,
-      data: { events: eventsInRange, finance: txsInRange, hr: team, vendors },
+      data: {
+        events: eventsInRange,
+        finance: txsInRange,
+        hr: team,
+        vendors,
+      },
     });
-    flash("✅ Exported JSON");
+    setMsg("✅ Exported JSON");
+    if (typeof window !== "undefined") window.setTimeout(() => setMsg(""), 1400);
   }
 
   function exportAllCSV() {
@@ -491,7 +511,8 @@ export default function ReportsPage() {
       { section: "SUMMARY", item: "High Workload", value: hrKpis.highLoad },
     ];
     exportCSV(`eventura_company_overview_${from}_to_${to}.csv`, rows);
-    flash("✅ Exported CSV");
+    setMsg("✅ Exported CSV");
+    if (typeof window !== "undefined") window.setTimeout(() => setMsg(""), 1400);
   }
 
   return (
@@ -775,6 +796,7 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       fontFamily:
         'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
     },
+
     sidebar: {
       width: 280,
       position: "sticky",
@@ -788,6 +810,7 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       flexDirection: "column",
       gap: 12,
     },
+
     brandRow: { display: "flex", alignItems: "center", gap: 10, padding: "8px 8px" },
     logoCircle: {
       width: 38,
@@ -802,6 +825,7 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
     },
     brandName: { fontWeight: 950, lineHeight: 1.1 },
     brandSub: { color: T.muted, fontSize: 12, marginTop: 2 },
+
     nav: { display: "grid", gap: 8 },
     navItem: {
       display: "block",
@@ -814,6 +838,7 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       fontWeight: 900,
       fontSize: 13,
     },
+
     sidebarFooter: { marginTop: "auto", display: "grid", gap: 10 },
     userBox: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft },
     userLabel: { fontSize: 12, color: T.muted, fontWeight: 900 },
@@ -829,6 +854,7 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       fontWeight: 950,
       width: "fit-content",
     },
+
     main: { flex: 1, padding: 16, maxWidth: 1400, margin: "0 auto", width: "100%" },
     header: {
       display: "flex",
@@ -842,12 +868,16 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       backdropFilter: "blur(10px)",
     },
     headerRight: { display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" },
+
     h1: { fontSize: 26, fontWeight: 950 },
     muted: { color: T.muted, fontSize: 13, marginTop: 6 },
     smallMuted: { color: T.muted, fontSize: 12 },
     smallNote: { color: T.muted, fontSize: 12, lineHeight: 1.35 },
+
     msg: { marginTop: 12, padding: 10, borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft, color: T.text, fontSize: 13 },
+
     rangeBar: { marginTop: 12, padding: 12, borderRadius: 18, border: `1px solid ${T.border}`, background: T.soft, display: "grid", gap: 10 },
+
     input: {
       width: 210,
       padding: compact ? "10px 10px" : "12px 12px",
@@ -858,6 +888,7 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       outline: "none",
       fontSize: 14,
     },
+
     secondaryBtn: {
       padding: "10px 12px",
       borderRadius: 14,
@@ -867,16 +898,21 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       fontWeight: 950,
       cursor: "pointer",
     },
+
     grid: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
     panel: { padding: 14, borderRadius: 18, border: `1px solid ${T.border}`, background: T.panel, backdropFilter: "blur(10px)" },
     panelTitle: { fontWeight: 950, color: T.accentTx },
+
     kpiRow: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10 },
     kpi: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft },
     kpiLabel: { color: T.muted, fontSize: 12, fontWeight: 900 },
     kpiValue: { marginTop: 6, fontSize: 18, fontWeight: 950 },
+
     sectionTitle: { marginTop: 14, fontWeight: 950, fontSize: 13 },
+
     itemCard: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft },
     rowBetween: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 },
+
     pill: {
       padding: "5px 10px",
       borderRadius: 999,
@@ -887,6 +923,7 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       fontSize: 12,
       whiteSpace: "nowrap",
     },
+
     noteBox: {
       marginTop: 12,
       padding: 12,
@@ -897,10 +934,20 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       fontSize: 13,
       lineHeight: 1.35,
     },
-    summaryLine: { padding: "10px 12px", borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft, fontWeight: 900, color: T.text },
+
+    summaryLine: {
+      padding: "10px 12px",
+      borderRadius: 14,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+      fontWeight: 900,
+      color: T.text,
+    },
+
     barRow: { display: "grid", gridTemplateColumns: "1fr 2fr 50px", gap: 10, alignItems: "center" },
     barWrap: { height: 10, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" },
     barFill: { height: "100%", borderRadius: 999, background: T.accentTx, opacity: 0.9 },
+
     footerNote: { color: T.muted, fontSize: 12, textAlign: "center", padding: 10 },
   };
 }
