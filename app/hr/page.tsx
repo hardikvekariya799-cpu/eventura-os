@@ -8,15 +8,12 @@ import { createClient } from "@supabase/supabase-js";
 /* ================= SUPABASE (safe) ================= */
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-const supabase =
-  supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
+const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
 /* ================= STORAGE KEYS (DO NOT break other pages) ================= */
 const LS_SETTINGS = "eventura_os_settings_v3";
-
-// HR page will READ from any of these keys (first found), but will SAVE to the new key:
 const HR_READ_KEYS = ["eventura-hr-team", "eventura_os_hr_team_v2", "eventura_os_hr_v1", "eventura_hr_v1", "eventura-hr"];
-const HR_SAVE_KEY = "eventura_os_hr_team_v3"; // new safe key
+const HR_SAVE_KEY = "eventura_os_hr_team_v3";
 const HR_AUDIT_KEY = "eventura_os_hr_audit_v1";
 
 /* ================= NAV ================= */
@@ -206,21 +203,13 @@ function normalizeHR(raw: any): TeamMember[] {
 }
 
 /* ================= AI (local, safe) ================= */
-const MUST_HAVE_SKILLS = [
-  "Client Handling",
-  "Vendor Negotiation",
-  "Budgeting",
-  "Timeline Planning",
-  "Decor Design",
-  "Logistics",
-];
+const MUST_HAVE_SKILLS = ["Client Handling", "Vendor Negotiation", "Budgeting", "Timeline Planning", "Decor Design", "Logistics"];
 
 function perfScore(m: TeamMember) {
-  // 0-100 score based on rating, workload balance, and activity
-  const ratingPart = (m.rating / 5) * 55; // up to 55
-  const workloadIdeal = 65; // ideal workload
-  const workloadPenalty = Math.abs(m.workload - workloadIdeal) * 0.35; // penalty up to ~22
-  const activityPart = clamp(m.eventsThisMonth * 4, 0, 20); // up to 20
+  const ratingPart = (m.rating / 5) * 55;
+  const workloadIdeal = 65;
+  const workloadPenalty = Math.abs(m.workload - workloadIdeal) * 0.35;
+  const activityPart = clamp(m.eventsThisMonth * 4, 0, 20);
   const statusAdj = m.status === "Inactive" ? -25 : m.status === "Trainee" ? -5 : 0;
   return clamp(Math.round(ratingPart + activityPart - workloadPenalty + statusAdj), 0, 100);
 }
@@ -241,7 +230,7 @@ function buildAIInsights(team: TeamMember[]) {
     insights.push({
       title: "High workload risk",
       level: "RISK",
-      detail: `${overloaded.length} people are at ≥80% workload. Consider redistributing tasks or adding freelancers.`,
+      detail: `${overloaded.length} people are at ≥80% workload. Redistribute tasks or add freelancers.`,
     });
   } else {
     insights.push({ title: "Workload looks stable", level: "OK", detail: "No staff above 80% workload in active team." });
@@ -251,7 +240,7 @@ function buildAIInsights(team: TeamMember[]) {
     insights.push({
       title: "Unused capacity",
       level: "WARN",
-      detail: `${underused.length} people are at ≤25% workload. Assign more tasks or move them to support other teams.`,
+      detail: `${underused.length} people are at ≤25% workload. Assign more tasks or move to support roles.`,
     });
   }
 
@@ -259,16 +248,14 @@ function buildAIInsights(team: TeamMember[]) {
     insights.push({
       title: "Performance coaching needed",
       level: "WARN",
-      detail: `${lowRating.length} people have rating below 3.0. Plan coaching, training or role-fit changes.`,
+      detail: `${lowRating.length} people have rating below 3.0. Plan coaching/training.`,
     });
   }
 
-  // skill gaps
   const skillCounts = new Map<string, number>();
   for (const m of active) for (const s of m.skills) skillCounts.set(s, (skillCounts.get(s) ?? 0) + 1);
 
-  const gaps = MUST_HAVE_SKILLS
-    .map((s) => ({ s, c: skillCounts.get(s) ?? 0 }))
+  const gaps = MUST_HAVE_SKILLS.map((s) => ({ s, c: skillCounts.get(s) ?? 0 }))
     .sort((a, b) => a.c - b.c)
     .slice(0, 3);
 
@@ -278,7 +265,6 @@ function buildAIInsights(team: TeamMember[]) {
     detail: gaps.map((g) => `${g.s} (${g.c})`).join(" • "),
   });
 
-  // payroll guidance
   const payroll = active
     .filter((m) => m.status === "Core" || m.status === "Trainee")
     .reduce((a, b) => a + (Number.isFinite(b.monthlySalary) ? b.monthlySalary : 0), 0);
@@ -292,7 +278,7 @@ function buildAIInsights(team: TeamMember[]) {
   return insights;
 }
 
-/* ================= AI PLANS (Assignment / Training / Hiring) ================= */
+/* ================= AI PLANS ================= */
 function normalizeSkillList(text: string) {
   return text
     .split(",")
@@ -304,36 +290,30 @@ function skillMatchScore(member: TeamMember, reqSkills: string[]) {
   const set = new Set((member.skills || []).map((s) => s.toLowerCase()));
   let hit = 0;
   for (const r of reqSkills) if (set.has(r.toLowerCase())) hit++;
-  return hit / reqSkills.length; // 0..1
+  return hit / reqSkills.length;
 }
-function suggestAssignment(team: TeamMember[], args: {
-  reqSkills: string[];
-  city: string;
-  role: string;
-  maxWorkload: number;
-  minRating: number;
-  count: number;
-}) {
+function suggestAssignment(
+  team: TeamMember[],
+  args: { reqSkills: string[]; city: string; role: string; maxWorkload: number; minRating: number; count: number }
+) {
   const active = team.filter((m) => m.status !== "Inactive");
   const cityNeedle = args.city.trim().toLowerCase();
   const roleNeedle = args.role.trim();
 
-  const candidates = active
+  return active
     .filter((m) => (args.minRating ? (m.rating ?? 0) >= args.minRating : true))
     .filter((m) => (args.maxWorkload ? (m.workload ?? 0) <= args.maxWorkload : true))
     .filter((m) => (roleNeedle && roleNeedle !== "Any" ? m.role === (roleNeedle as any) : true))
     .map((m) => {
       const match = skillMatchScore(m, args.reqSkills);
       const cityBoost = cityNeedle && m.city?.toLowerCase() === cityNeedle ? 0.12 : 0;
-      const workloadBonus = (100 - (m.workload ?? 0)) / 100; // more free capacity => higher
+      const workloadBonus = (100 - (m.workload ?? 0)) / 100;
       const score = perfScore(m) / 100;
-      const final = (match * 0.55) + (score * 0.35) + (workloadBonus * 0.10) + cityBoost;
+      const final = match * 0.55 + score * 0.35 + workloadBonus * 0.10 + cityBoost;
       return { m, match, final };
     })
     .sort((a, b) => b.final - a.final)
     .slice(0, Math.max(1, args.count));
-
-  return candidates;
 }
 
 function buildTrainingPlan(team: TeamMember[]) {
@@ -354,12 +334,10 @@ function buildTrainingPlan(team: TeamMember[]) {
         reason:
           (m.rating > 0 && m.rating < 3 ? "Low rating" : "") +
           (m.workload >= 80 ? (m.rating > 0 && m.rating < 3 ? ", high workload" : "High workload") : "") +
-          (missing.length ? ((m.rating > 0 && m.rating < 3) || (m.workload >= 80) ? ", skill gaps" : "Skill gaps") : ""),
+          (missing.length ? ((m.rating > 0 && m.rating < 3) || m.workload >= 80 ? ", skill gaps" : "Skill gaps") : ""),
       });
     }
   }
-
-  // Sort: most urgent first
   plan.sort((a, b) => b.focus.length - a.focus.length);
   return plan;
 }
@@ -367,14 +345,10 @@ function buildTrainingPlan(team: TeamMember[]) {
 function buildHiringPlan(team: TeamMember[]) {
   const active = team.filter((m) => m.status !== "Inactive");
   const byRole = new Map<string, TeamMember[]>();
-  for (const m of active) {
-    const k = m.role || "Other";
-    byRole.set(k, [...(byRole.get(k) ?? []), m]);
-  }
+  for (const m of active) byRole.set(m.role || "Other", [...(byRole.get(m.role || "Other") ?? []), m]);
 
   const needs: { role: string; priority: "Low" | "Medium" | "High"; suggestion: string; why: string }[] = [];
 
-  // role overload signal
   for (const [role, arr] of byRole.entries()) {
     const headcount = arr.length;
     const overloadPeople = arr.filter((m) => (m.workload ?? 0) >= 80).length;
@@ -385,17 +359,15 @@ function buildHiringPlan(team: TeamMember[]) {
         role,
         priority: overloadPeople >= 3 || avgWorkload >= 82 ? "High" : "Medium",
         suggestion: `Add 1 Freelancer or 1 Junior (${role})`,
-        why: `Overload detected: ${overloadPeople} people at ≥80% workload • Avg workload ${Math.round(avgWorkload)}%`,
+        why: `Overload: ${overloadPeople} at ≥80% • Avg ${Math.round(avgWorkload)}%`,
       });
     }
   }
 
-  // missing must-have skills => hire to cover gaps
   const skillCounts = new Map<string, number>();
   for (const m of active) for (const s of m.skills) skillCounts.set(s.toLowerCase(), (skillCounts.get(s.toLowerCase()) ?? 0) + 1);
 
   const missingSkills = MUST_HAVE_SKILLS.filter((s) => (skillCounts.get(s.toLowerCase()) ?? 0) === 0);
-
   if (missingSkills.length) {
     needs.push({
       role: "Other",
@@ -405,7 +377,6 @@ function buildHiringPlan(team: TeamMember[]) {
     });
   }
 
-  // if no needs, still show guidance
   if (!needs.length) {
     needs.push({
       role: "—",
@@ -415,10 +386,74 @@ function buildHiringPlan(team: TeamMember[]) {
     });
   }
 
-  // sort: High first
   const pRank: Record<string, number> = { High: 3, Medium: 2, Low: 1 };
   needs.sort((a, b) => pRank[b.priority] - pRank[a.priority]);
   return needs;
+}
+
+/* ================= HOVER HELPERS ================= */
+function HoverNavLink({
+  href,
+  icon,
+  label,
+  active,
+  iconsOnly,
+  S,
+  hoverKey,
+  hovered,
+  setHovered,
+}: {
+  href: string;
+  icon: string;
+  label: string;
+  active?: boolean;
+  iconsOnly: boolean;
+  S: Record<string, CSSProperties>;
+  hoverKey: string;
+  hovered: string | null;
+  setHovered: (v: string | null) => void;
+}) {
+  const isHover = hovered === hoverKey;
+  const style = active ? S.navActive : isHover ? S.navHover : S.navItem;
+
+  return (
+    <Link
+      href={href}
+      style={style as any}
+      onMouseEnter={() => setHovered(hoverKey)}
+      onMouseLeave={() => setHovered(null)}
+    >
+      <span style={S.navIcon}>{icon}</span>
+      {!iconsOnly ? <span style={S.navLabel}>{label}</span> : null}
+    </Link>
+  );
+}
+
+function HoverRow({
+  id,
+  hoveredRow,
+  setHoveredRow,
+  style,
+  hoverStyle,
+  children,
+}: {
+  id: string;
+  hoveredRow: string | null;
+  setHoveredRow: (v: string | null) => void;
+  style: CSSProperties;
+  hoverStyle: CSSProperties;
+  children: React.ReactNode;
+}) {
+  const isHover = hoveredRow === id;
+  return (
+    <div
+      style={isHover ? { ...style, ...hoverStyle } : style}
+      onMouseEnter={() => setHoveredRow(id)}
+      onMouseLeave={() => setHoveredRow(null)}
+    >
+      {children}
+    </div>
+  );
 }
 
 /* ================= PAGE ================= */
@@ -434,6 +469,10 @@ export default function HRPage() {
   const [msg, setMsg] = useState("");
 
   const [team, setTeam] = useState<TeamMember[]>([]);
+
+  // hover states (BLACK hover)
+  const [hoveredNav, setHoveredNav] = useState<string | null>(null);
+  const [hoveredRow, setHoveredRow] = useState<string | null>(null);
 
   // UI states
   const [q, setQ] = useState("");
@@ -455,10 +494,10 @@ export default function HRPage() {
   const [monthlySalary, setMonthlySalary] = useState<number>(0);
   const [eventsThisMonth, setEventsThisMonth] = useState<number>(0);
   const [rating, setRating] = useState<number>(4);
-  const [skillsText, setSkillsText] = useState<string>(""); // comma separated
+  const [skillsText, setSkillsText] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
 
-  // AI Planner states
+  // AI planner
   const [planCity, setPlanCity] = useState("");
   const [planRole, setPlanRole] = useState<string>("Any");
   const [planSkills, setPlanSkills] = useState("Client Handling, Timeline Planning");
@@ -466,7 +505,6 @@ export default function HRPage() {
   const [planMinRating, setPlanMinRating] = useState<number>(3);
   const [planCount, setPlanCount] = useState<number>(3);
 
-  // load settings + hr data
   useEffect(() => {
     const s = safeLoad<AppSettings>(LS_SETTINGS, SETTINGS_DEFAULTS);
     setSettings({ ...SETTINGS_DEFAULTS, ...s });
@@ -484,7 +522,6 @@ export default function HRPage() {
     setAudit(safeLoad<AuditLogItem[]>(HR_AUDIT_KEY, []));
   }, []);
 
-  // session email
   useEffect(() => {
     (async () => {
       try {
@@ -507,7 +544,6 @@ export default function HRPage() {
   const T = ThemeTokens(settings.theme, settings.highContrast);
   const S = makeStyles(T, settings);
 
-  // persist team (always to new key)
   useEffect(() => {
     safeSave(HR_SAVE_KEY, team);
   }, [team]);
@@ -565,28 +601,16 @@ export default function HRPage() {
     const active = team.filter((m) => m.status !== "Inactive").length;
     const avgWorkload = total ? Math.round((team.reduce((a, b) => a + (b.workload || 0), 0) / total) * 10) / 10 : 0;
     const avgRating = total ? Math.round((team.reduce((a, b) => a + (b.rating || 0), 0) / total) * 10) / 10 : 0;
-
     const payroll = team
       .filter((m) => m.status === "Core" || m.status === "Trainee")
       .reduce((a, b) => a + (Number.isFinite(b.monthlySalary) ? b.monthlySalary : 0), 0);
-
     const overloaded = team.filter((m) => m.status !== "Inactive" && (m.workload ?? 0) >= 80).length;
     const underused = team.filter((m) => m.status !== "Inactive" && (m.workload ?? 0) <= 25).length;
 
-    return {
-      total,
-      active,
-      avgWorkload,
-      avgRating,
-      payroll,
-      payrollYear: payroll * 12,
-      overloaded,
-      underused,
-    };
+    return { total, active, avgWorkload, avgRating, payroll, payrollYear: payroll * 12, overloaded, underused };
   }, [team]);
 
   const aiInsights = useMemo(() => buildAIInsights(team), [team]);
-
   const trainingPlan = useMemo(() => buildTrainingPlan(team), [team]);
   const hiringPlan = useMemo(() => buildHiringPlan(team), [team]);
 
@@ -674,7 +698,7 @@ export default function HRPage() {
       rating: clamp(Number(rating) || 0, 0, 5),
       skills,
       notes: notes.trim() || undefined,
-      createdAt: editId ? (team.find((x) => x.id === editId)?.createdAt || now) : now,
+      createdAt: editId ? team.find((x) => x.id === editId)?.createdAt || now : now,
       updatedAt: now,
     };
 
@@ -782,10 +806,18 @@ export default function HRPage() {
 
         <nav style={S.nav}>
           {NAV.map((item) => (
-            <Link key={item.href} href={item.href} style={S.navItem as any}>
-              <span style={S.navIcon}>{item.icon}</span>
-              {!sidebarIconsOnly ? <span style={S.navLabel}>{item.label}</span> : null}
-            </Link>
+            <HoverNavLink
+              key={item.href}
+              href={item.href}
+              icon={item.icon}
+              label={item.label}
+              active={item.href === "/hr"}
+              iconsOnly={sidebarIconsOnly}
+              S={S}
+              hoverKey={item.href}
+              hovered={hoveredNav}
+              setHovered={setHoveredNav}
+            />
           ))}
         </nav>
 
@@ -811,7 +843,7 @@ export default function HRPage() {
           <div>
             <div style={S.h1}>HR Control Center</div>
             <div style={S.muted}>
-              Assignment AI • Training AI • Hiring AI (Local) • Logged in as <b>{email || "Unknown"}</b>
+              Assignment AI • Training AI • Hiring AI • <b>{email || "Unknown"}</b>
               <span style={S.rolePill}>{roleUser}</span>
             </div>
             <div style={{ marginTop: 8, ...S.smallMuted }}>
@@ -840,7 +872,6 @@ export default function HRPage() {
         {loading ? <div style={S.loadingBar}>Loading session…</div> : null}
         {msg ? <div style={S.msg}>{msg}</div> : null}
 
-        {/* KPIs + Insights */}
         <div style={S.grid2}>
           <section style={S.panel}>
             <div style={S.panelTitle}>HR KPIs</div>
@@ -852,8 +883,7 @@ export default function HRPage() {
             </div>
             <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
               <div style={S.noteBox}>
-                Payroll Est.: <b>₹{kpis.payroll.toLocaleString("en-IN")}</b> / month •{" "}
-                <b>₹{kpis.payrollYear.toLocaleString("en-IN")}</b> / year
+                Payroll: <b>₹{kpis.payroll.toLocaleString("en-IN")}</b> / month • <b>₹{kpis.payrollYear.toLocaleString("en-IN")}</b> / year
               </div>
               <div style={S.rowBetween}>
                 <div style={S.smallMuted}>Overloaded (≥80%)</div>
@@ -870,83 +900,61 @@ export default function HRPage() {
             <div style={S.panelTitle}>Auto AI Insights (Local)</div>
             <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
               {aiInsights.map((x, idx) => (
-                <div key={idx} style={S.aiCard}>
+                <HoverRow
+                  key={idx}
+                  id={`ai-${idx}`}
+                  hoveredRow={hoveredRow}
+                  setHoveredRow={setHoveredRow}
+                  style={S.aiCard}
+                  hoverStyle={S.aiCardHover}
+                >
                   <div style={S.rowBetween}>
                     <div style={{ fontWeight: 950 }}>{x.title}</div>
-                    <span
-                      style={{
-                        ...S.aiBadge,
-                        ...(x.level === "OK" ? S.aiOK : x.level === "WARN" ? S.aiWARN : S.aiRISK),
-                      }}
-                    >
+                    <span style={{ ...S.aiBadge, ...(x.level === "OK" ? S.aiOK : x.level === "WARN" ? S.aiWARN : S.aiRISK) }}>
                       {x.level}
                     </span>
                   </div>
                   <div style={S.smallMuted}>{x.detail}</div>
-                </div>
+                </HoverRow>
               ))}
             </div>
-            <div style={S.smallNote}>
-              No API calls, no external services → deploy safe.
-            </div>
+            <div style={S.smallNote}>Local AI only • No API calls • Deploy safe.</div>
           </section>
         </div>
 
-        {/* AI Planner */}
         <section style={S.panel}>
           <div style={S.panelTitle}>AI Planner (Assignment • Training • Hiring)</div>
 
           <div style={S.filters}>
-            <input
-              style={{ ...S.input, width: 220 }}
-              value={planCity}
-              onChange={(e) => setPlanCity(e.target.value)}
-              placeholder="Event City (optional)"
-            />
+            <input style={{ ...S.input, width: 220 }} value={planCity} onChange={(e) => setPlanCity(e.target.value)} placeholder="Event City (optional)" />
             <select style={S.select} value={planRole} onChange={(e) => setPlanRole(e.target.value)}>
               <option value="Any" style={S.option}>Role: Any</option>
               {roles.filter((r) => r !== "All").map((r) => (
                 <option key={r} value={r} style={S.option}>{r}</option>
               ))}
             </select>
-            <input
-              style={{ ...S.input, width: 340 }}
-              value={planSkills}
-              onChange={(e) => setPlanSkills(e.target.value)}
-              placeholder="Required skills (comma separated)"
-            />
-            <input
-              style={{ ...S.input, width: 160 }}
-              type="number"
-              value={planMaxWorkload}
-              onChange={(e) => setPlanMaxWorkload(clamp(Number(e.target.value) || 0, 0, 100))}
-              placeholder="Max Workload"
-            />
-            <input
-              style={{ ...S.input, width: 150 }}
-              type="number"
-              value={planMinRating}
-              onChange={(e) => setPlanMinRating(clamp(Number(e.target.value) || 0, 0, 5))}
-              placeholder="Min Rating"
-            />
-            <input
-              style={{ ...S.input, width: 120 }}
-              type="number"
-              value={planCount}
-              onChange={(e) => setPlanCount(clamp(Number(e.target.value) || 3, 1, 10))}
-              placeholder="Top N"
-            />
+            <input style={{ ...S.input, width: 340 }} value={planSkills} onChange={(e) => setPlanSkills(e.target.value)} placeholder="Required skills (comma separated)" />
+            <input style={{ ...S.input, width: 160 }} type="number" value={planMaxWorkload} onChange={(e) => setPlanMaxWorkload(clamp(Number(e.target.value) || 0, 0, 100))} placeholder="Max Workload" />
+            <input style={{ ...S.input, width: 150 }} type="number" value={planMinRating} onChange={(e) => setPlanMinRating(clamp(Number(e.target.value) || 0, 0, 5))} placeholder="Min Rating" />
+            <input style={{ ...S.input, width: 120 }} type="number" value={planCount} onChange={(e) => setPlanCount(clamp(Number(e.target.value) || 3, 1, 10))} placeholder="Top N" />
           </div>
 
           <div style={S.grid2}>
             <div style={S.box}>
               <div style={S.boxTitle}>Suggested Assignment (Top {planCount})</div>
               {!assignment.length ? (
-                <div style={S.empty}>No matches. Try lowering filters or adding more team data.</div>
+                <div style={S.empty}>No matches.</div>
               ) : (
                 <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
                   {assignment.map((x) => (
-                    <div key={x.m.id} style={S.itemCard}>
+                    <HoverRow
+                      key={x.m.id}
+                      id={`as-${x.m.id}`}
+                      hoveredRow={hoveredRow}
+                      setHoveredRow={setHoveredRow}
+                      style={S.itemCard}
+                      hoverStyle={S.itemCardHover}
+                    >
                       <div style={S.rowBetween}>
                         <div style={{ fontWeight: 950 }}>{x.m.name}</div>
                         <span style={S.scorePill}>Score {perfScore(x.m)}</span>
@@ -954,10 +962,8 @@ export default function HRPage() {
                       <div style={S.smallMuted}>
                         {x.m.role} • {x.m.city || "—"} • Workload {x.m.workload}% • ⭐ {x.m.rating.toFixed(1)} • Match {Math.round(x.match * 100)}%
                       </div>
-                      <div style={S.smallMuted}>
-                        Skills: {(x.m.skills || []).slice(0, 6).join(" • ") || "—"}
-                      </div>
-                    </div>
+                      <div style={S.smallMuted}>Skills: {(x.m.skills || []).slice(0, 6).join(" • ") || "—"}</div>
+                    </HoverRow>
                   ))}
                 </div>
               )}
@@ -967,17 +973,21 @@ export default function HRPage() {
               <div style={S.boxTitle}>Hiring Plan (Auto)</div>
               <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
                 {hiringPlan.map((h, idx) => (
-                  <div key={idx} style={S.itemCard}>
+                  <HoverRow
+                    key={idx}
+                    id={`hp-${idx}`}
+                    hoveredRow={hoveredRow}
+                    setHoveredRow={setHoveredRow}
+                    style={S.itemCard}
+                    hoverStyle={S.itemCardHover}
+                  >
                     <div style={S.rowBetween}>
                       <div style={{ fontWeight: 950 }}>{h.suggestion}</div>
                       <span style={S.pill}>Priority: {h.priority}</span>
                     </div>
                     <div style={S.smallMuted}>{h.why}</div>
-                  </div>
+                  </HoverRow>
                 ))}
-              </div>
-              <div style={S.smallNote}>
-                Hiring is suggested from overload + skill coverage risk.
               </div>
             </div>
           </div>
@@ -985,17 +995,24 @@ export default function HRPage() {
           <div style={{ ...S.box, marginTop: 12 }}>
             <div style={S.boxTitle}>Training Plan (Auto)</div>
             {!trainingPlan.length ? (
-              <div style={S.empty}>No training actions detected (good!).</div>
+              <div style={S.empty}>No training actions detected.</div>
             ) : (
               <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
                 {trainingPlan.slice(0, 10).map((t, idx) => (
-                  <div key={idx} style={S.itemCard}>
+                  <HoverRow
+                    key={idx}
+                    id={`tp-${idx}`}
+                    hoveredRow={hoveredRow}
+                    setHoveredRow={setHoveredRow}
+                    style={S.itemCard}
+                    hoverStyle={S.itemCardHover}
+                  >
                     <div style={S.rowBetween}>
                       <div style={{ fontWeight: 950 }}>{t.person}</div>
                       <span style={S.pill}>{t.reason}</span>
                     </div>
                     <div style={S.smallMuted}>{t.focus.join(" • ")}</div>
-                  </div>
+                  </HoverRow>
                 ))}
                 {trainingPlan.length > 10 ? <div style={S.smallMuted}>… and {trainingPlan.length - 10} more</div> : null}
               </div>
@@ -1003,7 +1020,6 @@ export default function HRPage() {
           </div>
         </section>
 
-        {/* Filters */}
         <section style={S.panel}>
           <div style={S.panelTitle}>Team Directory</div>
 
@@ -1011,37 +1027,27 @@ export default function HRPage() {
             <input style={{ ...S.input, width: 260 }} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, skill, notes…" />
             <select style={S.select} value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
               {roles.map((x) => (
-                <option key={x} value={x} style={S.option}>
-                  {x === "All" ? "All Roles" : x}
-                </option>
+                <option key={x} value={x} style={S.option}>{x === "All" ? "All Roles" : x}</option>
               ))}
             </select>
             <select style={S.select} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               {["All", "Core", "Freelancer", "Trainee", "Inactive"].map((x) => (
-                <option key={x} value={x} style={S.option}>
-                  {x === "All" ? "All Status" : x}
-                </option>
+                <option key={x} value={x} style={S.option}>{x === "All" ? "All Status" : x}</option>
               ))}
             </select>
             <select style={S.select} value={cityFilter} onChange={(e) => setCityFilter(e.target.value)}>
               {cities.map((x) => (
-                <option key={x} value={x} style={S.option}>
-                  {x === "All" ? "All Cities" : x}
-                </option>
+                <option key={x} value={x} style={S.option}>{x === "All" ? "All Cities" : x}</option>
               ))}
             </select>
             <select style={S.select} value={skillFilter} onChange={(e) => setSkillFilter(e.target.value)}>
               {skills.map((x) => (
-                <option key={x} value={x} style={S.option}>
-                  {x === "All" ? "All Skills" : x}
-                </option>
+                <option key={x} value={x} style={S.option}>{x === "All" ? "All Skills" : x}</option>
               ))}
             </select>
             <select style={S.select} value={sortBy} onChange={(e) => setSortBy(e.target.value as any)}>
               {["Updated", "Name", "Workload", "Rating", "Score"].map((x) => (
-                <option key={x} value={x} style={S.option}>
-                  Sort: {x}
-                </option>
+                <option key={x} value={x} style={S.option}>Sort: {x}</option>
               ))}
             </select>
           </div>
@@ -1063,7 +1069,14 @@ export default function HRPage() {
 
               <div style={{ display: "grid", gap: 8 }}>
                 {filtered.map((m) => (
-                  <div key={m.id} style={S.tableRow}>
+                  <HoverRow
+                    key={m.id}
+                    id={`row-${m.id}`}
+                    hoveredRow={hoveredRow}
+                    setHoveredRow={setHoveredRow}
+                    style={S.tableRow}
+                    hoverStyle={S.tableRowHover}
+                  >
                     <div>
                       <div style={{ fontWeight: 950 }}>{m.name}</div>
                       <div style={S.smallMuted}>
@@ -1072,9 +1085,7 @@ export default function HRPage() {
                       </div>
                     </div>
                     <div style={S.muted}>{m.role}</div>
-                    <div>
-                      <span style={S.pill}>{m.status}</span>
-                    </div>
+                    <div><span style={S.pill}>{m.status}</span></div>
                     <div style={S.muted}>{m.city || "—"}</div>
                     <div>
                       <div style={S.muted}>{m.workload}%</div>
@@ -1083,9 +1094,7 @@ export default function HRPage() {
                       </div>
                     </div>
                     <div style={S.muted}>{m.rating.toFixed(1)}</div>
-                    <div>
-                      <span style={S.scorePill}>{perfScore(m)}</span>
-                    </div>
+                    <div><span style={S.scorePill}>{perfScore(m)}</span></div>
                     <div style={S.row}>
                       <button style={S.ghostBtn} onClick={() => openEdit(m)} disabled={!isCEO} title={!isCEO ? "CEO only" : ""}>
                         Edit
@@ -1094,14 +1103,13 @@ export default function HRPage() {
                         Delete
                       </button>
                     </div>
-                  </div>
+                  </HoverRow>
                 ))}
               </div>
             </div>
           )}
         </section>
 
-        {/* Audit log */}
         <section style={S.panel}>
           <div style={S.panelTitle}>Audit Log (Last 200)</div>
           {!audit.length ? (
@@ -1109,27 +1117,31 @@ export default function HRPage() {
           ) : (
             <div style={{ display: "grid", gap: 8 }}>
               {audit.slice(0, 12).map((a) => (
-                <div key={a.id} style={S.auditRow}>
+                <HoverRow
+                  key={a.id}
+                  id={`au-${a.id}`}
+                  hoveredRow={hoveredRow}
+                  setHoveredRow={setHoveredRow}
+                  style={S.auditRow}
+                  hoverStyle={S.auditRowHover}
+                >
                   <div style={{ fontWeight: 950 }}>{a.action}</div>
                   <div style={S.muted}>{a.target}</div>
                   <div style={S.smallMuted}>{new Date(a.at).toLocaleString()}</div>
                   <div style={S.smallMuted}>{a.by}</div>
-                </div>
+                </HoverRow>
               ))}
               {audit.length > 12 ? <div style={S.smallMuted}>… and {audit.length - 12} more</div> : null}
             </div>
           )}
         </section>
 
-        {/* Editor Modal */}
         {openEditor ? (
-          <div style={S.modalOverlay} onClick={() => setOpenEditor(false)}>
-            <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+          <div style={S.modalOverlay} onMouseDown={() => setOpenEditor(false)}>
+            <div style={S.modal} onMouseDown={(e) => e.stopPropagation()}>
               <div style={S.rowBetween}>
                 <div style={{ fontWeight: 950, fontSize: 16 }}>{editId ? "Edit Team Member" : "Add Team Member"}</div>
-                <button style={S.ghostBtn} onClick={() => setOpenEditor(false)}>
-                  Close
-                </button>
+                <button style={S.ghostBtn} onClick={() => setOpenEditor(false)}>Close</button>
               </div>
 
               <div style={S.formGrid}>
@@ -1139,9 +1151,7 @@ export default function HRPage() {
                 <Field label="Role">
                   <select style={S.selectFull} value={role} onChange={(e) => setRole(e.target.value as StaffRole)}>
                     {["Event Manager", "Decor Specialist", "Logistics", "Marketing", "Sales", "Accountant", "Operations", "Other"].map((x) => (
-                      <option key={x} value={x} style={S.option}>
-                        {x}
-                      </option>
+                      <option key={x} value={x} style={S.option}>{x}</option>
                     ))}
                   </select>
                 </Field>
@@ -1151,20 +1161,13 @@ export default function HRPage() {
                 <Field label="Status">
                   <select style={S.selectFull} value={status} onChange={(e) => setStatus(e.target.value as StaffStatus)}>
                     {["Core", "Freelancer", "Trainee", "Inactive"].map((x) => (
-                      <option key={x} value={x} style={S.option}>
-                        {x}
-                      </option>
+                      <option key={x} value={x} style={S.option}>{x}</option>
                     ))}
                   </select>
                 </Field>
 
                 <Field label="Workload (0-100)">
-                  <input
-                    style={S.inputFull}
-                    type="number"
-                    value={workload}
-                    onChange={(e) => setWorkload(clamp(Number(e.target.value) || 0, 0, 100))}
-                  />
+                  <input style={S.inputFull} type="number" value={workload} onChange={(e) => setWorkload(clamp(Number(e.target.value) || 0, 0, 100))} />
                 </Field>
                 <Field label="Monthly Salary (₹)">
                   <input style={S.inputFull} type="number" value={monthlySalary} onChange={(e) => setMonthlySalary(Math.max(0, Number(e.target.value) || 0))} />
@@ -1177,12 +1180,7 @@ export default function HRPage() {
                 </Field>
 
                 <Field label="Skills (comma separated)">
-                  <input
-                    style={S.inputFull}
-                    value={skillsText}
-                    onChange={(e) => setSkillsText(e.target.value)}
-                    placeholder="Client Handling, Vendor Negotiation, Timeline Planning..."
-                  />
+                  <input style={S.inputFull} value={skillsText} onChange={(e) => setSkillsText(e.target.value)} placeholder="Client Handling, Vendor Negotiation, Timeline Planning..." />
                 </Field>
                 <Field label="Notes">
                   <input style={S.inputFull} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any notes..." />
@@ -1205,15 +1203,13 @@ export default function HRPage() {
                   updatedAt: new Date().toISOString(),
                   notes: notes || undefined
                 })}</div>
-                <button style={S.primaryBtn} onClick={saveMember}>
-                  {editId ? "Save Changes" : "Add Member"}
-                </button>
+                <button style={S.primaryBtn} onClick={saveMember}>{editId ? "Save Changes" : "Add Member"}</button>
               </div>
             </div>
           </div>
         ) : null}
 
-        <div style={S.footerNote}>✅ Assignment AI • ✅ Training AI • ✅ Hiring AI • ✅ No packages • ✅ Deploy safe</div>
+        <div style={S.footerNote}>✅ BLACK HOVER • ✅ Deploy safe • ✅ No extra packages</div>
       </main>
     </div>
   );
@@ -1249,6 +1245,7 @@ function ThemeTokens(theme: Theme, highContrast?: boolean) {
     border: hc ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.10)",
     soft: hc ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)",
     inputBg: hc ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
+    hoverBlack: "#000000",
     dangerBg: "rgba(248,113,113,0.10)",
     dangerBd: hc ? "rgba(248,113,113,0.55)" : "rgba(248,113,113,0.30)",
     dangerTx: "#FCA5A5",
@@ -1286,8 +1283,7 @@ function makeStyles(T: any, settings: AppSettings): Record<string, CSSProperties
                    radial-gradient(900px 700px at 80% 20%, ${T.glow2}, transparent 55%),
                    ${T.bg}`,
       color: T.text,
-      fontFamily:
-        'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
+      fontFamily: 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
     },
 
     sidebar: {
@@ -1302,6 +1298,7 @@ function makeStyles(T: any, settings: AppSettings): Record<string, CSSProperties
       flexDirection: "column",
       gap: 12,
     },
+
     brandRow: { display: "flex", alignItems: "center", gap: 10, padding: "8px 8px" },
     logoCircle: {
       width: 38,
@@ -1318,6 +1315,9 @@ function makeStyles(T: any, settings: AppSettings): Record<string, CSSProperties
     brandSub: { color: T.muted, fontSize: 12, marginTop: 2 },
 
     nav: { display: "grid", gap: 8 },
+    navIcon: { fontSize: 18, width: 22, textAlign: "center" },
+    navLabel: { fontWeight: 900, fontSize: 13 },
+
     navItem: {
       display: "flex",
       alignItems: "center",
@@ -1329,8 +1329,28 @@ function makeStyles(T: any, settings: AppSettings): Record<string, CSSProperties
       border: `1px solid ${T.border}`,
       background: T.soft,
     },
-    navIcon: { fontSize: 18, width: 22, textAlign: "center" },
-    navLabel: { fontWeight: 900, fontSize: 13 },
+    navHover: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      padding: "10px 10px",
+      borderRadius: 14,
+      textDecoration: "none",
+      color: T.text,
+      border: `1px solid ${T.border}`,
+      background: T.hoverBlack,
+    },
+    navActive: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      padding: "10px 10px",
+      borderRadius: 14,
+      textDecoration: "none",
+      color: T.text,
+      border: `1px solid ${T.accentBd}`,
+      background: T.accentBg,
+    },
 
     sidebarFooter: { marginTop: "auto", display: "grid", gap: 10 },
     userBox: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft },
@@ -1342,6 +1362,7 @@ function makeStyles(T: any, settings: AppSettings): Record<string, CSSProperties
     signOutBtn: { padding: "10px 12px", borderRadius: 14, border: `1px solid ${T.dangerBd}`, background: T.dangerBg, color: T.dangerTx, fontWeight: 950, cursor: "pointer" },
 
     main: { flex: 1, padding: 16, maxWidth: 1400, margin: "0 auto", width: "100%" },
+
     header: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: 12, borderRadius: 18, border: `1px solid ${T.border}`, background: T.panel, backdropFilter: "blur(10px)" },
     headerRight: { display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" },
 
@@ -1389,6 +1410,7 @@ function makeStyles(T: any, settings: AppSettings): Record<string, CSSProperties
     tableWrap: { marginTop: 12, display: "grid", gap: 8 },
     tableHead: { display: "grid", gridTemplateColumns: "1.5fr 1.2fr 1fr 1fr 1fr 0.8fr 0.8fr 1.2fr", gap: 10, padding: 10, borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft, fontWeight: 950, color: T.muted, fontSize: 12 },
     tableRow: { display: "grid", gridTemplateColumns: "1.5fr 1.2fr 1fr 1fr 1fr 0.8fr 0.8fr 1.2fr", gap: 10, padding: 12, borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft, alignItems: "center" },
+    tableRowHover: { background: T.hoverBlack },
 
     miniBarWrap: { marginTop: 6, height: 8, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" },
     miniBarFill: { height: "100%", borderRadius: 999, background: T.accentTx, opacity: 0.9 },
@@ -1397,16 +1419,20 @@ function makeStyles(T: any, settings: AppSettings): Record<string, CSSProperties
     boxTitle: { fontWeight: 950, marginBottom: 6 },
 
     itemCard: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: "rgba(255,255,255,0.03)" },
+    itemCardHover: { background: T.hoverBlack },
 
     empty: { color: T.muted, fontSize: 13, padding: 10 },
 
     aiCard: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft },
+    aiCardHover: { background: T.hoverBlack },
+
     aiBadge: { padding: "4px 10px", borderRadius: 999, fontWeight: 950, fontSize: 12, border: `1px solid ${T.border}` },
     aiOK: { background: T.okBg, color: T.okTx, border: `1px solid ${T.okBd}` },
     aiWARN: { background: "rgba(245,158,11,0.12)", color: "#FCD34D", border: "1px solid rgba(245,158,11,0.35)" },
     aiRISK: { background: T.dangerBg, color: T.dangerTx, border: `1px solid ${T.dangerBd}` },
 
     auditRow: { display: "grid", gridTemplateColumns: "90px 1fr 180px 1fr", gap: 10, padding: 10, borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft },
+    auditRowHover: { background: T.hoverBlack },
 
     modalOverlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "grid", placeItems: "center", padding: 14, zIndex: 50 },
     modal: { width: "min(920px, 96vw)", borderRadius: 18, border: `1px solid ${T.border}`, background: T.panel2, padding: 14, display: "grid", gap: 12 },
