@@ -267,7 +267,6 @@ function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
     border: hc ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.10)",
     soft: hc ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)",
     inputBg: hc ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-    hoverBlack: "rgba(0,0,0,0.75)", // <<< BLACK HOVER
     okBg: "rgba(34,197,94,0.12)",
     okBd: hc ? "rgba(34,197,94,0.45)" : "rgba(34,197,94,0.28)",
     okTx: "#86EFAC",
@@ -327,6 +326,7 @@ function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
         accentTx: "#FDE68A",
       };
     case "Ivory Light":
+      // NOTE: hover still forced BLACK (we handle hover outside tokens)
       return {
         ...base,
         text: "#111827",
@@ -344,7 +344,6 @@ function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
         accentTx: "#92400E",
         okTx: "#166534",
         warnTx: "#92400E",
-        hoverBlack: "rgba(0,0,0,0.08)",
       };
     default:
       return {
@@ -358,7 +357,11 @@ function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
   }
 }
 
-/* ================== HOVER WRAPPERS (BLACK HOVER) ================== */
+/* ================== BLACK HOVER (FORCED) ================== */
+/**
+ * This fixes your issue: hover was appearing white due to translucent layers.
+ * We FORCE pure black hover + white text everywhere.
+ */
 function mergeStyle(a?: CSSProperties, b?: CSSProperties): CSSProperties {
   return { ...(a || {}), ...(b || {}) };
 }
@@ -550,6 +553,38 @@ export default function FinancePage() {
   const S = useMemo(() => makeStyles(T, !!settings.compactTables), [T, settings.compactTables]);
 
   const currency = (meta.currency || "INR") as "INR" | "CAD" | "USD";
+
+  // ✅ PURE BLACK hover styles (forced)
+  const HOVER_BLACK: CSSProperties = useMemo(
+    () => ({
+      background: "#000000",
+      color: "#FFFFFF",
+      borderColor: "rgba(255,255,255,0.25)",
+      transition: "background 120ms ease, border-color 120ms ease, transform 120ms ease, color 120ms ease",
+    }),
+    []
+  );
+  const HOVER_BLACK_LIFT: CSSProperties = useMemo(() => ({ ...HOVER_BLACK, transform: "translateY(-1px)" }), [HOVER_BLACK]);
+  const HOVER_BLACK_BTN: CSSProperties = useMemo(
+    () => ({
+      background: "#000000",
+      color: "#FFFFFF",
+      borderColor: "rgba(255,255,255,0.35)",
+      transform: "translateY(-1px)",
+      transition: "background 120ms ease, border-color 120ms ease, transform 120ms ease, color 120ms ease",
+    }),
+    []
+  );
+  const HOVER_BLACK_DANGER: CSSProperties = useMemo(
+    () => ({
+      background: "#000000",
+      color: "#FFFFFF",
+      borderColor: "rgba(248,113,113,0.65)",
+      transform: "translateY(-1px)",
+      transition: "background 120ms ease, border-color 120ms ease, transform 120ms ease, color 120ms ease",
+    }),
+    []
+  );
 
   const categoriesAll = useMemo(() => {
     const set = new Set<string>(CATEGORY_CATALOG.map((c) => c.name));
@@ -824,44 +859,6 @@ export default function FinancePage() {
     return { txt: "Break-even (Range)", tone: "warn" as const };
   }, [totals.netProfit]);
 
-  // BLACK HOVER STYLE (reused)
-  const HOVER_BLACK: CSSProperties = useMemo(
-    () => ({
-      background: T.hoverBlack,
-      borderColor: T.border,
-      transition: "background 140ms ease, border-color 140ms ease, transform 140ms ease",
-    }),
-    [T.border, T.hoverBlack]
-  );
-
-  const HOVER_BLACK_LIFT: CSSProperties = useMemo(
-    () => ({
-      ...HOVER_BLACK,
-      transform: "translateY(-1px)",
-    }),
-    [HOVER_BLACK]
-  );
-
-  const HOVER_BLACK_BTN: CSSProperties = useMemo(
-    () => ({
-      background: T.hoverBlack,
-      borderColor: T.accentBd,
-      transition: "background 140ms ease, border-color 140ms ease, transform 140ms ease",
-      transform: "translateY(-1px)",
-    }),
-    [T.accentBd, T.hoverBlack]
-  );
-
-  const HOVER_BLACK_DANGER: CSSProperties = useMemo(
-    () => ({
-      background: "rgba(0,0,0,0.78)",
-      borderColor: T.badBd,
-      transition: "background 140ms ease, border-color 140ms ease, transform 140ms ease",
-      transform: "translateY(-1px)",
-    }),
-    [T.badBd]
-  );
-
   return (
     <div style={S.app}>
       <aside style={S.sidebar}>
@@ -995,7 +992,11 @@ export default function FinancePage() {
 
           <div style={S.rowBetween}>
             <div style={S.smallNote}>Currency (affects formatting only)</div>
-            <select style={S.select} value={currency} onChange={(e) => persistMeta({ ...meta, currency: e.target.value as any }, "✅ Currency saved")}>
+            <select
+              style={S.select}
+              value={currency}
+              onChange={(e) => persistMeta({ ...meta, currency: e.target.value as any }, "✅ Currency saved")}
+            >
               <option value="INR">INR</option>
               <option value="CAD">CAD</option>
               <option value="USD">USD</option>
@@ -1010,6 +1011,7 @@ export default function FinancePage() {
             <div style={S.kpiValue}>{formatMoney(totals.revenue, currency)}</div>
             <div style={S.kpiSub}>Gross Profit: {formatMoney(totals.grossProfit, currency)}</div>
           </HoverBox>
+
           <HoverBox base={S.kpiCard} hover={HOVER_BLACK_LIFT}>
             <div style={S.kpiLabel}>Expenses (Range)</div>
             <div style={S.kpiValue}>{formatMoney(totals.cogs + totals.opex + totals.other, currency)}</div>
@@ -1017,6 +1019,7 @@ export default function FinancePage() {
               COGS {formatMoney(totals.cogs, currency)} • Opex {formatMoney(totals.opex, currency)}
             </div>
           </HoverBox>
+
           <HoverBox base={S.kpiCard} hover={HOVER_BLACK_LIFT}>
             <div style={S.kpiLabel}>Net Profit (Range)</div>
             <div style={S.kpiValue}>{formatMoney(totals.netProfit, currency)}</div>
@@ -1026,6 +1029,7 @@ export default function FinancePage() {
               </span>
             </div>
           </HoverBox>
+
           <HoverBox base={S.kpiCard} hover={HOVER_BLACK_LIFT}>
             <div style={S.kpiLabel}>Transactions</div>
             <div style={S.kpiValue}>{txsFiltered.length}</div>
@@ -1035,7 +1039,6 @@ export default function FinancePage() {
 
         {/* Automated Statements */}
         <div style={S.grid2}>
-          {/* P&L */}
           <section style={S.panel}>
             <div style={S.panelTitle}>P&amp;L (Automated)</div>
             <div style={S.statement}>
@@ -1055,7 +1058,6 @@ export default function FinancePage() {
             </div>
           </section>
 
-          {/* Cashflow */}
           <section style={S.panel}>
             <div style={S.panelTitle}>Cash Flow (Automated)</div>
             <div style={S.statement}>
@@ -1150,9 +1152,7 @@ export default function FinancePage() {
               </HoverBox>
             </div>
 
-            <div style={S.smallNote}>
-              Gross Margin works only if you classify direct costs under <b>COGS</b>.
-            </div>
+            <div style={S.smallNote}>Gross Margin works only if you classify direct costs under <b>COGS</b>.</div>
           </section>
         </div>
 
@@ -1342,7 +1342,7 @@ export default function FinancePage() {
           </div>
         ) : null}
 
-        <div style={S.footerNote}>✅ Black hover everywhere • ✅ All statements automated • ✅ Deploy-safe</div>
+        <div style={S.footerNote}>✅ Hover is now PURE BLACK • ✅ All statements automated • ✅ Deploy-safe</div>
       </main>
     </div>
   );
@@ -1484,7 +1484,15 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
     smallMuted: { color: T.muted, fontSize: 12 },
     smallNote: { color: T.muted, fontSize: 12, lineHeight: 1.35 },
 
-    msg: { marginTop: 12, padding: 10, borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft, color: T.text, fontSize: 13 },
+    msg: {
+      marginTop: 12,
+      padding: 10,
+      borderRadius: 14,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+      color: T.text,
+      fontSize: 13,
+    },
 
     primaryBtn: {
       padding: "12px 14px",
@@ -1575,14 +1583,7 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
 
     table: { marginTop: 12, borderRadius: 16, border: `1px solid ${T.border}`, overflow: "hidden" },
     tableHead: { display: "grid", gridTemplateColumns: "120px 1fr 1fr 1fr 1fr 1fr", gap: 10, padding: 12, background: T.soft, fontWeight: 950 },
-    tableRow: {
-      display: "grid",
-      gridTemplateColumns: "120px 1fr 1fr 1fr 1fr 1fr",
-      gap: 10,
-      padding: 12,
-      borderTop: `1px solid ${T.border}`,
-      background: "rgba(255,255,255,0.02)",
-    },
+    tableRow: { display: "grid", gridTemplateColumns: "120px 1fr 1fr 1fr 1fr 1fr", gap: 10, padding: 12, borderTop: `1px solid ${T.border}`, background: "rgba(255,255,255,0.02)" },
 
     txCard: { padding: 14, borderRadius: 18, border: `1px solid ${T.border}`, background: T.soft },
 
