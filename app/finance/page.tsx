@@ -61,12 +61,15 @@ type FinanceMeta = {
 };
 
 /* ================== CATEGORY SYSTEM (DIVIDED) ================== */
-/**
- * IMPORTANT:
- * Cashflow + Balance Sheet + Ratios depend on these groups.
- * You can add categories, but keep group mapping correct.
- */
-type CatGroup = "Revenue" | "COGS" | "Operating" | "Other" | "Investing" | "Financing" | "Asset" | "Liability";
+type CatGroup =
+  | "Revenue"
+  | "COGS"
+  | "Operating"
+  | "Other"
+  | "Investing"
+  | "Financing"
+  | "Asset"
+  | "Liability";
 
 const CATEGORY_CATALOG: { group: CatGroup; name: string; hint: string }[] = [
   // Revenue
@@ -264,7 +267,7 @@ function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
     border: hc ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.10)",
     soft: hc ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)",
     inputBg: hc ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-    hoverBlack: "rgba(0,0,0,0.65)",
+    hoverBlack: "rgba(0,0,0,0.75)", // <<< BLACK HOVER
     okBg: "rgba(34,197,94,0.12)",
     okBd: hc ? "rgba(34,197,94,0.45)" : "rgba(34,197,94,0.28)",
     okTx: "#86EFAC",
@@ -278,15 +281,51 @@ function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
 
   switch (theme) {
     case "Midnight Purple":
-      return { ...base, glow1: "rgba(139,92,246,0.22)", glow2: "rgba(212,175,55,0.14)", accentBg: "rgba(139,92,246,0.16)", accentBd: hc ? "rgba(139,92,246,0.55)" : "rgba(139,92,246,0.30)", accentTx: "#DDD6FE" };
+      return {
+        ...base,
+        glow1: "rgba(139,92,246,0.22)",
+        glow2: "rgba(212,175,55,0.14)",
+        accentBg: "rgba(139,92,246,0.16)",
+        accentBd: hc ? "rgba(139,92,246,0.55)" : "rgba(139,92,246,0.30)",
+        accentTx: "#DDD6FE",
+      };
     case "Emerald Night":
-      return { ...base, glow1: "rgba(16,185,129,0.18)", glow2: "rgba(212,175,55,0.12)", accentBg: "rgba(16,185,129,0.16)", accentBd: hc ? "rgba(16,185,129,0.55)" : "rgba(16,185,129,0.30)", accentTx: "#A7F3D0" };
+      return {
+        ...base,
+        glow1: "rgba(16,185,129,0.18)",
+        glow2: "rgba(212,175,55,0.12)",
+        accentBg: "rgba(16,185,129,0.16)",
+        accentBd: hc ? "rgba(16,185,129,0.55)" : "rgba(16,185,129,0.30)",
+        accentTx: "#A7F3D0",
+      };
     case "Ocean Blue":
-      return { ...base, glow1: "rgba(59,130,246,0.22)", glow2: "rgba(34,211,238,0.14)", accentBg: "rgba(59,130,246,0.16)", accentBd: hc ? "rgba(59,130,246,0.55)" : "rgba(59,130,246,0.30)", accentTx: "#BFDBFE" };
+      return {
+        ...base,
+        glow1: "rgba(59,130,246,0.22)",
+        glow2: "rgba(34,211,238,0.14)",
+        accentBg: "rgba(59,130,246,0.16)",
+        accentBd: hc ? "rgba(59,130,246,0.55)" : "rgba(59,130,246,0.30)",
+        accentTx: "#BFDBFE",
+      };
     case "Ruby Noir":
-      return { ...base, glow1: "rgba(244,63,94,0.18)", glow2: "rgba(212,175,55,0.10)", accentBg: "rgba(244,63,94,0.14)", accentBd: hc ? "rgba(244,63,94,0.50)" : "rgba(244,63,94,0.26)", accentTx: "#FDA4AF" };
+      return {
+        ...base,
+        glow1: "rgba(244,63,94,0.18)",
+        glow2: "rgba(212,175,55,0.10)",
+        accentBg: "rgba(244,63,94,0.14)",
+        accentBd: hc ? "rgba(244,63,94,0.50)" : "rgba(244,63,94,0.26)",
+        accentTx: "#FDA4AF",
+      };
     case "Carbon Black":
-      return { ...base, bg: "#03040A", glow1: "rgba(255,255,255,0.10)", glow2: "rgba(212,175,55,0.10)", accentBg: "rgba(212,175,55,0.14)", accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)", accentTx: "#FDE68A" };
+      return {
+        ...base,
+        bg: "#03040A",
+        glow1: "rgba(255,255,255,0.10)",
+        glow2: "rgba(212,175,55,0.10)",
+        accentBg: "rgba(212,175,55,0.14)",
+        accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)",
+        accentTx: "#FDE68A",
+      };
     case "Ivory Light":
       return {
         ...base,
@@ -308,8 +347,110 @@ function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
         hoverBlack: "rgba(0,0,0,0.08)",
       };
     default:
-      return { ...base, glow1: "rgba(255,215,110,0.18)", glow2: "rgba(120,70,255,0.18)", accentBg: "rgba(212,175,55,0.12)", accentBd: hc ? "rgba(212,175,55,0.50)" : "rgba(212,175,55,0.22)", accentTx: "#FDE68A" };
+      return {
+        ...base,
+        glow1: "rgba(255,215,110,0.18)",
+        glow2: "rgba(120,70,255,0.18)",
+        accentBg: "rgba(212,175,55,0.12)",
+        accentBd: hc ? "rgba(212,175,55,0.50)" : "rgba(212,175,55,0.22)",
+        accentTx: "#FDE68A",
+      };
   }
+}
+
+/* ================== HOVER WRAPPERS (BLACK HOVER) ================== */
+function mergeStyle(a?: CSSProperties, b?: CSSProperties): CSSProperties {
+  return { ...(a || {}), ...(b || {}) };
+}
+
+function HoverBox({
+  base,
+  hover,
+  children,
+  style,
+  onClick,
+  title,
+}: {
+  base: CSSProperties;
+  hover: CSSProperties;
+  children: React.ReactNode;
+  style?: CSSProperties;
+  onClick?: () => void;
+  title?: string;
+}) {
+  const [h, setH] = useState(false);
+  return (
+    <div
+      title={title}
+      onClick={onClick}
+      onMouseEnter={() => setH(true)}
+      onMouseLeave={() => setH(false)}
+      style={mergeStyle(mergeStyle(base, style), h ? hover : undefined)}
+    >
+      {children}
+    </div>
+  );
+}
+
+function HoverButton({
+  base,
+  hover,
+  children,
+  onClick,
+  disabled,
+  type,
+  title,
+  style,
+}: {
+  base: CSSProperties;
+  hover: CSSProperties;
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  type?: "button" | "submit";
+  title?: string;
+  style?: CSSProperties;
+}) {
+  const [h, setH] = useState(false);
+  return (
+    <button
+      type={type || "button"}
+      title={title}
+      disabled={disabled}
+      onClick={onClick}
+      onMouseEnter={() => setH(true)}
+      onMouseLeave={() => setH(false)}
+      style={mergeStyle(mergeStyle(base, style), h && !disabled ? hover : undefined)}
+    >
+      {children}
+    </button>
+  );
+}
+
+function HoverLink({
+  href,
+  base,
+  hover,
+  children,
+  style,
+}: {
+  href: string;
+  base: CSSProperties;
+  hover: CSSProperties;
+  children: React.ReactNode;
+  style?: CSSProperties;
+}) {
+  const [h, setH] = useState(false);
+  return (
+    <Link
+      href={href}
+      onMouseEnter={() => setH(true)}
+      onMouseLeave={() => setH(false)}
+      style={mergeStyle(mergeStyle(base, style), h ? hover : undefined) as any}
+    >
+      {children}
+    </Link>
+  );
 }
 
 /* ================== PAGE ================== */
@@ -336,7 +477,7 @@ export default function FinancePage() {
   const [groupFilter, setGroupFilter] = useState<CatGroup | "All">("All");
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
 
-  // Modal form (FIXED add/edit)
+  // Modal form (add/edit)
   const [openForm, setOpenForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -412,7 +553,6 @@ export default function FinancePage() {
 
   const categoriesAll = useMemo(() => {
     const set = new Set<string>(CATEGORY_CATALOG.map((c) => c.name));
-    // include any custom categories already saved
     for (const t of txs) set.add(t.category || "Admin / Misc");
     return Array.from(set).sort();
   }, [txs]);
@@ -462,9 +602,6 @@ export default function FinancePage() {
 
       const g = categoryGroupOf(t.category);
 
-      // P&L logic:
-      // Revenue = Income with Revenue group
-      // COGS/Opex/Other = Expense with those groups
       if (t.type === "Income" && g === "Revenue") revenue += t.amount;
       if (t.type === "Expense" && g === "COGS") cogs += t.amount;
       if (t.type === "Expense" && g === "Operating") opex += t.amount;
@@ -517,11 +654,6 @@ export default function FinancePage() {
     for (const t of txsFiltered) {
       const g = categoryGroupOf(t.category);
 
-      // Cashflow convention:
-      // Income in Revenue = operating inflow
-      // Expense in COGS/Operating/Other = operating outflow
-      // Investing group affects investing (expense is outflow; income would be inflow if you ever log it)
-      // Financing group affects financing (Owner investment/Loan received are income; repayments are expense)
       if (g === "Revenue") operating += t.type === "Income" ? t.amount : -t.amount;
       if (g === "COGS" || g === "Operating" || g === "Other") operating += t.type === "Expense" ? -t.amount : t.amount;
 
@@ -535,9 +667,9 @@ export default function FinancePage() {
 
   // Balance Sheet (automated estimate)
   const balanceSheet = useMemo(() => {
-    // We estimate cash using openingCash + all-time cashflow from all tx
-    // Operating/Investing/Financing across ALL tx (not only range), because BS is point-in-time.
-    let op = 0, inv = 0, fin = 0;
+    let op = 0,
+      inv = 0,
+      fin = 0;
 
     for (const t of txs) {
       const g = categoryGroupOf(t.category);
@@ -571,9 +703,8 @@ export default function FinancePage() {
     const netMargin = rev > 0 ? net / rev : 0;
 
     const currentRatio = balanceSheet.ap > 0 ? (balanceSheet.cash + balanceSheet.ar) / balanceSheet.ap : Infinity;
-    const quickRatio = currentRatio; // no inventory tracked
+    const quickRatio = currentRatio;
 
-    // burn rate = avg monthly operating cash outflow in last 30 days (expenses in COGS+Operating+Other)
     const last30From = isoMinusDays(30);
     const last30 = txs.filter((t) => inRange(t.date, last30From, todayYMD()));
     const burn = last30.reduce((a, t) => {
@@ -596,7 +727,7 @@ export default function FinancePage() {
     };
   }, [totals, balanceSheet, txs]);
 
-  // FIX ADD/EDIT
+  // Add/Edit
   function openAdd() {
     setEditingId(null);
     setDraft({
@@ -693,6 +824,44 @@ export default function FinancePage() {
     return { txt: "Break-even (Range)", tone: "warn" as const };
   }, [totals.netProfit]);
 
+  // BLACK HOVER STYLE (reused)
+  const HOVER_BLACK: CSSProperties = useMemo(
+    () => ({
+      background: T.hoverBlack,
+      borderColor: T.border,
+      transition: "background 140ms ease, border-color 140ms ease, transform 140ms ease",
+    }),
+    [T.border, T.hoverBlack]
+  );
+
+  const HOVER_BLACK_LIFT: CSSProperties = useMemo(
+    () => ({
+      ...HOVER_BLACK,
+      transform: "translateY(-1px)",
+    }),
+    [HOVER_BLACK]
+  );
+
+  const HOVER_BLACK_BTN: CSSProperties = useMemo(
+    () => ({
+      background: T.hoverBlack,
+      borderColor: T.accentBd,
+      transition: "background 140ms ease, border-color 140ms ease, transform 140ms ease",
+      transform: "translateY(-1px)",
+    }),
+    [T.accentBd, T.hoverBlack]
+  );
+
+  const HOVER_BLACK_DANGER: CSSProperties = useMemo(
+    () => ({
+      background: "rgba(0,0,0,0.78)",
+      borderColor: T.badBd,
+      transition: "background 140ms ease, border-color 140ms ease, transform 140ms ease",
+      transform: "translateY(-1px)",
+    }),
+    [T.badBd]
+  );
+
   return (
     <div style={S.app}>
       <aside style={S.sidebar}>
@@ -705,13 +874,27 @@ export default function FinancePage() {
         </div>
 
         <nav style={S.nav}>
-          <Link href="/dashboard" style={S.navItem as any}>📊 Dashboard</Link>
-          <Link href="/events" style={S.navItem as any}>📅 Events</Link>
-          <Link href="/finance" style={S.navActive as any}>💰 Finance</Link>
-          <Link href="/vendors" style={S.navItem as any}>🏷️ Vendors</Link>
-          <Link href="/hr" style={S.navItem as any}>🧑‍🤝‍🧑 HR</Link>
-          <Link href="/reports" style={S.navItem as any}>📈 Reports</Link>
-          <Link href="/settings" style={S.navItem as any}>⚙️ Settings</Link>
+          <HoverLink href="/dashboard" base={S.navItem} hover={HOVER_BLACK}>
+            📊 Dashboard
+          </HoverLink>
+          <HoverLink href="/events" base={S.navItem} hover={HOVER_BLACK}>
+            📅 Events
+          </HoverLink>
+          <HoverLink href="/finance" base={S.navActive} hover={HOVER_BLACK}>
+            💰 Finance
+          </HoverLink>
+          <HoverLink href="/vendors" base={S.navItem} hover={HOVER_BLACK}>
+            🏷️ Vendors
+          </HoverLink>
+          <HoverLink href="/hr" base={S.navItem} hover={HOVER_BLACK}>
+            🧑‍🤝‍🧑 HR
+          </HoverLink>
+          <HoverLink href="/reports" base={S.navItem} hover={HOVER_BLACK}>
+            📈 Reports
+          </HoverLink>
+          <HoverLink href="/settings" base={S.navItem} hover={HOVER_BLACK}>
+            ⚙️ Settings
+          </HoverLink>
         </nav>
 
         <div style={S.sidebarFooter}>
@@ -720,7 +903,9 @@ export default function FinancePage() {
             <div style={S.userEmail}>{email || "Unknown"}</div>
             <div style={S.roleBadge}>{isCEO ? "CEO" : "Staff"}</div>
           </div>
-          <div style={S.smallNote}>Storage: <b>{keysUsed ?? "not found"}</b></div>
+          <div style={S.smallNote}>
+            Storage: <b>{keysUsed ?? "not found"}</b>
+          </div>
         </div>
       </aside>
 
@@ -728,16 +913,22 @@ export default function FinancePage() {
         <div style={S.header}>
           <div>
             <div style={S.h1}>Finance (Fully Automated)</div>
-            <div style={S.muted}>
-              Add/Edit/Delete entries → Auto P&amp;L • Auto Cashflow • Auto Balance Sheet • Auto Ratios
-            </div>
+            <div style={S.muted}>Add/Edit/Delete entries → Auto P&amp;L • Auto Cashflow • Auto Balance Sheet • Auto Ratios</div>
           </div>
 
           <div style={S.headerRight}>
-            <button style={S.secondaryBtn} onClick={hydrate}>Refresh</button>
-            <button style={S.secondaryBtn} onClick={exportRange}>Export JSON</button>
-            <button style={S.secondaryBtn} onClick={exportRangeCSV}>Export CSV</button>
-            <button style={S.primaryBtn} onClick={openAdd}>+ Add Entry</button>
+            <HoverButton base={S.secondaryBtn} hover={HOVER_BLACK_BTN} onClick={hydrate}>
+              Refresh
+            </HoverButton>
+            <HoverButton base={S.secondaryBtn} hover={HOVER_BLACK_BTN} onClick={exportRange}>
+              Export JSON
+            </HoverButton>
+            <HoverButton base={S.secondaryBtn} hover={HOVER_BLACK_BTN} onClick={exportRangeCSV}>
+              Export CSV
+            </HoverButton>
+            <HoverButton base={S.primaryBtn} hover={HOVER_BLACK_BTN} onClick={openAdd}>
+              + Add Entry
+            </HoverButton>
           </div>
         </div>
 
@@ -794,21 +985,17 @@ export default function FinancePage() {
               <select style={S.select} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
                 <option value="All">All</option>
                 {categoriesAll.map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
                 ))}
               </select>
             </div>
           </div>
 
           <div style={S.rowBetween}>
-            <div style={S.smallNote}>
-              Currency (affects formatting only)
-            </div>
-            <select
-              style={S.select}
-              value={currency}
-              onChange={(e) => persistMeta({ ...meta, currency: e.target.value as any }, "✅ Currency saved")}
-            >
+            <div style={S.smallNote}>Currency (affects formatting only)</div>
+            <select style={S.select} value={currency} onChange={(e) => persistMeta({ ...meta, currency: e.target.value as any }, "✅ Currency saved")}>
               <option value="INR">INR</option>
               <option value="CAD">CAD</option>
               <option value="USD">USD</option>
@@ -818,28 +1005,32 @@ export default function FinancePage() {
 
         {/* KPIs */}
         <div style={S.kpiGrid}>
-          <div style={S.kpiCard}>
+          <HoverBox base={S.kpiCard} hover={HOVER_BLACK_LIFT}>
             <div style={S.kpiLabel}>Revenue (Range)</div>
             <div style={S.kpiValue}>{formatMoney(totals.revenue, currency)}</div>
             <div style={S.kpiSub}>Gross Profit: {formatMoney(totals.grossProfit, currency)}</div>
-          </div>
-          <div style={S.kpiCard}>
+          </HoverBox>
+          <HoverBox base={S.kpiCard} hover={HOVER_BLACK_LIFT}>
             <div style={S.kpiLabel}>Expenses (Range)</div>
             <div style={S.kpiValue}>{formatMoney(totals.cogs + totals.opex + totals.other, currency)}</div>
-            <div style={S.kpiSub}>COGS {formatMoney(totals.cogs, currency)} • Opex {formatMoney(totals.opex, currency)}</div>
-          </div>
-          <div style={S.kpiCard}>
+            <div style={S.kpiSub}>
+              COGS {formatMoney(totals.cogs, currency)} • Opex {formatMoney(totals.opex, currency)}
+            </div>
+          </HoverBox>
+          <HoverBox base={S.kpiCard} hover={HOVER_BLACK_LIFT}>
             <div style={S.kpiLabel}>Net Profit (Range)</div>
             <div style={S.kpiValue}>{formatMoney(totals.netProfit, currency)}</div>
             <div style={S.kpiSub}>
-              <span style={headerBadge.tone === "ok" ? S.badgeOk : headerBadge.tone === "bad" ? S.badgeBad : S.badgeWarn}>{headerBadge.txt}</span>
+              <span style={headerBadge.tone === "ok" ? S.badgeOk : headerBadge.tone === "bad" ? S.badgeBad : S.badgeWarn}>
+                {headerBadge.txt}
+              </span>
             </div>
-          </div>
-          <div style={S.kpiCard}>
+          </HoverBox>
+          <HoverBox base={S.kpiCard} hover={HOVER_BLACK_LIFT}>
             <div style={S.kpiLabel}>Transactions</div>
             <div style={S.kpiValue}>{txsFiltered.length}</div>
             <div style={S.kpiSub}>Total saved: {txs.length}</div>
-          </div>
+          </HoverBox>
         </div>
 
         {/* Automated Statements */}
@@ -874,9 +1065,7 @@ export default function FinancePage() {
               <div style={S.hr} />
               <Row label="Net Cash Change (Range)" value={formatMoney(cashFlow.netCashChange, currency)} S={S} strong />
             </div>
-            <div style={S.smallNote}>
-              This is based on category groups automatically.
-            </div>
+            <div style={S.smallNote}>This is based on category groups automatically.</div>
           </section>
         </div>
 
@@ -938,13 +1127,27 @@ export default function FinancePage() {
             <div style={S.panelTitle}>Financial Ratios (Automated)</div>
 
             <div style={S.ratioGrid}>
-              <Ratio label="Gross Margin" value={pct(ratios.grossMargin)} S={S} />
-              <Ratio label="Net Margin" value={pct(ratios.netMargin)} S={S} />
-              <Ratio label="Expense Ratio" value={pct(ratios.expenseRatio)} S={S} />
-              <Ratio label="Current Ratio" value={ratioFmt(ratios.currentRatio)} S={S} />
-              <Ratio label="Quick Ratio" value={ratioFmt(ratios.quickRatio)} S={S} />
-              <Ratio label="Burn (30d approx)" value={formatMoney(ratios.burnPerMonthApprox, currency)} S={S} />
-              <Ratio label="Runway" value={runwayFmt(ratios.runwayMonths)} S={S} />
+              <HoverBox base={S.ratioCard} hover={HOVER_BLACK}>
+                <Ratio label="Gross Margin" value={pct(ratios.grossMargin)} S={S} />
+              </HoverBox>
+              <HoverBox base={S.ratioCard} hover={HOVER_BLACK}>
+                <Ratio label="Net Margin" value={pct(ratios.netMargin)} S={S} />
+              </HoverBox>
+              <HoverBox base={S.ratioCard} hover={HOVER_BLACK}>
+                <Ratio label="Expense Ratio" value={pct(ratios.expenseRatio)} S={S} />
+              </HoverBox>
+              <HoverBox base={S.ratioCard} hover={HOVER_BLACK}>
+                <Ratio label="Current Ratio" value={ratioFmt(ratios.currentRatio)} S={S} />
+              </HoverBox>
+              <HoverBox base={S.ratioCard} hover={HOVER_BLACK}>
+                <Ratio label="Quick Ratio" value={ratioFmt(ratios.quickRatio)} S={S} />
+              </HoverBox>
+              <HoverBox base={S.ratioCard} hover={HOVER_BLACK}>
+                <Ratio label="Burn (30d approx)" value={formatMoney(ratios.burnPerMonthApprox, currency)} S={S} />
+              </HoverBox>
+              <HoverBox base={S.ratioCard} hover={HOVER_BLACK}>
+                <Ratio label="Runway" value={runwayFmt(ratios.runwayMonths)} S={S} />
+              </HoverBox>
             </div>
 
             <div style={S.smallNote}>
@@ -961,17 +1164,23 @@ export default function FinancePage() {
           ) : (
             <div style={S.table}>
               <div style={S.tableHead}>
-                <div>Month</div><div>Revenue</div><div>COGS</div><div>Opex</div><div>Other</div><div>Net</div>
+                <div>Month</div>
+                <div>Revenue</div>
+                <div>COGS</div>
+                <div>Opex</div>
+                <div>Other</div>
+                <div>Net</div>
               </div>
+
               {monthlyPL.map((r) => (
-                <div key={r.month} style={S.tableRow}>
+                <HoverBox key={r.month} base={S.tableRow} hover={HOVER_BLACK}>
                   <div style={{ fontWeight: 950 }}>{r.month}</div>
                   <div>{formatMoney(r.revenue, currency)}</div>
                   <div>{formatMoney(r.cogs, currency)}</div>
                   <div>{formatMoney(r.opex, currency)}</div>
                   <div>{formatMoney(r.other, currency)}</div>
                   <div style={{ fontWeight: 950 }}>{formatMoney(r.net, currency)}</div>
-                </div>
+                </HoverBox>
               ))}
             </div>
           )}
@@ -986,7 +1195,7 @@ export default function FinancePage() {
           ) : (
             <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
               {txsFiltered.slice(0, 120).map((t) => (
-                <div key={t.id} style={S.txCard}>
+                <HoverBox key={t.id} base={S.txCard} hover={HOVER_BLACK_LIFT}>
                   <div style={S.rowBetween}>
                     <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                       <span style={t.type === "Income" ? S.pillOk : S.pillWarn}>{t.type}</span>
@@ -999,27 +1208,34 @@ export default function FinancePage() {
 
                     <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
                       <span style={S.pillMoney}>{formatMoney(t.amount, currency)}</span>
-                      <button style={S.secondaryBtn} onClick={() => openEdit(t.id)}>Edit</button>
-                      <button style={S.dangerBtn} onClick={() => removeTx(t.id)}>Delete</button>
+
+                      <HoverButton base={S.secondaryBtn} hover={HOVER_BLACK_BTN} onClick={() => openEdit(t.id)}>
+                        Edit
+                      </HoverButton>
+                      <HoverButton base={S.dangerBtn} hover={HOVER_BLACK_DANGER} onClick={() => removeTx(t.id)}>
+                        Delete
+                      </HoverButton>
                     </div>
                   </div>
 
                   <div style={S.smallMuted}>
                     {t.date} {t.note ? `• ${t.note}` : ""}
                   </div>
-                </div>
+                </HoverBox>
               ))}
             </div>
           )}
         </section>
 
-        {/* Modal (FIXED) */}
+        {/* Modal */}
         {openForm ? (
           <div style={S.modalOverlay} onClick={closeForm}>
             <div style={S.modal} onClick={(e) => e.stopPropagation()}>
               <div style={S.modalHeader}>
                 <div style={S.modalTitle}>{editingId ? "Edit Entry" : "Add Entry"}</div>
-                <button style={S.secondaryBtn} onClick={closeForm}>Close</button>
+                <HoverButton base={S.secondaryBtn} hover={HOVER_BLACK_BTN} onClick={closeForm}>
+                  Close
+                </HoverButton>
               </div>
 
               <div style={S.modalGrid}>
@@ -1055,16 +1271,20 @@ export default function FinancePage() {
                     value={draft.category}
                     onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value }))}
                   >
-                    {(["Revenue","COGS","Operating","Other","Investing","Financing"] as CatGroup[]).map((g) => (
+                    {(["Revenue", "COGS", "Operating", "Other", "Investing", "Financing"] as CatGroup[]).map((g) => (
                       <optgroup key={g} label={g}>
                         {(categoriesByGroup.get(g) || []).map((c) => (
-                          <option key={c} value={c}>{c}</option>
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
                         ))}
                       </optgroup>
                     ))}
                     <optgroup label="Custom / Existing">
                       {categoriesAll.map((c) => (
-                        <option key={c} value={c}>{c}</option>
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
                       ))}
                     </optgroup>
                   </select>
@@ -1072,12 +1292,22 @@ export default function FinancePage() {
 
                 <div style={S.fieldWide}>
                   <div style={S.smallMuted}>Vendor</div>
-                  <input style={{ ...S.input, width: "100%" }} value={draft.vendor} onChange={(e) => setDraft((d) => ({ ...d, vendor: e.target.value }))} placeholder="optional" />
+                  <input
+                    style={{ ...S.input, width: "100%" }}
+                    value={draft.vendor}
+                    onChange={(e) => setDraft((d) => ({ ...d, vendor: e.target.value }))}
+                    placeholder="optional"
+                  />
                 </div>
 
                 <div style={S.fieldWide}>
                   <div style={S.smallMuted}>Note</div>
-                  <input style={{ ...S.input, width: "100%" }} value={draft.note} onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))} placeholder="optional" />
+                  <input
+                    style={{ ...S.input, width: "100%" }}
+                    value={draft.note}
+                    onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))}
+                    placeholder="optional"
+                  />
                 </div>
 
                 <div style={S.field}>
@@ -1094,20 +1324,25 @@ export default function FinancePage() {
 
                 <div style={S.fieldWide}>
                   <div style={S.smallMuted}>Tags (comma separated)</div>
-                  <input style={{ ...S.input, width: "100%" }} value={draft.tags} onChange={(e) => setDraft((d) => ({ ...d, tags: e.target.value }))} placeholder="wedding, urgent, lead" />
+                  <input
+                    style={{ ...S.input, width: "100%" }}
+                    value={draft.tags}
+                    onChange={(e) => setDraft((d) => ({ ...d, tags: e.target.value }))}
+                    placeholder="wedding, urgent, lead"
+                  />
                 </div>
               </div>
 
               <div style={S.modalFooter}>
-                <button style={S.primaryBtn} onClick={saveDraft}>
+                <HoverButton base={S.primaryBtn} hover={HOVER_BLACK_BTN} onClick={saveDraft}>
                   {editingId ? "Save Changes" : "Add Entry"}
-                </button>
+                </HoverButton>
               </div>
             </div>
           </div>
         ) : null}
 
-        <div style={S.footerNote}>✅ Add/Edit/Delete only • ✅ All statements automated • ✅ Deploy-safe</div>
+        <div style={S.footerNote}>✅ Black hover everywhere • ✅ All statements automated • ✅ Deploy-safe</div>
       </main>
     </div>
   );
@@ -1124,10 +1359,10 @@ function Row({ label, value, S, strong, dim }: { label: string; value: string; S
 }
 function Ratio({ label, value, S }: { label: string; value: string; S: any }) {
   return (
-    <div style={S.ratioCard}>
+    <>
       <div style={S.ratioLabel}>{label}</div>
       <div style={S.ratioValue}>{value}</div>
-    </div>
+    </>
   );
 }
 function pct(x: number) {
@@ -1340,7 +1575,14 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
 
     table: { marginTop: 12, borderRadius: 16, border: `1px solid ${T.border}`, overflow: "hidden" },
     tableHead: { display: "grid", gridTemplateColumns: "120px 1fr 1fr 1fr 1fr 1fr", gap: 10, padding: 12, background: T.soft, fontWeight: 950 },
-    tableRow: { display: "grid", gridTemplateColumns: "120px 1fr 1fr 1fr 1fr 1fr", gap: 10, padding: 12, borderTop: `1px solid ${T.border}`, background: "rgba(255,255,255,0.02)" },
+    tableRow: {
+      display: "grid",
+      gridTemplateColumns: "120px 1fr 1fr 1fr 1fr 1fr",
+      gap: 10,
+      padding: 12,
+      borderTop: `1px solid ${T.border}`,
+      background: "rgba(255,255,255,0.02)",
+    },
 
     txCard: { padding: 14, borderRadius: 18, border: `1px solid ${T.border}`, background: T.soft },
 
