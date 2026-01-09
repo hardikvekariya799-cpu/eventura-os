@@ -55,12 +55,12 @@ type FinanceTx = {
 
 type FinanceMeta = {
   currency?: "INR" | "CAD" | "USD";
-  openingCash?: number; // starting cash estimate
-  accountsReceivable?: number; // current AR (money to receive)
-  accountsPayable?: number; // current AP (money to pay)
+  openingCash?: number;
+  accountsReceivable?: number;
+  accountsPayable?: number;
 };
 
-/* ================== CATEGORY SYSTEM (DIVIDED) ================== */
+/* ================== CATEGORY SYSTEM ================== */
 type CatGroup =
   | "Revenue"
   | "COGS"
@@ -72,20 +72,17 @@ type CatGroup =
   | "Liability";
 
 const CATEGORY_CATALOG: { group: CatGroup; name: string; hint: string }[] = [
-  // Revenue
   { group: "Revenue", name: "Event Booking Revenue", hint: "Client payment for events" },
   { group: "Revenue", name: "Advance / Token Received", hint: "Advance payment" },
   { group: "Revenue", name: "Commission Income", hint: "Vendor commission/fees" },
   { group: "Revenue", name: "Other Income", hint: "Any other revenue" },
 
-  // COGS (direct cost)
   { group: "COGS", name: "Venue Cost", hint: "Direct venue cost" },
   { group: "COGS", name: "Decor Cost", hint: "Direct decor vendor cost" },
   { group: "COGS", name: "Food / Catering Cost", hint: "Direct catering cost" },
   { group: "COGS", name: "Artist / Entertainment Cost", hint: "Artist fees" },
   { group: "COGS", name: "Travel for Event", hint: "Direct travel for event execution" },
 
-  // Operating expenses
   { group: "Operating", name: "Salary / Payroll", hint: "Staff salaries" },
   { group: "Operating", name: "Rent", hint: "Office rent" },
   { group: "Operating", name: "Marketing", hint: "Ads, promotions" },
@@ -94,21 +91,17 @@ const CATEGORY_CATALOG: { group: CatGroup; name: string; hint: string }[] = [
   { group: "Operating", name: "Office Supplies", hint: "Stationery, supplies" },
   { group: "Operating", name: "Admin / Misc", hint: "General expenses" },
 
-  // Other (non-operating)
   { group: "Other", name: "Bank Charges", hint: "Charges, fees" },
   { group: "Other", name: "Interest Expense", hint: "Loan interest" },
   { group: "Other", name: "Taxes Paid", hint: "Taxes outflow" },
 
-  // Investing (cashflow)
   { group: "Investing", name: "Equipment Purchase", hint: "Camera, lights, etc." },
   { group: "Investing", name: "Security Deposit", hint: "Rent/security deposit" },
 
-  // Financing (cashflow)
   { group: "Financing", name: "Owner Investment", hint: "Owner cash injected" },
   { group: "Financing", name: "Loan Received", hint: "Loan inflow" },
   { group: "Financing", name: "Loan Repayment", hint: "Principal repayment" },
 
-  // Balance sheet tags (optional usage)
   { group: "Asset", name: "Accounts Receivable (AR)", hint: "Use if tracking AR via tx entry" },
   { group: "Liability", name: "Accounts Payable (AP)", hint: "Use if tracking AP via tx entry" },
 ];
@@ -245,7 +238,6 @@ function normalizeFin(raw: any): FinanceTx[] {
     });
   }
 
-  // De-dupe by id (keep latest updatedAt)
   const m = new Map<string, FinanceTx>();
   for (const tx of out) {
     const prev = m.get(tx.id);
@@ -280,177 +272,42 @@ function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
 
   switch (theme) {
     case "Midnight Purple":
-      return {
-        ...base,
-        glow1: "rgba(139,92,246,0.22)",
-        glow2: "rgba(212,175,55,0.14)",
-        accentBg: "rgba(139,92,246,0.16)",
-        accentBd: hc ? "rgba(139,92,246,0.55)" : "rgba(139,92,246,0.30)",
-        accentTx: "#DDD6FE",
-      };
+      return { ...base, glow1: "rgba(139,92,246,0.22)", glow2: "rgba(212,175,55,0.14)", accentBg: "rgba(139,92,246,0.16)", accentBd: hc ? "rgba(139,92,246,0.55)" : "rgba(139,92,246,0.30)", accentTx: "#DDD6FE" };
     case "Emerald Night":
-      return {
-        ...base,
-        glow1: "rgba(16,185,129,0.18)",
-        glow2: "rgba(212,175,55,0.12)",
-        accentBg: "rgba(16,185,129,0.16)",
-        accentBd: hc ? "rgba(16,185,129,0.55)" : "rgba(16,185,129,0.30)",
-        accentTx: "#A7F3D0",
-      };
+      return { ...base, glow1: "rgba(16,185,129,0.18)", glow2: "rgba(212,175,55,0.12)", accentBg: "rgba(16,185,129,0.16)", accentBd: hc ? "rgba(16,185,129,0.55)" : "rgba(16,185,129,0.30)", accentTx: "#A7F3D0" };
     case "Ocean Blue":
-      return {
-        ...base,
-        glow1: "rgba(59,130,246,0.22)",
-        glow2: "rgba(34,211,238,0.14)",
-        accentBg: "rgba(59,130,246,0.16)",
-        accentBd: hc ? "rgba(59,130,246,0.55)" : "rgba(59,130,246,0.30)",
-        accentTx: "#BFDBFE",
-      };
+      return { ...base, glow1: "rgba(59,130,246,0.22)", glow2: "rgba(34,211,238,0.14)", accentBg: "rgba(59,130,246,0.16)", accentBd: hc ? "rgba(59,130,246,0.55)" : "rgba(59,130,246,0.30)", accentTx: "#BFDBFE" };
     case "Ruby Noir":
-      return {
-        ...base,
-        glow1: "rgba(244,63,94,0.18)",
-        glow2: "rgba(212,175,55,0.10)",
-        accentBg: "rgba(244,63,94,0.14)",
-        accentBd: hc ? "rgba(244,63,94,0.50)" : "rgba(244,63,94,0.26)",
-        accentTx: "#FDA4AF",
-      };
+      return { ...base, glow1: "rgba(244,63,94,0.18)", glow2: "rgba(212,175,55,0.10)", accentBg: "rgba(244,63,94,0.14)", accentBd: hc ? "rgba(244,63,94,0.50)" : "rgba(244,63,94,0.26)", accentTx: "#FDA4AF" };
     case "Carbon Black":
-      return {
-        ...base,
-        bg: "#03040A",
-        glow1: "rgba(255,255,255,0.10)",
-        glow2: "rgba(212,175,55,0.10)",
-        accentBg: "rgba(212,175,55,0.14)",
-        accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)",
-        accentTx: "#FDE68A",
-      };
+      return { ...base, bg: "#03040A", glow1: "rgba(255,255,255,0.10)", glow2: "rgba(212,175,55,0.10)", accentBg: "rgba(212,175,55,0.14)", accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)", accentTx: "#FDE68A" };
     case "Ivory Light":
-      // NOTE: hover still forced BLACK (we handle hover outside tokens)
-      return {
-        ...base,
-        text: "#111827",
-        muted: "#4B5563",
-        bg: "#F9FAFB",
-        panel: "rgba(255,255,255,0.78)",
-        panel2: "rgba(255,255,255,0.92)",
-        border: hc ? "rgba(17,24,39,0.22)" : "rgba(17,24,39,0.12)",
-        soft: hc ? "rgba(17,24,39,0.07)" : "rgba(17,24,39,0.04)",
-        inputBg: hc ? "rgba(17,24,39,0.08)" : "rgba(17,24,39,0.04)",
-        glow1: "rgba(212,175,55,0.16)",
-        glow2: "rgba(59,130,246,0.14)",
-        accentBg: "rgba(212,175,55,0.16)",
-        accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)",
-        accentTx: "#92400E",
-        okTx: "#166534",
-        warnTx: "#92400E",
-      };
+      return { ...base, text: "#111827", muted: "#4B5563", bg: "#F9FAFB", panel: "rgba(255,255,255,0.78)", panel2: "rgba(255,255,255,0.92)", border: hc ? "rgba(17,24,39,0.22)" : "rgba(17,24,39,0.12)", soft: hc ? "rgba(17,24,39,0.07)" : "rgba(17,24,39,0.04)", inputBg: hc ? "rgba(17,24,39,0.08)" : "rgba(17,24,39,0.04)", glow1: "rgba(212,175,55,0.16)", glow2: "rgba(59,130,246,0.14)", accentBg: "rgba(212,175,55,0.16)", accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)", accentTx: "#92400E", okTx: "#166534", warnTx: "#92400E" };
     default:
-      return {
-        ...base,
-        glow1: "rgba(255,215,110,0.18)",
-        glow2: "rgba(120,70,255,0.18)",
-        accentBg: "rgba(212,175,55,0.12)",
-        accentBd: hc ? "rgba(212,175,55,0.50)" : "rgba(212,175,55,0.22)",
-        accentTx: "#FDE68A",
-      };
+      return { ...base, glow1: "rgba(255,215,110,0.18)", glow2: "rgba(120,70,255,0.18)", accentBg: "rgba(212,175,55,0.12)", accentBd: hc ? "rgba(212,175,55,0.50)" : "rgba(212,175,55,0.22)", accentTx: "#FDE68A" };
   }
 }
 
-/* ================== BLACK HOVER (FORCED) ================== */
-/**
- * This fixes your issue: hover was appearing white due to translucent layers.
- * We FORCE pure black hover + white text everywhere.
- */
-function mergeStyle(a?: CSSProperties, b?: CSSProperties): CSSProperties {
-  return { ...(a || {}), ...(b || {}) };
-}
-
-function HoverBox({
-  base,
-  hover,
-  children,
-  style,
-  onClick,
-  title,
-}: {
-  base: CSSProperties;
-  hover: CSSProperties;
-  children: React.ReactNode;
-  style?: CSSProperties;
-  onClick?: () => void;
-  title?: string;
-}) {
-  const [h, setH] = useState(false);
+/* ================== DATA-HB HOVER COMPONENTS ================== */
+function HBWrap({ style, children, onClick }: { style: CSSProperties; children: React.ReactNode; onClick?: () => void }) {
   return (
-    <div
-      title={title}
-      onClick={onClick}
-      onMouseEnter={() => setH(true)}
-      onMouseLeave={() => setH(false)}
-      style={mergeStyle(mergeStyle(base, style), h ? hover : undefined)}
-    >
+    <div data-hb="1" style={style} onClick={onClick}>
       {children}
     </div>
   );
 }
 
-function HoverButton({
-  base,
-  hover,
-  children,
-  onClick,
-  disabled,
-  type,
-  title,
-  style,
-}: {
-  base: CSSProperties;
-  hover: CSSProperties;
-  children: React.ReactNode;
-  onClick?: () => void;
-  disabled?: boolean;
-  type?: "button" | "submit";
-  title?: string;
-  style?: CSSProperties;
-}) {
-  const [h, setH] = useState(false);
+function HBBtn({ style, children, onClick }: { style: CSSProperties; children: React.ReactNode; onClick?: () => void }) {
   return (
-    <button
-      type={type || "button"}
-      title={title}
-      disabled={disabled}
-      onClick={onClick}
-      onMouseEnter={() => setH(true)}
-      onMouseLeave={() => setH(false)}
-      style={mergeStyle(mergeStyle(base, style), h && !disabled ? hover : undefined)}
-    >
+    <button data-hb="1" style={style} onClick={onClick} type="button">
       {children}
     </button>
   );
 }
 
-function HoverLink({
-  href,
-  base,
-  hover,
-  children,
-  style,
-}: {
-  href: string;
-  base: CSSProperties;
-  hover: CSSProperties;
-  children: React.ReactNode;
-  style?: CSSProperties;
-}) {
-  const [h, setH] = useState(false);
+function HBLink({ href, style, children }: { href: string; style: CSSProperties; children: React.ReactNode }) {
   return (
-    <Link
-      href={href}
-      onMouseEnter={() => setH(true)}
-      onMouseLeave={() => setH(false)}
-      style={mergeStyle(mergeStyle(base, style), h ? hover : undefined) as any}
-    >
+    <Link data-hb="1" href={href} style={style as any}>
       {children}
     </Link>
   );
@@ -474,17 +331,14 @@ export default function FinancePage() {
     accountsPayable: 0,
   });
 
-  // Filters
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<TxType | "All">("All");
   const [groupFilter, setGroupFilter] = useState<CatGroup | "All">("All");
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
 
-  // Modal form (add/edit)
   const [openForm, setOpenForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Keep amount as string to avoid NaN while typing
   const [draft, setDraft] = useState<{
     date: string;
     type: TxType;
@@ -554,35 +408,18 @@ export default function FinancePage() {
 
   const currency = (meta.currency || "INR") as "INR" | "CAD" | "USD";
 
-  // ✅ PURE BLACK hover styles (forced)
-  const HOVER_BLACK: CSSProperties = useMemo(
-    () => ({
-      background: "#000000",
-      color: "#FFFFFF",
-      borderColor: "rgba(255,255,255,0.25)",
-      transition: "background 120ms ease, border-color 120ms ease, transform 120ms ease, color 120ms ease",
-    }),
-    []
-  );
-  const HOVER_BLACK_LIFT: CSSProperties = useMemo(() => ({ ...HOVER_BLACK, transform: "translateY(-1px)" }), [HOVER_BLACK]);
-  const HOVER_BLACK_BTN: CSSProperties = useMemo(
-    () => ({
-      background: "#000000",
-      color: "#FFFFFF",
-      borderColor: "rgba(255,255,255,0.35)",
-      transform: "translateY(-1px)",
-      transition: "background 120ms ease, border-color 120ms ease, transform 120ms ease, color 120ms ease",
-    }),
-    []
-  );
-  const HOVER_BLACK_DANGER: CSSProperties = useMemo(
-    () => ({
-      background: "#000000",
-      color: "#FFFFFF",
-      borderColor: "rgba(248,113,113,0.65)",
-      transform: "translateY(-1px)",
-      transition: "background 120ms ease, border-color 120ms ease, transform 120ms ease, color 120ms ease",
-    }),
+  // ✅ THIS IS THE REAL FIX (beats any global :hover white !important)
+  const HB_CSS = useMemo(
+    () => `
+      [data-hb="1"]:hover{
+        background:#000000 !important;
+        color:#FFFFFF !important;
+        border-color: rgba(255,255,255,0.28) !important;
+      }
+      [data-hb="1"]:hover *{
+        color:inherit !important;
+      }
+    `,
     []
   );
 
@@ -621,7 +458,6 @@ export default function FinancePage() {
     });
   }, [txs, from, to, search, typeFilter, groupFilter, categoryFilter]);
 
-  // Core totals in range
   const totals = useMemo(() => {
     let income = 0;
     let expense = 0;
@@ -651,7 +487,6 @@ export default function FinancePage() {
     return { income, expense, net, revenue, cogs, opex, other, grossProfit, operatingProfit, netProfit };
   }, [txsFiltered]);
 
-  // Monthly P&L (all-time, last 12 months)
   const monthlyPL = useMemo(() => {
     const m = new Map<string, { revenue: number; cogs: number; opex: number; other: number }>();
     for (const t of txs) {
@@ -680,7 +515,6 @@ export default function FinancePage() {
     return rows.slice(0, 12);
   }, [txs]);
 
-  // Cash Flow (range) - automated by category group
   const cashFlow = useMemo(() => {
     let operating = 0;
     let investing = 0;
@@ -688,10 +522,8 @@ export default function FinancePage() {
 
     for (const t of txsFiltered) {
       const g = categoryGroupOf(t.category);
-
       if (g === "Revenue") operating += t.type === "Income" ? t.amount : -t.amount;
       if (g === "COGS" || g === "Operating" || g === "Other") operating += t.type === "Expense" ? -t.amount : t.amount;
-
       if (g === "Investing") investing += t.type === "Expense" ? -t.amount : t.amount;
       if (g === "Financing") financing += t.type === "Income" ? t.amount : -t.amount;
     }
@@ -700,11 +532,8 @@ export default function FinancePage() {
     return { operating, investing, financing, netCashChange };
   }, [txsFiltered]);
 
-  // Balance Sheet (automated estimate)
   const balanceSheet = useMemo(() => {
-    let op = 0,
-      inv = 0,
-      fin = 0;
+    let op = 0, inv = 0, fin = 0;
 
     for (const t of txs) {
       const g = categoryGroupOf(t.category);
@@ -727,7 +556,6 @@ export default function FinancePage() {
     return { cash, ar, ap, totalAssets, totalLiabilities, equity };
   }, [txs, meta.openingCash, meta.accountsReceivable, meta.accountsPayable]);
 
-  // Ratios (automated)
   const ratios = useMemo(() => {
     const rev = totals.revenue;
     const gross = totals.grossProfit;
@@ -751,30 +579,12 @@ export default function FinancePage() {
 
     const expenseRatio = rev > 0 ? expenseTotal / rev : 0;
 
-    return {
-      grossMargin,
-      netMargin,
-      currentRatio,
-      quickRatio,
-      burnPerMonthApprox: burn,
-      runwayMonths,
-      expenseRatio,
-    };
+    return { grossMargin, netMargin, currentRatio, quickRatio, burnPerMonthApprox: burn, runwayMonths, expenseRatio };
   }, [totals, balanceSheet, txs]);
 
-  // Add/Edit
   function openAdd() {
     setEditingId(null);
-    setDraft({
-      date: todayYMD(),
-      type: "Expense",
-      amount: "",
-      category: "Admin / Misc",
-      vendor: "",
-      note: "",
-      method: "UPI",
-      tags: "",
-    });
+    setDraft({ date: todayYMD(), type: "Expense", amount: "", category: "Admin / Misc", vendor: "", note: "", method: "UPI", tags: "" });
     setOpenForm(true);
   }
   function openEdit(id: string) {
@@ -802,7 +612,6 @@ export default function FinancePage() {
     const date = String(draft.date || "").slice(0, 10);
     const amount = parseAmount(draft.amount);
     const category = String(draft.category || "Admin / Misc").trim() || "Admin / Misc";
-
     if (!date) return toast("❌ Date required");
     if (!Number.isFinite(amount) || amount <= 0) return toast("❌ Amount must be > 0");
 
@@ -861,6 +670,9 @@ export default function FinancePage() {
 
   return (
     <div style={S.app}>
+      {/* ✅ GLOBAL BLACK HOVER OVERRIDE */}
+      <style>{HB_CSS}</style>
+
       <aside style={S.sidebar}>
         <div style={S.brandRow}>
           <div style={S.logoCircle}>E</div>
@@ -871,31 +683,17 @@ export default function FinancePage() {
         </div>
 
         <nav style={S.nav}>
-          <HoverLink href="/dashboard" base={S.navItem} hover={HOVER_BLACK}>
-            📊 Dashboard
-          </HoverLink>
-          <HoverLink href="/events" base={S.navItem} hover={HOVER_BLACK}>
-            📅 Events
-          </HoverLink>
-          <HoverLink href="/finance" base={S.navActive} hover={HOVER_BLACK}>
-            💰 Finance
-          </HoverLink>
-          <HoverLink href="/vendors" base={S.navItem} hover={HOVER_BLACK}>
-            🏷️ Vendors
-          </HoverLink>
-          <HoverLink href="/hr" base={S.navItem} hover={HOVER_BLACK}>
-            🧑‍🤝‍🧑 HR
-          </HoverLink>
-          <HoverLink href="/reports" base={S.navItem} hover={HOVER_BLACK}>
-            📈 Reports
-          </HoverLink>
-          <HoverLink href="/settings" base={S.navItem} hover={HOVER_BLACK}>
-            ⚙️ Settings
-          </HoverLink>
+          <HBLink href="/dashboard" style={S.navItem}>📊 Dashboard</HBLink>
+          <HBLink href="/events" style={S.navItem}>📅 Events</HBLink>
+          <HBLink href="/finance" style={S.navActive}>💰 Finance</HBLink>
+          <HBLink href="/vendors" style={S.navItem}>🏷️ Vendors</HBLink>
+          <HBLink href="/hr" style={S.navItem}>🧑‍🤝‍🧑 HR</HBLink>
+          <HBLink href="/reports" style={S.navItem}>📈 Reports</HBLink>
+          <HBLink href="/settings" style={S.navItem}>⚙️ Settings</HBLink>
         </nav>
 
         <div style={S.sidebarFooter}>
-          <div style={S.userBox}>
+          <div style={S.userBox} data-hb="1">
             <div style={S.userLabel}>Signed in</div>
             <div style={S.userEmail}>{email || "Unknown"}</div>
             <div style={S.roleBadge}>{isCEO ? "CEO" : "Staff"}</div>
@@ -907,32 +705,24 @@ export default function FinancePage() {
       </aside>
 
       <main style={S.main}>
-        <div style={S.header}>
+        <div style={S.header} data-hb="1">
           <div>
             <div style={S.h1}>Finance (Fully Automated)</div>
             <div style={S.muted}>Add/Edit/Delete entries → Auto P&amp;L • Auto Cashflow • Auto Balance Sheet • Auto Ratios</div>
           </div>
 
           <div style={S.headerRight}>
-            <HoverButton base={S.secondaryBtn} hover={HOVER_BLACK_BTN} onClick={hydrate}>
-              Refresh
-            </HoverButton>
-            <HoverButton base={S.secondaryBtn} hover={HOVER_BLACK_BTN} onClick={exportRange}>
-              Export JSON
-            </HoverButton>
-            <HoverButton base={S.secondaryBtn} hover={HOVER_BLACK_BTN} onClick={exportRangeCSV}>
-              Export CSV
-            </HoverButton>
-            <HoverButton base={S.primaryBtn} hover={HOVER_BLACK_BTN} onClick={openAdd}>
-              + Add Entry
-            </HoverButton>
+            <HBBtn style={S.secondaryBtn} onClick={hydrate}>Refresh</HBBtn>
+            <HBBtn style={S.secondaryBtn} onClick={exportRange}>Export JSON</HBBtn>
+            <HBBtn style={S.secondaryBtn} onClick={exportRangeCSV}>Export CSV</HBBtn>
+            <HBBtn style={S.primaryBtn} onClick={openAdd}>+ Add Entry</HBBtn>
           </div>
         </div>
 
         {msg ? <div style={S.msg}>{msg}</div> : null}
 
         {/* Filters */}
-        <section style={S.panel}>
+        <section style={S.panel} data-hb="1">
           <div style={S.panelTitle}>Filters</div>
 
           <div style={S.filtersGrid}>
@@ -947,12 +737,7 @@ export default function FinancePage() {
 
             <div style={S.fieldWide}>
               <div style={S.smallMuted}>Search</div>
-              <input
-                style={{ ...S.input, width: "100%" }}
-                placeholder="vendor, note, tags, category..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+              <input style={{ ...S.input, width: "100%" }} placeholder="vendor, note, tags, category..." value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
 
             <div style={S.field}>
@@ -982,9 +767,7 @@ export default function FinancePage() {
               <select style={S.select} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
                 <option value="All">All</option>
                 {categoriesAll.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
+                  <option key={c} value={c}>{c}</option>
                 ))}
               </select>
             </div>
@@ -992,11 +775,7 @@ export default function FinancePage() {
 
           <div style={S.rowBetween}>
             <div style={S.smallNote}>Currency (affects formatting only)</div>
-            <select
-              style={S.select}
-              value={currency}
-              onChange={(e) => persistMeta({ ...meta, currency: e.target.value as any }, "✅ Currency saved")}
-            >
+            <select style={S.select} value={currency} onChange={(e) => persistMeta({ ...meta, currency: e.target.value as any }, "✅ Currency saved")}>
               <option value="INR">INR</option>
               <option value="CAD">CAD</option>
               <option value="USD">USD</option>
@@ -1006,21 +785,19 @@ export default function FinancePage() {
 
         {/* KPIs */}
         <div style={S.kpiGrid}>
-          <HoverBox base={S.kpiCard} hover={HOVER_BLACK_LIFT}>
+          <HBWrap style={S.kpiCard}>
             <div style={S.kpiLabel}>Revenue (Range)</div>
             <div style={S.kpiValue}>{formatMoney(totals.revenue, currency)}</div>
             <div style={S.kpiSub}>Gross Profit: {formatMoney(totals.grossProfit, currency)}</div>
-          </HoverBox>
+          </HBWrap>
 
-          <HoverBox base={S.kpiCard} hover={HOVER_BLACK_LIFT}>
+          <HBWrap style={S.kpiCard}>
             <div style={S.kpiLabel}>Expenses (Range)</div>
             <div style={S.kpiValue}>{formatMoney(totals.cogs + totals.opex + totals.other, currency)}</div>
-            <div style={S.kpiSub}>
-              COGS {formatMoney(totals.cogs, currency)} • Opex {formatMoney(totals.opex, currency)}
-            </div>
-          </HoverBox>
+            <div style={S.kpiSub}>COGS {formatMoney(totals.cogs, currency)} • Opex {formatMoney(totals.opex, currency)}</div>
+          </HBWrap>
 
-          <HoverBox base={S.kpiCard} hover={HOVER_BLACK_LIFT}>
+          <HBWrap style={S.kpiCard}>
             <div style={S.kpiLabel}>Net Profit (Range)</div>
             <div style={S.kpiValue}>{formatMoney(totals.netProfit, currency)}</div>
             <div style={S.kpiSub}>
@@ -1028,166 +805,41 @@ export default function FinancePage() {
                 {headerBadge.txt}
               </span>
             </div>
-          </HoverBox>
+          </HBWrap>
 
-          <HoverBox base={S.kpiCard} hover={HOVER_BLACK_LIFT}>
+          <HBWrap style={S.kpiCard}>
             <div style={S.kpiLabel}>Transactions</div>
             <div style={S.kpiValue}>{txsFiltered.length}</div>
             <div style={S.kpiSub}>Total saved: {txs.length}</div>
-          </HoverBox>
-        </div>
-
-        {/* Automated Statements */}
-        <div style={S.grid2}>
-          <section style={S.panel}>
-            <div style={S.panelTitle}>P&amp;L (Automated)</div>
-            <div style={S.statement}>
-              <Row label="Revenue" value={formatMoney(totals.revenue, currency)} S={S} />
-              <Row label="COGS" value={formatMoney(totals.cogs, currency)} S={S} dim />
-              <Row label="Gross Profit" value={formatMoney(totals.grossProfit, currency)} S={S} strong />
-              <div style={S.hr} />
-              <Row label="Operating Expenses" value={formatMoney(totals.opex, currency)} S={S} dim />
-              <Row label="Operating Profit" value={formatMoney(totals.operatingProfit, currency)} S={S} strong />
-              <div style={S.hr} />
-              <Row label="Other Expenses" value={formatMoney(totals.other, currency)} S={S} dim />
-              <Row label="Net Profit" value={formatMoney(totals.netProfit, currency)} S={S} strong />
-            </div>
-
-            <div style={S.smallNote}>
-              Tip: Put direct event costs under <b>COGS</b> and salaries/marketing under <b>Operating</b>.
-            </div>
-          </section>
-
-          <section style={S.panel}>
-            <div style={S.panelTitle}>Cash Flow (Automated)</div>
-            <div style={S.statement}>
-              <Row label="Operating Cash Flow" value={formatMoney(cashFlow.operating, currency)} S={S} strong />
-              <Row label="Investing Cash Flow" value={formatMoney(cashFlow.investing, currency)} S={S} />
-              <Row label="Financing Cash Flow" value={formatMoney(cashFlow.financing, currency)} S={S} />
-              <div style={S.hr} />
-              <Row label="Net Cash Change (Range)" value={formatMoney(cashFlow.netCashChange, currency)} S={S} strong />
-            </div>
-            <div style={S.smallNote}>This is based on category groups automatically.</div>
-          </section>
-        </div>
-
-        {/* Balance Sheet + Ratios */}
-        <div style={S.grid2}>
-          <section style={S.panel}>
-            <div style={S.panelTitle}>Balance Sheet (Automated Estimate)</div>
-
-            <div style={S.metaGrid}>
-              <div style={S.field}>
-                <div style={S.smallMuted}>Opening Cash</div>
-                <input
-                  style={S.input}
-                  type="number"
-                  value={meta.openingCash ?? 0}
-                  onChange={(e) => persistMeta({ ...meta, openingCash: parseAmount(e.target.value) })}
-                  onBlur={() => toast("✅ Saved")}
-                />
-              </div>
-              <div style={S.field}>
-                <div style={S.smallMuted}>Accounts Receivable (AR)</div>
-                <input
-                  style={S.input}
-                  type="number"
-                  value={meta.accountsReceivable ?? 0}
-                  onChange={(e) => persistMeta({ ...meta, accountsReceivable: parseAmount(e.target.value) })}
-                  onBlur={() => toast("✅ Saved")}
-                />
-              </div>
-              <div style={S.field}>
-                <div style={S.smallMuted}>Accounts Payable (AP)</div>
-                <input
-                  style={S.input}
-                  type="number"
-                  value={meta.accountsPayable ?? 0}
-                  onChange={(e) => persistMeta({ ...meta, accountsPayable: parseAmount(e.target.value) })}
-                  onBlur={() => toast("✅ Saved")}
-                />
-              </div>
-            </div>
-
-            <div style={S.statement}>
-              <Row label="Cash (estimated)" value={formatMoney(balanceSheet.cash, currency)} S={S} strong />
-              <Row label="Accounts Receivable" value={formatMoney(balanceSheet.ar, currency)} S={S} />
-              <Row label="Total Assets" value={formatMoney(balanceSheet.totalAssets, currency)} S={S} strong />
-              <div style={S.hr} />
-              <Row label="Accounts Payable" value={formatMoney(balanceSheet.ap, currency)} S={S} />
-              <Row label="Total Liabilities" value={formatMoney(balanceSheet.totalLiabilities, currency)} S={S} />
-              <div style={S.hr} />
-              <Row label="Equity (Assets - Liabilities)" value={formatMoney(balanceSheet.equity, currency)} S={S} strong />
-            </div>
-
-            <div style={S.smallNote}>
-              Balance sheet cash uses <b>Opening Cash + all-time cashflow</b>. AR/AP are your current totals.
-            </div>
-          </section>
-
-          <section style={S.panel}>
-            <div style={S.panelTitle}>Financial Ratios (Automated)</div>
-
-            <div style={S.ratioGrid}>
-              <HoverBox base={S.ratioCard} hover={HOVER_BLACK}>
-                <Ratio label="Gross Margin" value={pct(ratios.grossMargin)} S={S} />
-              </HoverBox>
-              <HoverBox base={S.ratioCard} hover={HOVER_BLACK}>
-                <Ratio label="Net Margin" value={pct(ratios.netMargin)} S={S} />
-              </HoverBox>
-              <HoverBox base={S.ratioCard} hover={HOVER_BLACK}>
-                <Ratio label="Expense Ratio" value={pct(ratios.expenseRatio)} S={S} />
-              </HoverBox>
-              <HoverBox base={S.ratioCard} hover={HOVER_BLACK}>
-                <Ratio label="Current Ratio" value={ratioFmt(ratios.currentRatio)} S={S} />
-              </HoverBox>
-              <HoverBox base={S.ratioCard} hover={HOVER_BLACK}>
-                <Ratio label="Quick Ratio" value={ratioFmt(ratios.quickRatio)} S={S} />
-              </HoverBox>
-              <HoverBox base={S.ratioCard} hover={HOVER_BLACK}>
-                <Ratio label="Burn (30d approx)" value={formatMoney(ratios.burnPerMonthApprox, currency)} S={S} />
-              </HoverBox>
-              <HoverBox base={S.ratioCard} hover={HOVER_BLACK}>
-                <Ratio label="Runway" value={runwayFmt(ratios.runwayMonths)} S={S} />
-              </HoverBox>
-            </div>
-
-            <div style={S.smallNote}>Gross Margin works only if you classify direct costs under <b>COGS</b>.</div>
-          </section>
+          </HBWrap>
         </div>
 
         {/* Monthly P&L */}
-        <section style={S.panel}>
+        <section style={S.panel} data-hb="1">
           <div style={S.panelTitle}>Monthly P&amp;L (Last 12 months)</div>
           {!monthlyPL.length ? (
             <div style={S.empty}>Add transactions to see monthly P&amp;L.</div>
           ) : (
             <div style={S.table}>
               <div style={S.tableHead}>
-                <div>Month</div>
-                <div>Revenue</div>
-                <div>COGS</div>
-                <div>Opex</div>
-                <div>Other</div>
-                <div>Net</div>
+                <div>Month</div><div>Revenue</div><div>COGS</div><div>Opex</div><div>Other</div><div>Net</div>
               </div>
-
               {monthlyPL.map((r) => (
-                <HoverBox key={r.month} base={S.tableRow} hover={HOVER_BLACK}>
+                <HBWrap key={r.month} style={S.tableRow}>
                   <div style={{ fontWeight: 950 }}>{r.month}</div>
                   <div>{formatMoney(r.revenue, currency)}</div>
                   <div>{formatMoney(r.cogs, currency)}</div>
                   <div>{formatMoney(r.opex, currency)}</div>
                   <div>{formatMoney(r.other, currency)}</div>
                   <div style={{ fontWeight: 950 }}>{formatMoney(r.net, currency)}</div>
-                </HoverBox>
+                </HBWrap>
               ))}
             </div>
           )}
         </section>
 
         {/* Transactions */}
-        <section style={S.panel}>
+        <section style={S.panel} data-hb="1">
           <div style={S.panelTitle}>Transactions (Add/Edit/Delete only)</div>
 
           {!txsFiltered.length ? (
@@ -1195,7 +847,7 @@ export default function FinancePage() {
           ) : (
             <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
               {txsFiltered.slice(0, 120).map((t) => (
-                <HoverBox key={t.id} base={S.txCard} hover={HOVER_BLACK_LIFT}>
+                <HBWrap key={t.id} style={S.txCard}>
                   <div style={S.rowBetween}>
                     <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                       <span style={t.type === "Income" ? S.pillOk : S.pillWarn}>{t.type}</span>
@@ -1208,20 +860,13 @@ export default function FinancePage() {
 
                     <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
                       <span style={S.pillMoney}>{formatMoney(t.amount, currency)}</span>
-
-                      <HoverButton base={S.secondaryBtn} hover={HOVER_BLACK_BTN} onClick={() => openEdit(t.id)}>
-                        Edit
-                      </HoverButton>
-                      <HoverButton base={S.dangerBtn} hover={HOVER_BLACK_DANGER} onClick={() => removeTx(t.id)}>
-                        Delete
-                      </HoverButton>
+                      <HBBtn style={S.secondaryBtn} onClick={() => openEdit(t.id)}>Edit</HBBtn>
+                      <HBBtn style={S.dangerBtn} onClick={() => removeTx(t.id)}>Delete</HBBtn>
                     </div>
                   </div>
 
-                  <div style={S.smallMuted}>
-                    {t.date} {t.note ? `• ${t.note}` : ""}
-                  </div>
-                </HoverBox>
+                  <div style={S.smallMuted}>{t.date} {t.note ? `• ${t.note}` : ""}</div>
+                </HBWrap>
               ))}
             </div>
           )}
@@ -1230,12 +875,10 @@ export default function FinancePage() {
         {/* Modal */}
         {openForm ? (
           <div style={S.modalOverlay} onClick={closeForm}>
-            <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+            <div style={S.modal} onClick={(e) => e.stopPropagation()} data-hb="1">
               <div style={S.modalHeader}>
                 <div style={S.modalTitle}>{editingId ? "Edit Entry" : "Add Entry"}</div>
-                <HoverButton base={S.secondaryBtn} hover={HOVER_BLACK_BTN} onClick={closeForm}>
-                  Close
-                </HoverButton>
+                <HBBtn style={S.secondaryBtn} onClick={closeForm}>Close</HBBtn>
               </div>
 
               <div style={S.modalGrid}>
@@ -1254,37 +897,22 @@ export default function FinancePage() {
 
                 <div style={S.field}>
                   <div style={S.smallMuted}>Amount</div>
-                  <input
-                    style={S.input}
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="e.g. 25000"
-                    value={draft.amount}
-                    onChange={(e) => setDraft((d) => ({ ...d, amount: e.target.value }))}
-                  />
+                  <input style={S.input} type="text" inputMode="decimal" placeholder="e.g. 25000" value={draft.amount} onChange={(e) => setDraft((d) => ({ ...d, amount: e.target.value }))} />
                 </div>
 
                 <div style={S.fieldWide}>
                   <div style={S.smallMuted}>Category</div>
-                  <select
-                    style={{ ...S.select, width: "100%" }}
-                    value={draft.category}
-                    onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value }))}
-                  >
-                    {(["Revenue", "COGS", "Operating", "Other", "Investing", "Financing"] as CatGroup[]).map((g) => (
+                  <select style={{ ...S.select, width: "100%" }} value={draft.category} onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value }))}>
+                    {(["Revenue","COGS","Operating","Other","Investing","Financing"] as CatGroup[]).map((g) => (
                       <optgroup key={g} label={g}>
                         {(categoriesByGroup.get(g) || []).map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
+                          <option key={c} value={c}>{c}</option>
                         ))}
                       </optgroup>
                     ))}
                     <optgroup label="Custom / Existing">
                       {categoriesAll.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
+                        <option key={c} value={c}>{c}</option>
                       ))}
                     </optgroup>
                   </select>
@@ -1292,22 +920,12 @@ export default function FinancePage() {
 
                 <div style={S.fieldWide}>
                   <div style={S.smallMuted}>Vendor</div>
-                  <input
-                    style={{ ...S.input, width: "100%" }}
-                    value={draft.vendor}
-                    onChange={(e) => setDraft((d) => ({ ...d, vendor: e.target.value }))}
-                    placeholder="optional"
-                  />
+                  <input style={{ ...S.input, width: "100%" }} value={draft.vendor} onChange={(e) => setDraft((d) => ({ ...d, vendor: e.target.value }))} placeholder="optional" />
                 </div>
 
                 <div style={S.fieldWide}>
                   <div style={S.smallMuted}>Note</div>
-                  <input
-                    style={{ ...S.input, width: "100%" }}
-                    value={draft.note}
-                    onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))}
-                    placeholder="optional"
-                  />
+                  <input style={{ ...S.input, width: "100%" }} value={draft.note} onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))} placeholder="optional" />
                 </div>
 
                 <div style={S.field}>
@@ -1324,47 +942,24 @@ export default function FinancePage() {
 
                 <div style={S.fieldWide}>
                   <div style={S.smallMuted}>Tags (comma separated)</div>
-                  <input
-                    style={{ ...S.input, width: "100%" }}
-                    value={draft.tags}
-                    onChange={(e) => setDraft((d) => ({ ...d, tags: e.target.value }))}
-                    placeholder="wedding, urgent, lead"
-                  />
+                  <input style={{ ...S.input, width: "100%" }} value={draft.tags} onChange={(e) => setDraft((d) => ({ ...d, tags: e.target.value }))} placeholder="wedding, urgent, lead" />
                 </div>
               </div>
 
               <div style={S.modalFooter}>
-                <HoverButton base={S.primaryBtn} hover={HOVER_BLACK_BTN} onClick={saveDraft}>
-                  {editingId ? "Save Changes" : "Add Entry"}
-                </HoverButton>
+                <HBBtn style={S.primaryBtn} onClick={saveDraft}>{editingId ? "Save Changes" : "Add Entry"}</HBBtn>
               </div>
             </div>
           </div>
         ) : null}
 
-        <div style={S.footerNote}>✅ Hover is now PURE BLACK • ✅ All statements automated • ✅ Deploy-safe</div>
+        <div style={S.footerNote}>✅ Hover is now PURE BLACK (forced with !important) • ✅ Deploy-safe</div>
       </main>
     </div>
   );
 }
 
-/* ================== SMALL UI ================== */
-function Row({ label, value, S, strong, dim }: { label: string; value: string; S: any; strong?: boolean; dim?: boolean }) {
-  return (
-    <div style={S.row}>
-      <div style={{ fontWeight: strong ? 950 : 900, opacity: dim ? 0.85 : 1 }}>{label}</div>
-      <div style={{ fontWeight: strong ? 950 : 900 }}>{value}</div>
-    </div>
-  );
-}
-function Ratio({ label, value, S }: { label: string; value: string; S: any }) {
-  return (
-    <>
-      <div style={S.ratioLabel}>{label}</div>
-      <div style={S.ratioValue}>{value}</div>
-    </>
-  );
-}
+/* ================== FORMAT HELPERS ================== */
 function pct(x: number) {
   if (!Number.isFinite(x)) return "—";
   return `${(x * 100).toFixed(1)}%`;
@@ -1484,77 +1079,21 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
     smallMuted: { color: T.muted, fontSize: 12 },
     smallNote: { color: T.muted, fontSize: 12, lineHeight: 1.35 },
 
-    msg: {
-      marginTop: 12,
-      padding: 10,
-      borderRadius: 14,
-      border: `1px solid ${T.border}`,
-      background: T.soft,
-      color: T.text,
-      fontSize: 13,
-    },
+    msg: { marginTop: 12, padding: 10, borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft, color: T.text, fontSize: 13 },
 
-    primaryBtn: {
-      padding: "12px 14px",
-      borderRadius: 14,
-      border: `1px solid ${T.accentBd}`,
-      background: T.accentBg,
-      color: T.accentTx,
-      fontWeight: 950,
-      cursor: "pointer",
-    },
-    secondaryBtn: {
-      padding: "12px 14px",
-      borderRadius: 14,
-      border: `1px solid ${T.border}`,
-      background: T.soft,
-      color: T.text,
-      fontWeight: 950,
-      cursor: "pointer",
-    },
-    dangerBtn: {
-      padding: "12px 14px",
-      borderRadius: 14,
-      border: `1px solid ${T.badBd}`,
-      background: T.badBg,
-      color: T.badTx,
-      fontWeight: 950,
-      cursor: "pointer",
-    },
+    primaryBtn: { padding: "12px 14px", borderRadius: 14, border: `1px solid ${T.accentBd}`, background: T.accentBg, color: T.accentTx, fontWeight: 950, cursor: "pointer" },
+    secondaryBtn: { padding: "12px 14px", borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft, color: T.text, fontWeight: 950, cursor: "pointer" },
+    dangerBtn: { padding: "12px 14px", borderRadius: 14, border: `1px solid ${T.badBd}`, background: T.badBg, color: T.badTx, fontWeight: 950, cursor: "pointer" },
 
     panel: { marginTop: 12, padding: 14, borderRadius: 18, border: `1px solid ${T.border}`, background: T.panel, backdropFilter: "blur(10px)" },
     panelTitle: { fontWeight: 950, color: T.accentTx },
 
-    filtersGrid: {
-      marginTop: 12,
-      display: "grid",
-      gap: 10,
-      gridTemplateColumns: "220px 220px 1fr 220px 220px 220px",
-      alignItems: "end",
-    },
+    filtersGrid: { marginTop: 12, display: "grid", gap: 10, gridTemplateColumns: "220px 220px 1fr 220px 220px 220px", alignItems: "end" },
     field: { display: "grid", gap: 6 },
     fieldWide: { display: "grid", gap: 6 },
 
-    input: {
-      width: 220,
-      padding: compact ? "10px 10px" : "12px 12px",
-      borderRadius: 14,
-      border: `1px solid ${T.border}`,
-      background: T.inputBg,
-      color: T.text,
-      outline: "none",
-      fontSize: 14,
-    },
-    select: {
-      width: 220,
-      padding: compact ? "10px 10px" : "12px 12px",
-      borderRadius: 14,
-      border: `1px solid ${T.border}`,
-      background: T.inputBg,
-      color: T.text,
-      outline: "none",
-      fontSize: 14,
-    },
+    input: { width: 220, padding: compact ? "10px 10px" : "12px 12px", borderRadius: 14, border: `1px solid ${T.border}`, background: T.inputBg, color: T.text, outline: "none", fontSize: 14 },
+    select: { width: 220, padding: compact ? "10px 10px" : "12px 12px", borderRadius: 14, border: `1px solid ${T.border}`, background: T.inputBg, color: T.text, outline: "none", fontSize: 14 },
 
     rowBetween: { display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", marginTop: 12 },
 
@@ -1567,19 +1106,6 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
     badgeOk: { display: "inline-flex", padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.okBd}`, background: T.okBg, color: T.okTx, fontWeight: 950, fontSize: 12 },
     badgeWarn: { display: "inline-flex", padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.warnBd}`, background: T.warnBg, color: T.warnTx, fontWeight: 950, fontSize: 12 },
     badgeBad: { display: "inline-flex", padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.badBd}`, background: T.badBg, color: T.badTx, fontWeight: 950, fontSize: 12 },
-
-    grid2: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
-
-    statement: { marginTop: 12, display: "grid", gap: 10 },
-    row: { display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft },
-    hr: { height: 1, background: T.border, margin: "4px 0" },
-
-    ratioGrid: { marginTop: 12, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 },
-    ratioCard: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft },
-    ratioLabel: { color: T.muted, fontSize: 12, fontWeight: 900 },
-    ratioValue: { marginTop: 6, fontSize: 18, fontWeight: 950 },
-
-    metaGrid: { marginTop: 12, display: "grid", gridTemplateColumns: "220px 220px 220px", gap: 10, alignItems: "end" },
 
     table: { marginTop: 12, borderRadius: 16, border: `1px solid ${T.border}`, overflow: "hidden" },
     tableHead: { display: "grid", gridTemplateColumns: "120px 1fr 1fr 1fr 1fr 1fr", gap: 10, padding: 12, background: T.soft, fontWeight: 950 },
@@ -1594,23 +1120,8 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
 
     empty: { marginTop: 12, padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft, color: T.muted, fontWeight: 900 },
 
-    modalOverlay: {
-      position: "fixed",
-      inset: 0,
-      background: "rgba(0,0,0,0.55)",
-      display: "grid",
-      placeItems: "center",
-      padding: 14,
-      zIndex: 50,
-    },
-    modal: {
-      width: "min(980px, 100%)",
-      borderRadius: 18,
-      border: `1px solid ${T.border}`,
-      background: T.panel2,
-      backdropFilter: "blur(10px)",
-      padding: 14,
-    },
+    modalOverlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "grid", placeItems: "center", padding: 14, zIndex: 50 },
+    modal: { width: "min(980px, 100%)", borderRadius: 18, border: `1px solid ${T.border}`, background: T.panel2, backdropFilter: "blur(10px)", padding: 14 },
     modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" },
     modalTitle: { fontWeight: 950, fontSize: 18, color: T.accentTx },
     modalGrid: { marginTop: 12, display: "grid", gridTemplateColumns: "220px 220px 220px 1fr", gap: 10, alignItems: "end" },
