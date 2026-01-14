@@ -7,16 +7,15 @@ import Link from "next/link";
 const LS_EMAIL = "eventura_email";
 const LS_SETTINGS = "eventura_os_settings_v3";
 
-const EVENTS_KEYS_READ = ["eventura-events", "eventura_os_events_v1", "eventura_events_v1"];
-const EVENTS_KEY_WRITE = "eventura-events";
-
-/* Finance (optional linkage: create token/advance tx from event) */
-const FIN_KEYS_READ = [
-  "eventura-finance-transactions",
-  "eventura_os_fin_v1",
-  "eventura_fin_v1",
-  "eventura_os_fin_tx_v1",
+const EVT_KEYS_READ = [
+  "eventura-events",
+  "eventura_os_events_v1",
+  "eventura_events_v1",
+  "eventura_os_evt_v1",
 ];
+const EVT_KEY_WRITE = "eventura-events";
+
+// Optional: write finance income ONLY when user clicks button (explicit)
 const FIN_KEY_WRITE = "eventura-finance-transactions";
 
 /* ================== TYPES ================== */
@@ -37,25 +36,25 @@ type AppSettings = {
 };
 
 type EventStatus = "Planned" | "Confirmed" | "In Progress" | "Completed" | "Cancelled";
-type EventType = "Wedding" | "Corporate" | "Birthday" | "Engagement" | "Festival" | "Exhibition" | "Other";
+type EventType = "Wedding" | "Corporate" | "Birthday" | "Engagement" | "Festival" | "Other";
 type Priority = "Low" | "Medium" | "High" | "Urgent";
 
 type EventItem = {
   id: string;
   date: string; // YYYY-MM-DD
   title: string;
-  city?: string;
-
-  status: EventStatus;
   type: EventType;
+  status: EventStatus;
   priority: Priority;
 
-  budget?: number;
-  advance?: number; // token received
-  balanceDue?: number; // computed
   clientName?: string;
   clientPhone?: string;
+  city?: string;
   venue?: string;
+
+  budget?: number; // total expected
+  deposit?: number; // token/advance received
+  assignedTo?: string;
 
   notes?: string;
   tags?: string;
@@ -68,7 +67,7 @@ type TxType = "Income" | "Expense";
 type PayMethod = "Cash" | "UPI" | "Bank" | "Card" | "Cheque" | "Other";
 type FinanceTx = {
   id: string;
-  date: string; // YYYY-MM-DD
+  date: string;
   type: TxType;
   amount: number;
   category: string;
@@ -104,12 +103,13 @@ function loadFirstKey<T>(keys: string[], fallback: T): { keyUsed: string | null;
 }
 function writeEvents(list: EventItem[]) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(EVENTS_KEY_WRITE, JSON.stringify(list));
+  localStorage.setItem(EVT_KEY_WRITE, JSON.stringify(list));
 }
-function writeFin(list: FinanceTx[]) {
+function writeFinanceTx(list: FinanceTx[]) {
   if (typeof window === "undefined") return;
   localStorage.setItem(FIN_KEY_WRITE, JSON.stringify(list));
 }
+
 function uid() {
   return Math.random().toString(16).slice(2) + "-" + Date.now().toString(16);
 }
@@ -118,6 +118,13 @@ function nowISO() {
 }
 function todayYMD(): string {
   const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+function isoPlusDays(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}-${mm}-${dd}`;
@@ -137,11 +144,11 @@ function parseAmount(v: any): number {
   const n = typeof v === "number" ? v : Number(String(v ?? "").replace(/,/g, "").trim());
   return Number.isFinite(n) ? n : 0;
 }
-function formatMoney(amount: number, currency: "INR" | "CAD" | "USD" = "INR") {
+function formatMoneyINR(amount: number) {
   try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
+    return new Intl.NumberFormat(undefined, { style: "currency", currency: "INR" }).format(amount);
   } catch {
-    return `${amount.toFixed(2)} ${currency}`;
+    return `${amount.toFixed(0)} INR`;
   }
 }
 
@@ -153,10 +160,9 @@ function normalizeEvents(raw: any): EventItem[] {
   for (const x of arr) {
     const id = String(x?.id ?? x?._id ?? uid());
     const date = String(x?.date ?? x?.eventDate ?? "").slice(0, 10);
-    const title = String(x?.title ?? x?.name ?? "").trim();
-    if (!date || !title) continue;
+    if (!date) continue;
 
-    const statusRaw = String(x?.status ?? "Planned") as EventStatus;
+    const statusRaw = String(x?.status ?? "Planned");
     const status: EventStatus =
       statusRaw === "Planned" ||
       statusRaw === "Confirmed" ||
@@ -166,46 +172,37 @@ function normalizeEvents(raw: any): EventItem[] {
         ? statusRaw
         : "Planned";
 
-    const typeRaw = String(x?.type ?? "Other") as EventType;
+    const typeRaw = String(x?.type ?? "Other");
     const type: EventType =
-      typeRaw === "Wedding" ||
-      typeRaw === "Corporate" ||
-      typeRaw === "Birthday" ||
-      typeRaw === "Engagement" ||
-      typeRaw === "Festival" ||
-      typeRaw === "Exhibition" ||
-      typeRaw === "Other"
+      typeRaw === "Wedding" || typeRaw === "Corporate" || typeRaw === "Birthday" || typeRaw === "Engagement" || typeRaw === "Festival" || typeRaw === "Other"
         ? typeRaw
         : "Other";
 
-    const prRaw = String(x?.priority ?? "Medium") as Priority;
+    const prRaw = String(x?.priority ?? "Medium");
     const priority: Priority = prRaw === "Low" || prRaw === "Medium" || prRaw === "High" || prRaw === "Urgent" ? prRaw : "Medium";
-
-    const budget = parseAmount(x?.budget ?? 0);
-    const advance = parseAmount(x?.advance ?? x?.token ?? 0);
 
     out.push({
       id,
       date,
-      title,
-      city: x?.city ? String(x.city) : undefined,
-      status,
+      title: String(x?.title ?? x?.name ?? "Untitled").trim() || "Untitled",
       type,
+      status,
       priority,
-      budget: budget > 0 ? budget : undefined,
-      advance: advance > 0 ? advance : undefined,
-      balanceDue: Math.max(0, (budget > 0 ? budget : 0) - (advance > 0 ? advance : 0)) || undefined,
-      clientName: x?.clientName ? String(x.clientName) : undefined,
-      clientPhone: x?.clientPhone ? String(x.clientPhone) : undefined,
+      clientName: x?.clientName ? String(x.clientName) : x?.client ? String(x.client) : undefined,
+      clientPhone: x?.clientPhone ? String(x.clientPhone) : x?.phone ? String(x.phone) : undefined,
+      city: x?.city ? String(x.city) : undefined,
       venue: x?.venue ? String(x.venue) : undefined,
-      notes: x?.notes ? String(x.notes) : x?.note ? String(x.note) : undefined,
+      budget: Number.isFinite(parseAmount(x?.budget)) ? parseAmount(x?.budget) : undefined,
+      deposit: Number.isFinite(parseAmount(x?.deposit)) ? parseAmount(x?.deposit) : undefined,
+      assignedTo: x?.assignedTo ? String(x.assignedTo) : x?.owner ? String(x.owner) : undefined,
+      notes: x?.notes ? String(x.notes) : undefined,
       tags: x?.tags ? String(x.tags) : undefined,
       createdAt: String(x?.createdAt ?? nowISO()),
       updatedAt: String(x?.updatedAt ?? nowISO()),
     });
   }
 
-  // de-dupe by id (keep latest updatedAt)
+  // De-dupe by id (keep latest updatedAt)
   const m = new Map<string, EventItem>();
   for (const e of out) {
     const prev = m.get(e.id);
@@ -213,43 +210,6 @@ function normalizeEvents(raw: any): EventItem[] {
     else m.set(e.id, prev.updatedAt >= e.updatedAt ? prev : e);
   }
 
-  return Array.from(m.values()).sort((a, b) => (a.date < b.date ? 1 : -1));
-}
-
-function normalizeFin(raw: any): FinanceTx[] {
-  const arr = Array.isArray(raw) ? raw : [];
-  const out: FinanceTx[] = [];
-  for (const x of arr) {
-    const id = String(x?.id ?? x?._id ?? uid());
-    const date = String(x?.date ?? x?.txDate ?? "").slice(0, 10);
-    if (!date) continue;
-
-    const t = String(x?.type ?? "").toLowerCase();
-    const type: TxType = t === "income" ? "Income" : "Expense";
-
-    const amount = parseAmount(x?.amount ?? x?.value ?? 0);
-    if (!Number.isFinite(amount) || amount <= 0) continue;
-
-    out.push({
-      id,
-      date,
-      type,
-      amount: Math.abs(amount),
-      category: String(x?.category ?? "Other Income"),
-      vendor: x?.vendor ? String(x.vendor) : undefined,
-      note: x?.note ? String(x.note) : x?.notes ? String(x.notes) : undefined,
-      method: x?.method ? (String(x.method) as PayMethod) : undefined,
-      tags: x?.tags ? String(x.tags) : undefined,
-      createdAt: String(x?.createdAt ?? nowISO()),
-      updatedAt: String(x?.updatedAt ?? nowISO()),
-    });
-  }
-  const m = new Map<string, FinanceTx>();
-  for (const tx of out) {
-    const prev = m.get(tx.id);
-    if (!prev) m.set(tx.id, tx);
-    else m.set(tx.id, prev.updatedAt >= tx.updatedAt ? prev : tx);
-  }
   return Array.from(m.values()).sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 
@@ -261,14 +221,11 @@ function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
     muted: "#9CA3AF",
     bg: "#050816",
     panel: "rgba(11,16,32,0.60)",
-    panel2: "rgba(11,16,32,0.85)",
+    panel2: "rgba(11,16,32,0.88)",
     border: hc ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.10)",
-    soft: hc ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)",
+    soft: hc ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.04)",
     inputBg: hc ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-
-    // IMPORTANT: PURE BLACK HOVER (NOT TRANSPARENT)
-    hoverBlack: "#000000",
-
+    hoverBlack: "#000000", // PURE BLACK
     okBg: "rgba(34,197,94,0.12)",
     okBd: hc ? "rgba(34,197,94,0.45)" : "rgba(34,197,94,0.28)",
     okTx: "#86EFAC",
@@ -345,8 +302,6 @@ function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
         accentTx: "#92400E",
         okTx: "#166534",
         warnTx: "#92400E",
-
-        // still pure black hover
         hoverBlack: "#000000",
       };
     default:
@@ -368,52 +323,50 @@ export default function EventsPage() {
   const [keysUsed, setKeysUsed] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
 
-  const [from, setFrom] = useState(isoMinusDays(60));
-  const [to, setTo] = useState(todayYMD());
+  const [from, setFrom] = useState(isoMinusDays(30));
+  const [to, setTo] = useState(isoPlusDays(90));
 
   const [events, setEvents] = useState<EventItem[]>([]);
-  const [finTxs, setFinTxs] = useState<FinanceTx[]>([]);
 
   // Filters
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<EventStatus | "All">("All");
   const [typeFilter, setTypeFilter] = useState<EventType | "All">("All");
+  const [cityFilter, setCityFilter] = useState<string>("All");
   const [priorityFilter, setPriorityFilter] = useState<Priority | "All">("All");
 
-  // Modal add/edit
+  // Add/Edit modal
   const [openForm, setOpenForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const [draft, setDraft] = useState<{
     date: string;
     title: string;
-    city: string;
-    venue: string;
-
-    status: EventStatus;
     type: EventType;
+    status: EventStatus;
     priority: Priority;
-
-    budget: string;
-    advance: string;
-
     clientName: string;
     clientPhone: string;
-
+    city: string;
+    venue: string;
+    budget: string;
+    deposit: string;
+    assignedTo: string;
     notes: string;
     tags: string;
   }>({
     date: todayYMD(),
     title: "",
-    city: "Surat",
-    venue: "",
-    status: "Planned",
     type: "Wedding",
+    status: "Planned",
     priority: "Medium",
-    budget: "",
-    advance: "",
     clientName: "",
     clientPhone: "",
+    city: "",
+    venue: "",
+    budget: "",
+    deposit: "",
+    assignedTo: "",
     notes: "",
     tags: "",
   });
@@ -432,12 +385,9 @@ export default function EventsPage() {
   }
 
   function hydrate() {
-    const loaded = loadFirstKey<any[]>(EVENTS_KEYS_READ, []);
+    const loaded = loadFirstKey<any[]>(EVT_KEYS_READ, []);
     setKeysUsed(loaded.keyUsed);
     setEvents(normalizeEvents(loaded.data));
-
-    const finLoaded = loadFirstKey<any[]>(FIN_KEYS_READ, []);
-    setFinTxs(normalizeFin(finLoaded.data));
   }
 
   function persist(next: EventItem[], toastMsg?: string) {
@@ -454,6 +404,12 @@ export default function EventsPage() {
   const T = ThemeTokens((settings.theme as Theme) || "Royal Gold", settings.highContrast);
   const S = useMemo(() => makeStyles(T, !!settings.compactTables), [T, settings.compactTables]);
 
+  const citiesAll = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of events) if (e.city) set.add(e.city);
+    return Array.from(set).sort();
+  }, [events]);
+
   const eventsFiltered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return events.filter((e) => {
@@ -461,26 +417,43 @@ export default function EventsPage() {
       if (statusFilter !== "All" && e.status !== statusFilter) return false;
       if (typeFilter !== "All" && e.type !== typeFilter) return false;
       if (priorityFilter !== "All" && e.priority !== priorityFilter) return false;
+      if (cityFilter !== "All" && (e.city || "") !== cityFilter) return false;
 
       if (!q) return true;
-      const blob = [e.date, e.title, e.city || "", e.venue || "", e.status, e.type, e.priority, e.clientName || "", e.clientPhone || "", e.tags || "", e.notes || ""]
+      const blob = [
+        e.date,
+        e.title,
+        e.type,
+        e.status,
+        e.priority,
+        e.clientName || "",
+        e.clientPhone || "",
+        e.city || "",
+        e.venue || "",
+        e.assignedTo || "",
+        e.notes || "",
+        e.tags || "",
+      ]
         .join(" ")
         .toLowerCase();
       return blob.includes(q);
     });
-  }, [events, from, to, search, statusFilter, typeFilter, priorityFilter]);
+  }, [events, from, to, search, statusFilter, typeFilter, cityFilter, priorityFilter]);
 
+  // KPIs
   const kpis = useMemo(() => {
     const total = eventsFiltered.length;
+    const upcoming7 = eventsFiltered.filter((e) => e.date >= todayYMD() && e.date <= isoPlusDays(7) && e.status !== "Cancelled").length;
+    const overdue = eventsFiltered.filter((e) => e.date < todayYMD() && e.status !== "Completed" && e.status !== "Cancelled").length;
+
+    const pipelineBudget = eventsFiltered.reduce((a, e) => a + (e.status !== "Cancelled" ? Number(e.budget || 0) : 0), 0);
+    const received = eventsFiltered.reduce((a, e) => a + (e.status !== "Cancelled" ? Number(e.deposit || 0) : 0), 0);
+    const due = Math.max(0, pipelineBudget - received);
+
+    const confirmed = eventsFiltered.filter((e) => e.status === "Confirmed" || e.status === "In Progress").length;
     const completed = eventsFiltered.filter((e) => e.status === "Completed").length;
-    const upcoming = eventsFiltered.filter((e) => e.date >= todayYMD() && e.status !== "Cancelled").length;
 
-    const budgetSum = eventsFiltered.reduce((a, e) => a + (e.budget || 0), 0);
-    const advanceSum = eventsFiltered.reduce((a, e) => a + (e.advance || 0), 0);
-    const balanceSum = eventsFiltered.reduce((a, e) => a + Math.max(0, (e.budget || 0) - (e.advance || 0)), 0);
-
-    const urgent = eventsFiltered.filter((e) => e.priority === "Urgent").length;
-    return { total, completed, upcoming, budgetSum, advanceSum, balanceSum, urgent };
+    return { total, upcoming7, overdue, pipelineBudget, received, due, confirmed, completed };
   }, [eventsFiltered]);
 
   function openAdd() {
@@ -488,15 +461,16 @@ export default function EventsPage() {
     setDraft({
       date: todayYMD(),
       title: "",
-      city: "Surat",
-      venue: "",
-      status: "Planned",
       type: "Wedding",
+      status: "Planned",
       priority: "Medium",
-      budget: "",
-      advance: "",
       clientName: "",
       clientPhone: "",
+      city: "",
+      venue: "",
+      budget: "",
+      deposit: "",
+      assignedTo: "",
       notes: "",
       tags: "",
     });
@@ -510,15 +484,16 @@ export default function EventsPage() {
     setDraft({
       date: e.date,
       title: e.title,
-      city: e.city || "",
-      venue: e.venue || "",
-      status: e.status,
       type: e.type,
+      status: e.status,
       priority: e.priority,
-      budget: e.budget ? String(e.budget) : "",
-      advance: e.advance ? String(e.advance) : "",
       clientName: e.clientName || "",
       clientPhone: e.clientPhone || "",
+      city: e.city || "",
+      venue: e.venue || "",
+      budget: e.budget != null ? String(e.budget) : "",
+      deposit: e.deposit != null ? String(e.deposit) : "",
+      assignedTo: e.assignedTo || "",
       notes: e.notes || "",
       tags: e.tags || "",
     });
@@ -537,29 +512,29 @@ export default function EventsPage() {
     if (!title) return toast("❌ Title required");
 
     const budget = parseAmount(draft.budget);
-    const advance = parseAmount(draft.advance);
+    const deposit = parseAmount(draft.deposit);
 
-    const nextItem: EventItem = {
+    const item: EventItem = {
       id: editingId || uid(),
       date,
       title,
-      city: draft.city.trim() || undefined,
-      venue: draft.venue.trim() || undefined,
-      status: draft.status,
       type: draft.type,
+      status: draft.status,
       priority: draft.priority,
-      budget: budget > 0 ? budget : undefined,
-      advance: advance > 0 ? advance : undefined,
-      balanceDue: Math.max(0, (budget > 0 ? budget : 0) - (advance > 0 ? advance : 0)) || undefined,
       clientName: draft.clientName.trim() || undefined,
       clientPhone: draft.clientPhone.trim() || undefined,
+      city: draft.city.trim() || undefined,
+      venue: draft.venue.trim() || undefined,
+      budget: budget > 0 ? budget : undefined,
+      deposit: deposit > 0 ? deposit : undefined,
+      assignedTo: draft.assignedTo.trim() || undefined,
       notes: draft.notes.trim() || undefined,
       tags: draft.tags.trim() || undefined,
       createdAt: editingId ? String(events.find((x) => x.id === editingId)?.createdAt ?? nowISO()) : nowISO(),
       updatedAt: nowISO(),
     };
 
-    const next = editingId ? events.map((x) => (x.id === editingId ? nextItem : x)) : [nextItem, ...events];
+    const next = editingId ? events.map((x) => (x.id === editingId ? item : x)) : [item, ...events];
     next.sort((a, b) => (a.date < b.date ? 1 : -1));
     persist(next, editingId ? "✅ Updated" : "✅ Added");
     closeForm();
@@ -568,7 +543,7 @@ export default function EventsPage() {
   function removeEvent(id: string) {
     const e = events.find((x) => x.id === id);
     if (!e) return;
-    const ok = confirm(`Delete event: "${e.title}" on ${e.date}?`);
+    const ok = confirm(`Delete "${e.title}" on ${e.date}?`);
     if (!ok) return;
     persist(events.filter((x) => x.id !== id), "🗑️ Deleted");
   }
@@ -580,46 +555,44 @@ export default function EventsPage() {
     persist(next, "✅ Status updated");
   }
 
-  function createAdvanceFinanceTx(e: EventItem) {
-    const adv = Number(e.advance || 0);
-    if (!adv || adv <= 0) return toast("❌ Add an Advance first");
-    const tag = `event:${e.id}`;
+  function addIncomeToFinance(e: EventItem) {
+    const budget = Number(e.budget || 0);
+    const deposit = Number(e.deposit || 0);
+    const amount = deposit > 0 ? deposit : budget;
 
-    // prevent duplicates: same date + amount + tag + category
-    const exists = finTxs.some(
-      (t) => t.type === "Income" && t.category === "Advance / Token Received" && t.amount === adv && t.date === e.date && (t.tags || "").includes(tag)
-    );
-    if (exists) return toast("⚠️ Finance entry already exists");
+    if (!amount || amount <= 0) return toast("❌ Add budget or deposit first");
 
+    const existing = safeLoad<FinanceTx[]>(FIN_KEY_WRITE, []);
     const tx: FinanceTx = {
       id: uid(),
       date: e.date,
       type: "Income",
-      amount: adv,
-      category: "Advance / Token Received",
+      amount: Math.abs(amount),
+      category: "Event Booking Revenue",
       vendor: e.clientName || e.title,
-      note: `Advance for: ${e.title}${e.city ? ` (${e.city})` : ""}`,
-      method: "UPI",
-      tags: `${tag}${e.tags ? `,${e.tags}` : ""}`,
+      note: `From Events: ${e.title} (${e.status})`,
+      method: "Other",
+      tags: [e.type, e.city, e.tags].filter(Boolean).join(", "),
       createdAt: nowISO(),
       updatedAt: nowISO(),
     };
 
-    const nextFin = [tx, ...finTxs].sort((a, b) => (a.date < b.date ? 1 : -1));
-    setFinTxs(nextFin);
-    writeFin(nextFin);
-    toast("✅ Added to Finance (Advance)");
+    const next = [tx, ...(Array.isArray(existing) ? existing : [])];
+    writeFinanceTx(next);
+    toast("✅ Income added to Finance");
   }
 
-  const badge = useMemo(() => {
-    const p = kpis.completed;
-    const t = kpis.total;
-    if (t === 0) return { txt: "No events in range", tone: "warn" as const };
-    const rate = t > 0 ? Math.round((p / t) * 100) : 0;
-    if (rate >= 60) return { txt: `Strong completion (${rate}%)`, tone: "ok" as const };
-    if (rate >= 30) return { txt: `Medium completion (${rate}%)`, tone: "warn" as const };
-    return { txt: `Low completion (${rate}%)`, tone: "bad" as const };
-  }, [kpis.completed, kpis.total]);
+  // “Auto” insights panel (no external connections)
+  const insights = useMemo(() => {
+    const list = eventsFiltered
+      .filter((e) => e.status !== "Cancelled")
+      .sort((a, b) => (a.date > b.date ? 1 : -1))
+      .slice(0, 6);
+
+    const overdue = eventsFiltered.filter((e) => e.date < todayYMD() && e.status !== "Completed" && e.status !== "Cancelled").slice(0, 6);
+
+    return { next6: list, overdue6: overdue };
+  }, [eventsFiltered]);
 
   return (
     <div style={S.app}>
@@ -633,13 +606,13 @@ export default function EventsPage() {
         </div>
 
         <nav style={S.nav}>
-          <NavLink href="/dashboard" label="📊 Dashboard" S={S} />
+          <NavLink href="/dashboard" label="📊 Dashboard" S={S} active={false} />
           <NavLink href="/events" label="📅 Events" S={S} active />
-          <NavLink href="/finance" label="💰 Finance" S={S} />
-          <NavLink href="/vendors" label="🏷️ Vendors" S={S} />
-          <NavLink href="/hr" label="🧑‍🤝‍🧑 HR" S={S} />
-          <NavLink href="/reports" label="📈 Reports" S={S} />
-          <NavLink href="/settings" label="⚙️ Settings" S={S} />
+          <NavLink href="/finance" label="💰 Finance" S={S} active={false} />
+          <NavLink href="/vendors" label="🏷️ Vendors" S={S} active={false} />
+          <NavLink href="/hr" label="🧑‍🤝‍🧑 HR" S={S} active={false} />
+          <NavLink href="/reports" label="📈 Reports" S={S} active={false} />
+          <NavLink href="/settings" label="⚙️ Settings" S={S} active={false} />
         </nav>
 
         <div style={S.sidebarFooter}>
@@ -658,12 +631,18 @@ export default function EventsPage() {
         <div style={S.header}>
           <div>
             <div style={S.h1}>Events (Advanced)</div>
-            <div style={S.muted}>Custom dropdowns with PURE BLACK hover • Add/Edit/Delete • Quick status updates • Optional Finance linking</div>
+            <div style={S.muted}>
+              Add/Edit/Delete • Filters • Auto Insights • <b>Pure Black</b> hover for dropdown menus/options
+            </div>
           </div>
 
           <div style={S.headerRight}>
-            <HoverBtn label="Refresh" kind="secondary" S={S} onClick={hydrate} />
-            <HoverBtn label="+ Add Event" kind="primary" S={S} onClick={openAdd} />
+            <button style={S.secondaryBtn} onClick={hydrate}>
+              Refresh
+            </button>
+            <button style={S.primaryBtn} onClick={openAdd}>
+              + Add Event
+            </button>
           </div>
         </div>
 
@@ -678,6 +657,7 @@ export default function EventsPage() {
               <div style={S.smallMuted}>From</div>
               <input style={S.input} type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
             </div>
+
             <div style={S.field}>
               <div style={S.smallMuted}>To</div>
               <input style={S.input} type="date" value={to} onChange={(e) => setTo(e.target.value)} />
@@ -687,25 +667,46 @@ export default function EventsPage() {
               <div style={S.smallMuted}>Search</div>
               <input
                 style={{ ...S.input, width: "100%" }}
-                placeholder="title, client, city, venue, tags..."
+                placeholder="title, client, phone, city, venue, tags..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
 
+            {/* Custom dropdowns (PURE BLACK hover) */}
             <div style={S.field}>
               <div style={S.smallMuted}>Status</div>
-              <Dropdown value={statusFilter} onChange={(v) => setStatusFilter(v as any)} options={["All", "Planned", "Confirmed", "In Progress", "Completed", "Cancelled"]} S={S} />
+              <Dropdown
+                value={statusFilter}
+                options={["All", "Planned", "Confirmed", "In Progress", "Completed", "Cancelled"]}
+                onChange={(v) => setStatusFilter(v as any)}
+                S={S}
+              />
             </div>
 
             <div style={S.field}>
               <div style={S.smallMuted}>Type</div>
-              <Dropdown value={typeFilter} onChange={(v) => setTypeFilter(v as any)} options={["All", "Wedding", "Corporate", "Birthday", "Engagement", "Festival", "Exhibition", "Other"]} S={S} />
+              <Dropdown
+                value={typeFilter}
+                options={["All", "Wedding", "Corporate", "Birthday", "Engagement", "Festival", "Other"]}
+                onChange={(v) => setTypeFilter(v as any)}
+                S={S}
+              />
             </div>
 
             <div style={S.field}>
               <div style={S.smallMuted}>Priority</div>
-              <Dropdown value={priorityFilter} onChange={(v) => setPriorityFilter(v as any)} options={["All", "Low", "Medium", "High", "Urgent"]} S={S} />
+              <Dropdown value={priorityFilter} options={["All", "Low", "Medium", "High", "Urgent"]} onChange={(v) => setPriorityFilter(v as any)} S={S} />
+            </div>
+
+            <div style={S.field}>
+              <div style={S.smallMuted}>City</div>
+              <Dropdown
+                value={cityFilter}
+                options={["All", ...citiesAll]}
+                onChange={(v) => setCityFilter(v)}
+                S={S}
+              />
             </div>
           </div>
         </section>
@@ -713,48 +714,187 @@ export default function EventsPage() {
         {/* KPIs */}
         <div style={S.kpiGrid}>
           <div style={S.kpiCard}>
-            <div style={S.kpiLabel}>Events (Range)</div>
+            <div style={S.kpiLabel}>Events (Filtered)</div>
             <div style={S.kpiValue}>{kpis.total}</div>
-            <div style={S.kpiSub}>Upcoming: {kpis.upcoming}</div>
+            <div style={S.kpiSub}>Confirmed/In Progress: {kpis.confirmed} • Completed: {kpis.completed}</div>
           </div>
           <div style={S.kpiCard}>
-            <div style={S.kpiLabel}>Budget Total (Range)</div>
-            <div style={S.kpiValue}>{formatMoney(kpis.budgetSum, "INR")}</div>
-            <div style={S.kpiSub}>Advance: {formatMoney(kpis.advanceSum, "INR")}</div>
+            <div style={S.kpiLabel}>Upcoming 7 days</div>
+            <div style={S.kpiValue}>{kpis.upcoming7}</div>
+            <div style={S.kpiSub}>Auto reminder list below</div>
           </div>
           <div style={S.kpiCard}>
-            <div style={S.kpiLabel}>Balance Due (Range)</div>
-            <div style={S.kpiValue}>{formatMoney(kpis.balanceSum, "INR")}</div>
-            <div style={S.kpiSub}>Urgent: {kpis.urgent}</div>
+            <div style={S.kpiLabel}>Overdue (not completed)</div>
+            <div style={S.kpiValue}>{kpis.overdue}</div>
+            <div style={S.kpiSub}>Fix status or reschedule</div>
           </div>
           <div style={S.kpiCard}>
-            <div style={S.kpiLabel}>Completion</div>
-            <div style={S.kpiValue}>{kpis.completed}</div>
+            <div style={S.kpiLabel}>Pipeline</div>
+            <div style={S.kpiValue}>{formatMoneyINR(kpis.pipelineBudget)}</div>
             <div style={S.kpiSub}>
-              <span style={badge.tone === "ok" ? S.badgeOk : badge.tone === "bad" ? S.badgeBad : S.badgeWarn}>{badge.txt}</span>
+              Received: {formatMoneyINR(kpis.received)} • Due: {formatMoneyINR(kpis.due)}
             </div>
           </div>
         </div>
+
+        {/* Auto Insights */}
+        <div style={S.grid2}>
+          <section style={S.panel}>
+            <div style={S.panelTitle}>Auto Insights</div>
+            <div style={S.statement}>
+              <InsightRow
+                label="Next 7 days focus"
+                value={`${kpis.upcoming7} event(s)`}
+                S={S}
+                strong
+              />
+              <InsightRow
+                label="Overdue items"
+                value={`${kpis.overdue} event(s)`}
+                S={S}
+                dim={kpis.overdue === 0}
+              />
+              <div style={S.hr} />
+              <div style={S.smallNote}>
+                Tip: Use the <b>Status</b> dropdown on each event card. Hover is always <b>pure black</b>.
+              </div>
+            </div>
+          </section>
+
+          <section style={S.panel}>
+            <div style={S.panelTitle}>Reminders (Auto)</div>
+            {!insights.next6.length ? (
+              <div style={S.empty}>No upcoming events in this range.</div>
+            ) : (
+              <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                {insights.next6.map((e) => (
+                  <div key={e.id} style={S.reminderCard}>
+                    <div style={S.rowBetween}>
+                      <div style={{ fontWeight: 950 }}>{e.date} • {e.title}</div>
+                      <span style={pillByStatus(e.status, S)}>{e.status}</span>
+                    </div>
+                    <div style={S.smallMuted}>
+                      {e.city ? `${e.city}` : "—"} {e.venue ? `• ${e.venue}` : ""} {e.clientName ? `• ${e.clientName}` : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+
+        {/* Overdue list */}
+        {insights.overdue6.length ? (
+          <section style={S.panel}>
+            <div style={S.panelTitle}>Overdue (Auto Flag)</div>
+            <div style={S.smallNote}>These are in the past but not Completed/Cancelled.</div>
+            <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+              {insights.overdue6.map((e) => (
+                <div key={e.id} style={S.txCard}>
+                  <div style={S.rowBetween}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                      <span style={S.pillBad}>Overdue</span>
+                      <div style={{ fontWeight: 950 }}>{e.title}</div>
+                      <span style={S.pill}>{e.type}</span>
+                      <span style={S.pill}>{e.priority}</span>
+                      {e.city ? <span style={S.pill}>{e.city}</span> : null}
+                    </div>
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      <button style={S.secondaryBtn} onClick={() => openEdit(e.id)}>Edit</button>
+                      <button style={S.primaryBtn} onClick={() => quickStatus(e.id, "Completed")}>Mark Completed</button>
+                    </div>
+                  </div>
+                  <div style={S.smallMuted}>{e.date} • Current: {e.status}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         {/* Events List */}
         <section style={S.panel}>
           <div style={S.panelTitle}>Events</div>
 
           {!eventsFiltered.length ? (
-            <div style={S.empty}>No events found in this range/filter.</div>
+            <div style={S.empty}>No events found for this filter/range.</div>
           ) : (
             <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-              {eventsFiltered.slice(0, 150).map((e) => (
-                <EventCard
-                  key={e.id}
-                  e={e}
-                  S={S}
-                  onEdit={() => openEdit(e.id)}
-                  onDelete={() => removeEvent(e.id)}
-                  onQuickStatus={(s) => quickStatus(e.id, s)}
-                  onAddAdvanceToFinance={() => createAdvanceFinanceTx(e)}
-                />
-              ))}
+              {eventsFiltered.slice(0, 200).map((e) => {
+                const overdue = e.date < todayYMD() && e.status !== "Completed" && e.status !== "Cancelled";
+                const due = Math.max(0, Number(e.budget || 0) - Number(e.deposit || 0));
+
+                return (
+                  <div key={e.id} style={S.txCard}>
+                    <div style={S.rowBetween}>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                        {overdue ? <span style={S.pillBad}>Overdue</span> : null}
+                        <span style={S.pill}>{e.type}</span>
+                        <span style={S.pill}>{e.priority}</span>
+                        <div style={{ fontWeight: 950 }}>{e.title}</div>
+                        <span style={S.pill}>{e.date}</span>
+                        {e.city ? <span style={S.pill}>{e.city}</span> : null}
+                        {e.venue ? <span style={S.pill}>{e.venue}</span> : null}
+                      </div>
+
+                      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                        <span style={pillByStatus(e.status, S)}>{e.status}</span>
+
+                        <Dropdown
+                          value="Change Status"
+                          options={["Planned", "Confirmed", "In Progress", "Completed", "Cancelled"]}
+                          onChange={(v) => quickStatus(e.id, v as EventStatus)}
+                          S={S}
+                          compact
+                        />
+
+                        <button style={S.secondaryBtn} onClick={() => openEdit(e.id)}>Edit</button>
+                        <button style={S.dangerBtn} onClick={() => removeEvent(e.id)}>Delete</button>
+                      </div>
+                    </div>
+
+                    <div style={S.cardGrid}>
+                      <div style={S.cardMini}>
+                        <div style={S.smallMuted}>Client</div>
+                        <div style={S.cardMiniVal}>{e.clientName || "—"}</div>
+                        <div style={S.smallMuted}>{e.clientPhone || ""}</div>
+                      </div>
+
+                      <div style={S.cardMini}>
+                        <div style={S.smallMuted}>Budget</div>
+                        <div style={S.cardMiniVal}>{formatMoneyINR(Number(e.budget || 0))}</div>
+                        <div style={S.smallMuted}>Deposit: {formatMoneyINR(Number(e.deposit || 0))}</div>
+                      </div>
+
+                      <div style={S.cardMini}>
+                        <div style={S.smallMuted}>Due</div>
+                        <div style={S.cardMiniVal}>{formatMoneyINR(due)}</div>
+                        <div style={S.smallMuted}>Recommended: collect 50%+ before execution</div>
+                      </div>
+
+                      <div style={S.cardMini}>
+                        <div style={S.smallMuted}>Assigned</div>
+                        <div style={S.cardMiniVal}>{e.assignedTo || "—"}</div>
+                        <div style={S.smallMuted}>{e.tags ? `Tags: ${e.tags}` : "—"}</div>
+                      </div>
+                    </div>
+
+                    {e.notes ? <div style={{ ...S.smallMuted, marginTop: 8 }}>{e.notes}</div> : null}
+
+                    <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      <button style={S.secondaryBtn} onClick={() => addIncomeToFinance(e)}>
+                        + Add Income to Finance
+                      </button>
+                      <Link
+                        href="/finance"
+                        style={S.linkBtn as any}
+                        title="Go to Finance tab"
+                      >
+                        Open Finance
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
@@ -762,10 +902,10 @@ export default function EventsPage() {
         {/* Modal */}
         {openForm ? (
           <div style={S.modalOverlay} onClick={closeForm}>
-            <div style={S.modal} onClick={(ev) => ev.stopPropagation()}>
+            <div style={S.modal} onClick={(e) => e.stopPropagation()}>
               <div style={S.modalHeader}>
                 <div style={S.modalTitle}>{editingId ? "Edit Event" : "Add Event"}</div>
-                <HoverBtn label="Close" kind="secondary" S={S} onClick={closeForm} />
+                <button style={S.secondaryBtn} onClick={closeForm}>Close</button>
               </div>
 
               <div style={S.modalGrid}>
@@ -776,42 +916,37 @@ export default function EventsPage() {
 
                 <div style={S.fieldWide}>
                   <div style={S.smallMuted}>Title</div>
-                  <input style={{ ...S.input, width: "100%" }} value={draft.title} onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))} placeholder="e.g. Patel Wedding at Farmhouse" />
-                </div>
-
-                <div style={S.field}>
-                  <div style={S.smallMuted}>Status</div>
-                  <Dropdown value={draft.status} onChange={(v) => setDraft((d) => ({ ...d, status: v as any }))} options={["Planned", "Confirmed", "In Progress", "Completed", "Cancelled"]} S={S} />
+                  <input style={{ ...S.input, width: "100%" }} value={draft.title} onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))} placeholder="e.g. Patel Wedding at Vesu" />
                 </div>
 
                 <div style={S.field}>
                   <div style={S.smallMuted}>Type</div>
-                  <Dropdown value={draft.type} onChange={(v) => setDraft((d) => ({ ...d, type: v as any }))} options={["Wedding", "Corporate", "Birthday", "Engagement", "Festival", "Exhibition", "Other"]} S={S} />
+                  <Dropdown
+                    value={draft.type}
+                    options={["Wedding", "Corporate", "Birthday", "Engagement", "Festival", "Other"]}
+                    onChange={(v) => setDraft((d) => ({ ...d, type: v as EventType }))}
+                    S={S}
+                  />
+                </div>
+
+                <div style={S.field}>
+                  <div style={S.smallMuted}>Status</div>
+                  <Dropdown
+                    value={draft.status}
+                    options={["Planned", "Confirmed", "In Progress", "Completed", "Cancelled"]}
+                    onChange={(v) => setDraft((d) => ({ ...d, status: v as EventStatus }))}
+                    S={S}
+                  />
                 </div>
 
                 <div style={S.field}>
                   <div style={S.smallMuted}>Priority</div>
-                  <Dropdown value={draft.priority} onChange={(v) => setDraft((d) => ({ ...d, priority: v as any }))} options={["Low", "Medium", "High", "Urgent"]} S={S} />
-                </div>
-
-                <div style={S.field}>
-                  <div style={S.smallMuted}>City</div>
-                  <input style={S.input} value={draft.city} onChange={(e) => setDraft((d) => ({ ...d, city: e.target.value }))} placeholder="Surat" />
-                </div>
-
-                <div style={S.fieldWide}>
-                  <div style={S.smallMuted}>Venue</div>
-                  <input style={{ ...S.input, width: "100%" }} value={draft.venue} onChange={(e) => setDraft((d) => ({ ...d, venue: e.target.value }))} placeholder="optional" />
-                </div>
-
-                <div style={S.field}>
-                  <div style={S.smallMuted}>Budget (INR)</div>
-                  <input style={S.input} type="text" inputMode="decimal" value={draft.budget} onChange={(e) => setDraft((d) => ({ ...d, budget: e.target.value }))} placeholder="e.g. 500000" />
-                </div>
-
-                <div style={S.field}>
-                  <div style={S.smallMuted}>Advance (INR)</div>
-                  <input style={S.input} type="text" inputMode="decimal" value={draft.advance} onChange={(e) => setDraft((d) => ({ ...d, advance: e.target.value }))} placeholder="e.g. 50000" />
+                  <Dropdown
+                    value={draft.priority}
+                    options={["Low", "Medium", "High", "Urgent"]}
+                    onChange={(v) => setDraft((d) => ({ ...d, priority: v as Priority }))}
+                    S={S}
+                  />
                 </div>
 
                 <div style={S.fieldWide}>
@@ -825,40 +960,66 @@ export default function EventsPage() {
                 </div>
 
                 <div style={S.fieldWide}>
-                  <div style={S.smallMuted}>Tags (comma separated)</div>
-                  <input style={{ ...S.input, width: "100%" }} value={draft.tags} onChange={(e) => setDraft((d) => ({ ...d, tags: e.target.value }))} placeholder="wedding, vip, urgent" />
+                  <div style={S.smallMuted}>City</div>
+                  <input style={{ ...S.input, width: "100%" }} value={draft.city} onChange={(e) => setDraft((d) => ({ ...d, city: e.target.value }))} placeholder="Surat / Ahmedabad / ..." />
+                </div>
+
+                <div style={S.fieldWide}>
+                  <div style={S.smallMuted}>Venue</div>
+                  <input style={{ ...S.input, width: "100%" }} value={draft.venue} onChange={(e) => setDraft((d) => ({ ...d, venue: e.target.value }))} placeholder="optional" />
+                </div>
+
+                <div style={S.field}>
+                  <div style={S.smallMuted}>Budget (₹)</div>
+                  <input style={S.input} type="text" inputMode="decimal" value={draft.budget} onChange={(e) => setDraft((d) => ({ ...d, budget: e.target.value }))} placeholder="e.g. 500000" />
+                </div>
+
+                <div style={S.field}>
+                  <div style={S.smallMuted}>Deposit (₹)</div>
+                  <input style={S.input} type="text" inputMode="decimal" value={draft.deposit} onChange={(e) => setDraft((d) => ({ ...d, deposit: e.target.value }))} placeholder="e.g. 100000" />
+                </div>
+
+                <div style={S.fieldWide}>
+                  <div style={S.smallMuted}>Assigned To</div>
+                  <input style={{ ...S.input, width: "100%" }} value={draft.assignedTo} onChange={(e) => setDraft((d) => ({ ...d, assignedTo: e.target.value }))} placeholder="optional" />
                 </div>
 
                 <div style={S.fieldWide}>
                   <div style={S.smallMuted}>Notes</div>
-                  <textarea style={{ ...S.textarea, width: "100%" }} value={draft.notes} onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))} placeholder="important notes / requirements..." />
+                  <input style={{ ...S.input, width: "100%" }} value={draft.notes} onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))} placeholder="important details..." />
+                </div>
+
+                <div style={S.fieldWide}>
+                  <div style={S.smallMuted}>Tags (comma separated)</div>
+                  <input style={{ ...S.input, width: "100%" }} value={draft.tags} onChange={(e) => setDraft((d) => ({ ...d, tags: e.target.value }))} placeholder="wedding, urgent, premium" />
                 </div>
               </div>
 
               <div style={S.modalFooter}>
-                <HoverBtn label={editingId ? "Save Changes" : "Add Event"} kind="primary" S={S} onClick={saveDraft} />
+                <button style={S.primaryBtn} onClick={saveDraft}>
+                  {editingId ? "Save Changes" : "Add Event"}
+                </button>
               </div>
             </div>
           </div>
         ) : null}
 
-        <div style={S.footerNote}>
-          ✅ Custom dropdowns (pure black hover) • ✅ Deploy-safe • ✅ Optional “Advance → Finance” link
-        </div>
+        <div style={S.footerNote}>✅ Deploy-safe • ✅ Pure Black hover on dropdown menus/options • ✅ Cross-tab write only when you click “Add Income to Finance”</div>
       </main>
     </div>
   );
 }
 
-/* ================== COMPONENTS ================== */
+/* ================== UI COMPONENTS ================== */
 function NavLink({ href, label, S, active }: { href: string; label: string; S: any; active?: boolean }) {
   const [h, setH] = useState(false);
   const base = active ? S.navActive : S.navItem;
-  const hovered = h ? { ...base, background: S.hoverBg, border: `1px solid ${S.hoverBd}` } : base;
+  const bg = h && !active ? S.hoverBlack : base.background;
+  const bd = h && !active ? S.hoverBd : base.border;
   return (
     <Link
       href={href}
-      style={hovered as any}
+      style={{ ...base, background: bg, border: bd } as any}
       onMouseEnter={() => setH(true)}
       onMouseLeave={() => setH(false)}
     >
@@ -867,74 +1028,53 @@ function NavLink({ href, label, S, active }: { href: string; label: string; S: a
   );
 }
 
-function HoverBtn({ label, onClick, kind, S }: { label: string; onClick: () => void; kind: "primary" | "secondary" | "danger"; S: any }) {
-  const [h, setH] = useState(false);
-  const base = kind === "primary" ? S.primaryBtn : kind === "danger" ? S.dangerBtn : S.secondaryBtn;
-  const hovered = h ? { ...base, background: S.hoverBg, border: `1px solid ${S.hoverBd}` } : base;
-  return (
-    <button
-      style={hovered}
-      onClick={onClick}
-      onMouseEnter={() => setH(true)}
-      onMouseLeave={() => setH(false)}
-    >
-      {label}
-    </button>
-  );
-}
-
-/**
- * Custom Dropdown (Fixes your issue)
- * - No native <select>
- * - Menu hover is PURE BLACK
- */
 function Dropdown({
   value,
-  onChange,
   options,
+  onChange,
   S,
+  compact,
 }: {
   value: string;
-  onChange: (v: string) => void;
   options: string[];
+  onChange: (v: string) => void;
   S: any;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [h, setH] = useState(false);
 
-  useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      const t = e.target as HTMLElement | null;
-      if (!t) return;
-      if (t.closest?.("[data-dd-root='1']")) return;
-      setOpen(false);
-    }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, []);
+  const btnStyle: CSSProperties = {
+    ...(compact ? S.ddBtnCompact : S.ddBtn),
+    background: h ? S.hoverBlack : (compact ? S.ddBtnCompact.background : S.ddBtn.background),
+    border: h ? `1px solid ${S.hoverBdColor}` : (compact ? S.ddBtnCompact.border : S.ddBtn.border),
+  };
 
   return (
-    <div style={{ position: "relative" }} data-dd-root="1">
+    <div style={S.ddWrap}>
       <button
         type="button"
-        style={S.ddBtn}
-        onClick={() => setOpen((s: boolean) => !s)}
+        style={btnStyle}
+        onClick={() => setOpen((v) => !v)}
+        onMouseEnter={() => setH(true)}
+        onMouseLeave={() => setH(false)}
       >
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</span>
+        <span style={{ fontWeight: 950 }}>{value}</span>
         <span style={{ opacity: 0.9 }}>▾</span>
       </button>
 
       {open ? (
-        <div style={S.ddMenu}>
+        <div style={S.ddMenu} onMouseLeave={() => setOpen(false)}>
           {options.map((opt) => (
             <DDItem
               key={opt}
               label={opt}
-              active={opt === value}
-              S={S}
+              active={String(opt) === String(value)}
               onClick={() => {
                 onChange(opt);
                 setOpen(false);
               }}
+              S={S}
             />
           ))}
         </div>
@@ -945,8 +1085,15 @@ function Dropdown({
 
 function DDItem({ label, active, onClick, S }: { label: string; active?: boolean; onClick: () => void; S: any }) {
   const [h, setH] = useState(false);
-  const bg = h ? S.ddHoverBg : active ? S.ddActiveBg : "transparent";
-  const bd = h ? S.ddHoverBd : "transparent";
+
+  const bg = h
+    ? "#000000" // PURE BLACK hover
+    : active
+    ? "rgba(255,255,255,0.06)" // active background
+    : "transparent";
+
+  const bd = h ? S.hoverBdColor : "transparent";
+
   return (
     <button
       type="button"
@@ -960,102 +1107,27 @@ function DDItem({ label, active, onClick, S }: { label: string; active?: boolean
   );
 }
 
-function EventCard({
-  e,
-  S,
-  onEdit,
-  onDelete,
-  onQuickStatus,
-  onAddAdvanceToFinance,
-}: {
-  e: EventItem;
-  S: any;
-  onEdit: () => void;
-  onDelete: () => void;
-  onQuickStatus: (s: EventStatus) => void;
-  onAddAdvanceToFinance: () => void;
-}) {
-  const [h, setH] = useState(false);
-  const card = h ? { ...S.card, background: S.hoverCardBg, border: `1px solid ${S.hoverBd}` } : S.card;
-  const budget = Number(e.budget || 0);
-  const adv = Number(e.advance || 0);
-  const bal = Math.max(0, budget - adv);
+function pillByStatus(status: EventStatus, S: any): CSSProperties {
+  if (status === "Completed") return S.pillOk;
+  if (status === "Cancelled") return S.pillBad;
+  if (status === "In Progress") return S.pillWarn;
+  if (status === "Confirmed") return S.pillAccent;
+  return S.pill;
+}
 
-  const statusStyle =
-    e.status === "Completed"
-      ? S.pillOk
-      : e.status === "Cancelled"
-      ? S.pillBad
-      : e.status === "Confirmed"
-      ? S.pillOk2
-      : e.status === "In Progress"
-      ? S.pillWarn
-      : S.pill;
-
-  const prStyle =
-    e.priority === "Urgent"
-      ? S.pillBad
-      : e.priority === "High"
-      ? S.pillWarn
-      : e.priority === "Low"
-      ? S.pill
-      : S.pillOk2;
-
+function InsightRow({ label, value, S, strong, dim }: { label: string; value: string; S: any; strong?: boolean; dim?: boolean }) {
   return (
-    <div
-      style={card}
-      onMouseEnter={() => setH(true)}
-      onMouseLeave={() => setH(false)}
-    >
-      <div style={S.rowBetween}>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <div style={S.dateChip}>{e.date}</div>
-          <div style={{ fontWeight: 950, fontSize: 15 }}>{e.title}</div>
-          <span style={statusStyle}>{e.status}</span>
-          <span style={S.pill}>{e.type}</span>
-          <span style={prStyle}>Priority: {e.priority}</span>
-          {e.city ? <span style={S.pill}>📍 {e.city}</span> : null}
-          {e.venue ? <span style={S.pill}>🏛 {e.venue}</span> : null}
-        </div>
-
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-          {budget > 0 ? <span style={S.moneyPill}>Budget {formatMoney(budget, "INR")}</span> : null}
-          {adv > 0 ? <span style={S.moneyPill}>Advance {formatMoney(adv, "INR")}</span> : null}
-          {budget > 0 ? <span style={S.moneyPill}>Balance {formatMoney(bal, "INR")}</span> : null}
-        </div>
-      </div>
-
-      <div style={S.metaLine}>
-        {e.clientName ? <span><b>Client:</b> {e.clientName}</span> : null}
-        {e.clientPhone ? <span> • <b>Phone:</b> {e.clientPhone}</span> : null}
-        {e.tags ? <span> • <b>Tags:</b> {e.tags}</span> : null}
-      </div>
-
-      {e.notes ? <div style={S.notes}>{e.notes}</div> : null}
-
-      <div style={S.cardFooter}>
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <HoverBtn label="Planned" kind="secondary" S={S} onClick={() => onQuickStatus("Planned")} />
-          <HoverBtn label="Confirmed" kind="secondary" S={S} onClick={() => onQuickStatus("Confirmed")} />
-          <HoverBtn label="In Progress" kind="secondary" S={S} onClick={() => onQuickStatus("In Progress")} />
-          <HoverBtn label="Completed" kind="secondary" S={S} onClick={() => onQuickStatus("Completed")} />
-          <HoverBtn label="Cancelled" kind="secondary" S={S} onClick={() => onQuickStatus("Cancelled")} />
-        </div>
-
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <HoverBtn label="Add Advance → Finance" kind="secondary" S={S} onClick={onAddAdvanceToFinance} />
-          <HoverBtn label="Edit" kind="primary" S={S} onClick={onEdit} />
-          <HoverBtn label="Delete" kind="danger" S={S} onClick={onDelete} />
-        </div>
-      </div>
+    <div style={S.row}>
+      <div style={{ fontWeight: strong ? 950 : 900, opacity: dim ? 0.75 : 1 }}>{label}</div>
+      <div style={{ fontWeight: strong ? 950 : 900 }}>{value}</div>
     </div>
   );
 }
 
 /* ================== STYLES ================== */
 function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
-  const hoverBg = T.hoverBlack; // PURE BLACK
-  const hoverBd = T.accentBd;
+  const hoverBg = T.hoverBlack;
+  const hoverBdColor = T.accentBd;
 
   return {
     app: {
@@ -1158,7 +1230,15 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
     smallMuted: { color: T.muted, fontSize: 12 },
     smallNote: { color: T.muted, fontSize: 12, lineHeight: 1.35 },
 
-    msg: { marginTop: 12, padding: 10, borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft, color: T.text, fontSize: 13 },
+    msg: {
+      marginTop: 12,
+      padding: 10,
+      borderRadius: 14,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+      color: T.text,
+      fontSize: 13,
+    },
 
     primaryBtn: {
       padding: "12px 14px",
@@ -1187,15 +1267,33 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       fontWeight: 950,
       cursor: "pointer",
     },
+    linkBtn: {
+      padding: "12px 14px",
+      borderRadius: 14,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+      color: T.text,
+      fontWeight: 950,
+      textDecoration: "none",
+      display: "inline-flex",
+      alignItems: "center",
+    },
 
-    panel: { marginTop: 12, padding: 14, borderRadius: 18, border: `1px solid ${T.border}`, background: T.panel, backdropFilter: "blur(10px)" },
+    panel: {
+      marginTop: 12,
+      padding: 14,
+      borderRadius: 18,
+      border: `1px solid ${T.border}`,
+      background: T.panel,
+      backdropFilter: "blur(10px)",
+    },
     panelTitle: { fontWeight: 950, color: T.accentTx },
 
     filtersGrid: {
       marginTop: 12,
       display: "grid",
       gap: 10,
-      gridTemplateColumns: "220px 220px 1fr 220px 220px 220px",
+      gridTemplateColumns: "220px 220px 1fr 220px 220px 220px 220px",
       alignItems: "end",
     },
     field: { display: "grid", gap: 6 },
@@ -1211,17 +1309,6 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       outline: "none",
       fontSize: 14,
     },
-    textarea: {
-      minHeight: 110,
-      padding: compact ? "10px 10px" : "12px 12px",
-      borderRadius: 14,
-      border: `1px solid ${T.border}`,
-      background: T.inputBg,
-      color: T.text,
-      outline: "none",
-      fontSize: 14,
-      resize: "vertical",
-    },
 
     kpiGrid: { marginTop: 12, display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 },
     kpiCard: { padding: 14, borderRadius: 18, border: `1px solid ${T.border}`, background: T.soft },
@@ -1229,20 +1316,29 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
     kpiValue: { marginTop: 8, fontSize: 20, fontWeight: 950 },
     kpiSub: { marginTop: 6, color: T.muted, fontSize: 12, lineHeight: 1.3 },
 
-    badgeOk: { display: "inline-flex", padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.okBd}`, background: T.okBg, color: T.okTx, fontWeight: 950, fontSize: 12 },
-    badgeWarn: { display: "inline-flex", padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.warnBd}`, background: T.warnBg, color: T.warnTx, fontWeight: 950, fontSize: 12 },
-    badgeBad: { display: "inline-flex", padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.badBd}`, background: T.badBg, color: T.badTx, fontWeight: 950, fontSize: 12 },
+    grid2: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
+
+    statement: { marginTop: 12, display: "grid", gap: 10 },
+    row: {
+      display: "flex",
+      justifyContent: "space-between",
+      gap: 10,
+      padding: "10px 12px",
+      borderRadius: 14,
+      border: `1px solid ${T.border}`,
+      background: T.soft,
+    },
+    hr: { height: 1, background: T.border, margin: "4px 0" },
 
     empty: { marginTop: 12, padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft, color: T.muted, fontWeight: 900 },
 
+    txCard: { padding: 14, borderRadius: 18, border: `1px solid ${T.border}`, background: T.soft },
+
+    reminderCard: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft },
+
     rowBetween: { display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" },
 
-    card: { padding: 14, borderRadius: 18, border: `1px solid ${T.border}`, background: T.soft },
-    hoverCardBg: hoverBg,
-    hoverBg,
-    hoverBd,
-
-    dateChip: {
+    pill: {
       padding: "6px 10px",
       borderRadius: 999,
       border: `1px solid ${T.border}`,
@@ -1251,43 +1347,17 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       fontSize: 12,
       whiteSpace: "nowrap",
     },
-
-    pill: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.border}`, background: "transparent", fontWeight: 950, fontSize: 12, whiteSpace: "nowrap" },
     pillOk: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.okBd}`, background: T.okBg, color: T.okTx, fontWeight: 950, fontSize: 12, whiteSpace: "nowrap" },
-    pillOk2: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.accentBd}`, background: T.accentBg, color: T.accentTx, fontWeight: 950, fontSize: 12, whiteSpace: "nowrap" },
     pillWarn: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.warnBd}`, background: T.warnBg, color: T.warnTx, fontWeight: 950, fontSize: 12, whiteSpace: "nowrap" },
     pillBad: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.badBd}`, background: T.badBg, color: T.badTx, fontWeight: 950, fontSize: 12, whiteSpace: "nowrap" },
+    pillAccent: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.accentBd}`, background: T.accentBg, color: T.accentTx, fontWeight: 950, fontSize: 12, whiteSpace: "nowrap" },
 
-    moneyPill: { padding: "8px 12px", borderRadius: 999, border: `1px solid ${T.accentBd}`, background: T.accentBg, color: T.accentTx, fontWeight: 950, whiteSpace: "nowrap" },
+    cardGrid: { marginTop: 12, display: "grid", gap: 10, gridTemplateColumns: "repeat(4, minmax(0, 1fr))" },
+    cardMini: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: "rgba(255,255,255,0.02)" },
+    cardMiniVal: { marginTop: 6, fontWeight: 950 },
 
-    metaLine: { marginTop: 10, color: T.muted, fontSize: 12, fontWeight: 900, lineHeight: 1.4 },
-    notes: { marginTop: 10, padding: 12, borderRadius: 14, border: `1px solid ${T.border}`, background: "rgba(255,255,255,0.02)", color: T.text, fontSize: 13, lineHeight: 1.45, fontWeight: 700 },
-
-    cardFooter: { marginTop: 12, display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" },
-
-    modalOverlay: {
-      position: "fixed",
-      inset: 0,
-      background: "rgba(0,0,0,0.55)",
-      display: "grid",
-      placeItems: "center",
-      padding: 14,
-      zIndex: 50,
-    },
-    modal: {
-      width: "min(1100px, 100%)",
-      borderRadius: 18,
-      border: `1px solid ${T.border}`,
-      background: T.panel2,
-      backdropFilter: "blur(10px)",
-      padding: 14,
-    },
-    modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" },
-    modalTitle: { fontWeight: 950, fontSize: 18, color: T.accentTx },
-    modalGrid: { marginTop: 12, display: "grid", gridTemplateColumns: "220px 1fr 220px 220px 220px", gap: 10, alignItems: "end" },
-    modalFooter: { marginTop: 12, display: "flex", justifyContent: "flex-end" },
-
-    // Custom Dropdown styles
+    // Dropdown (custom) — PURE BLACK hover is handled in component state
+    ddWrap: { position: "relative" },
     ddBtn: {
       width: 220,
       padding: compact ? "10px 10px" : "12px 12px",
@@ -1297,7 +1367,21 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       color: T.text,
       outline: "none",
       fontSize: 14,
-      fontWeight: 900,
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 10,
+    },
+    ddBtnCompact: {
+      width: 180,
+      padding: "10px 10px",
+      borderRadius: 14,
+      border: `1px solid ${T.border}`,
+      background: T.inputBg,
+      color: T.text,
+      outline: "none",
+      fontSize: 13,
       cursor: "pointer",
       display: "flex",
       alignItems: "center",
@@ -1308,32 +1392,57 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       position: "absolute",
       top: "calc(100% + 8px)",
       left: 0,
-      width: 220,
-      borderRadius: 14,
+      width: "max(220px, 100%)",
+      zIndex: 60,
+      borderRadius: 16,
       border: `1px solid ${T.border}`,
       background: T.panel2,
-      backdropFilter: "blur(10px)",
+      boxShadow: "0 18px 60px rgba(0,0,0,0.45)",
       padding: 8,
       display: "grid",
       gap: 6,
-      zIndex: 60,
-      boxShadow: "0 18px 60px rgba(0,0,0,0.55)",
+      backdropFilter: "blur(10px)",
+      maxHeight: 320,
+      overflow: "auto",
     },
     ddItem: {
-      width: "100%",
       textAlign: "left",
+      width: "100%",
       padding: "10px 10px",
       borderRadius: 12,
-      border: "1px solid transparent",
-      background: "transparent",
       color: T.text,
+      background: "transparent",
       cursor: "pointer",
-      fontWeight: 950,
-      fontSize: 13,
+      fontWeight: 900,
+      border: "1px solid transparent",
     },
-    ddHoverBg: hoverBg,         // PURE BLACK hover
-    ddHoverBd: T.accentBd,
-    ddActiveBg: "rgba(255,255,255,0.06)",
+
+    // hover helpers exposed for components
+    hoverBlack: hoverBg,
+    hoverBdColor: hoverBdColor,
+    hoverBd: `1px solid ${hoverBdColor}`,
+
+    modalOverlay: {
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.55)",
+      display: "grid",
+      placeItems: "center",
+      padding: 14,
+      zIndex: 80,
+    },
+    modal: {
+      width: "min(1050px, 100%)",
+      borderRadius: 18,
+      border: `1px solid ${T.border}`,
+      background: T.panel2,
+      backdropFilter: "blur(10px)",
+      padding: 14,
+    },
+    modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" },
+    modalTitle: { fontWeight: 950, fontSize: 18, color: T.accentTx },
+    modalGrid: { marginTop: 12, display: "grid", gridTemplateColumns: "220px 1fr 220px 220px 220px", gap: 10, alignItems: "end" },
+    modalFooter: { marginTop: 12, display: "flex", justifyContent: "flex-end" },
 
     footerNote: { color: T.muted, fontSize: 12, textAlign: "center", padding: 10 },
   };
