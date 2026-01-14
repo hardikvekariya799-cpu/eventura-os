@@ -3,14 +3,21 @@
 import React, { useEffect, useMemo, useState, type CSSProperties } from "react";
 import Link from "next/link";
 
-/* ================== STORAGE ================== */
+/* ================== STORAGE KEYS ================== */
 const LS_EMAIL = "eventura_email";
 const LS_SETTINGS = "eventura_os_settings_v3";
 
-const EV_KEYS_READ = ["eventura-events", "eventura_os_events_v1", "eventura_events_v1"];
-const EV_KEY_WRITE = "eventura-events";
+const EVENTS_KEYS_READ = ["eventura-events", "eventura_os_events_v1", "eventura_events_v1"];
+const EVENTS_KEY_WRITE = "eventura-events";
 
-const FIN_KEY_WRITE = "eventura-finance-transactions"; // connect ONLY when needed (Create Finance Tx)
+/* Finance (optional linkage: create token/advance tx from event) */
+const FIN_KEYS_READ = [
+  "eventura-finance-transactions",
+  "eventura_os_fin_v1",
+  "eventura_fin_v1",
+  "eventura_os_fin_tx_v1",
+];
+const FIN_KEY_WRITE = "eventura-finance-transactions";
 
 /* ================== TYPES ================== */
 type Theme =
@@ -29,24 +36,26 @@ type AppSettings = {
   ceoEmail?: string;
 };
 
-type EventStatus = "Lead" | "Tentative" | "Confirmed" | "In Progress" | "Completed" | "Cancelled";
-type EventPackage = "Silver" | "Gold" | "Platinum" | "Custom";
+type EventStatus = "Planned" | "Confirmed" | "In Progress" | "Completed" | "Cancelled";
+type EventType = "Wedding" | "Corporate" | "Birthday" | "Engagement" | "Festival" | "Exhibition" | "Other";
+type Priority = "Low" | "Medium" | "High" | "Urgent";
 
 type EventItem = {
   id: string;
   date: string; // YYYY-MM-DD
   title: string;
-  city: string;
-  clientName: string;
-  clientPhone: string;
-  status: EventStatus;
-  package: EventPackage;
-  guests: number;
+  city?: string;
 
-  // Finance-related fields (only for analytics + optional push to Finance tab)
-  totalBudget: number; // total booking value
-  advanceReceived: number; // money already received
-  vendorCostEstimate: number; // estimated direct cost (COGS)
+  status: EventStatus;
+  type: EventType;
+  priority: Priority;
+
+  budget?: number;
+  advance?: number; // token received
+  balanceDue?: number; // computed
+  clientName?: string;
+  clientPhone?: string;
+  venue?: string;
 
   notes?: string;
   tags?: string;
@@ -57,10 +66,9 @@ type EventItem = {
 
 type TxType = "Income" | "Expense";
 type PayMethod = "Cash" | "UPI" | "Bank" | "Card" | "Cheque" | "Other";
-
 type FinanceTx = {
   id: string;
-  date: string;
+  date: string; // YYYY-MM-DD
   type: TxType;
   amount: number;
   category: string;
@@ -72,7 +80,7 @@ type FinanceTx = {
   updatedAt: string;
 };
 
-/* ================== HELPERS ================== */
+/* ================== SAFE HELPERS ================== */
 function safeParse<T>(raw: string | null, fallback: T): T {
   try {
     return raw ? (JSON.parse(raw) as T) : fallback;
@@ -96,9 +104,9 @@ function loadFirstKey<T>(keys: string[], fallback: T): { keyUsed: string | null;
 }
 function writeEvents(list: EventItem[]) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(EV_KEY_WRITE, JSON.stringify(list));
+  localStorage.setItem(EVENTS_KEY_WRITE, JSON.stringify(list));
 }
-function writeFinanceTx(list: FinanceTx[]) {
+function writeFin(list: FinanceTx[]) {
   if (typeof window === "undefined") return;
   localStorage.setItem(FIN_KEY_WRITE, JSON.stringify(list));
 }
@@ -114,9 +122,9 @@ function todayYMD(): string {
   const dd = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
-function isoPlusDays(days: number): string {
+function isoMinusDays(days: number): string {
   const d = new Date();
-  d.setDate(d.getDate() + days);
+  d.setDate(d.getDate() - days);
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}-${mm}-${dd}`;
@@ -129,92 +137,75 @@ function parseAmount(v: any): number {
   const n = typeof v === "number" ? v : Number(String(v ?? "").replace(/,/g, "").trim());
   return Number.isFinite(n) ? n : 0;
 }
-function formatMoney(amount: number, currency: "INR" | "CAD" | "USD") {
+function formatMoney(amount: number, currency: "INR" | "CAD" | "USD" = "INR") {
   try {
     return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
   } catch {
     return `${amount.toFixed(2)} ${currency}`;
   }
 }
-function exportCSV(filename: string, rows: Record<string, any>[]) {
-  const keys = Array.from(new Set(rows.flatMap((r) => Object.keys(r))));
-  const esc = (v: any) => {
-    const s = String(v ?? "");
-    if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replace(/"/g, '""')}"`;
-    return s;
-  };
-  const csv = [keys.join(","), ...rows.map((r) => keys.map((k) => esc(r[k])).join(","))].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-function exportJSON(filename: string, obj: any) {
-  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 /* ================== NORMALIZER ================== */
 function normalizeEvents(raw: any): EventItem[] {
   const arr = Array.isArray(raw) ? raw : [];
   const out: EventItem[] = [];
+
   for (const x of arr) {
-    const date = String(x?.date ?? x?.eventDate ?? "").slice(0, 10);
-    if (!date) continue;
-
-    const statusRaw = String(x?.status ?? "Lead") as EventStatus;
-    const status: EventStatus = (
-      ["Lead", "Tentative", "Confirmed", "In Progress", "Completed", "Cancelled"].includes(statusRaw)
-        ? statusRaw
-        : "Lead"
-    ) as EventStatus;
-
-    const pkgRaw = String(x?.package ?? x?.pkg ?? "Custom") as EventPackage;
-    const pkg: EventPackage = (["Silver", "Gold", "Platinum", "Custom"].includes(pkgRaw) ? pkgRaw : "Custom") as EventPackage;
-
     const id = String(x?.id ?? x?._id ?? uid());
-    const title = String(x?.title ?? x?.name ?? "Event").trim() || "Event";
-    const city = String(x?.city ?? "Surat").trim() || "Surat";
-    const clientName = String(x?.clientName ?? x?.client ?? "").trim();
-    const clientPhone = String(x?.clientPhone ?? x?.phone ?? "").trim();
+    const date = String(x?.date ?? x?.eventDate ?? "").slice(0, 10);
+    const title = String(x?.title ?? x?.name ?? "").trim();
+    if (!date || !title) continue;
 
-    const guests = Math.max(0, Math.floor(parseAmount(x?.guests ?? x?.guestCount ?? 0)));
-    const totalBudget = Math.max(0, parseAmount(x?.totalBudget ?? x?.budget ?? 0));
-    const advanceReceived = Math.max(0, parseAmount(x?.advanceReceived ?? x?.advance ?? 0));
-    const vendorCostEstimate = Math.max(0, parseAmount(x?.vendorCostEstimate ?? x?.cogs ?? x?.vendorCost ?? 0));
+    const statusRaw = String(x?.status ?? "Planned") as EventStatus;
+    const status: EventStatus =
+      statusRaw === "Planned" ||
+      statusRaw === "Confirmed" ||
+      statusRaw === "In Progress" ||
+      statusRaw === "Completed" ||
+      statusRaw === "Cancelled"
+        ? statusRaw
+        : "Planned";
 
-    const notes = x?.notes ? String(x.notes) : x?.note ? String(x.note) : undefined;
-    const tags = x?.tags ? String(x.tags) : undefined;
+    const typeRaw = String(x?.type ?? "Other") as EventType;
+    const type: EventType =
+      typeRaw === "Wedding" ||
+      typeRaw === "Corporate" ||
+      typeRaw === "Birthday" ||
+      typeRaw === "Engagement" ||
+      typeRaw === "Festival" ||
+      typeRaw === "Exhibition" ||
+      typeRaw === "Other"
+        ? typeRaw
+        : "Other";
+
+    const prRaw = String(x?.priority ?? "Medium") as Priority;
+    const priority: Priority = prRaw === "Low" || prRaw === "Medium" || prRaw === "High" || prRaw === "Urgent" ? prRaw : "Medium";
+
+    const budget = parseAmount(x?.budget ?? 0);
+    const advance = parseAmount(x?.advance ?? x?.token ?? 0);
 
     out.push({
       id,
       date,
       title,
-      city,
-      clientName,
-      clientPhone,
+      city: x?.city ? String(x.city) : undefined,
       status,
-      package: pkg,
-      guests,
-      totalBudget,
-      advanceReceived,
-      vendorCostEstimate,
-      notes,
-      tags,
+      type,
+      priority,
+      budget: budget > 0 ? budget : undefined,
+      advance: advance > 0 ? advance : undefined,
+      balanceDue: Math.max(0, (budget > 0 ? budget : 0) - (advance > 0 ? advance : 0)) || undefined,
+      clientName: x?.clientName ? String(x.clientName) : undefined,
+      clientPhone: x?.clientPhone ? String(x.clientPhone) : undefined,
+      venue: x?.venue ? String(x.venue) : undefined,
+      notes: x?.notes ? String(x.notes) : x?.note ? String(x.note) : undefined,
+      tags: x?.tags ? String(x.tags) : undefined,
       createdAt: String(x?.createdAt ?? nowISO()),
       updatedAt: String(x?.updatedAt ?? nowISO()),
     });
   }
 
-  // De-dupe by id (keep latest)
+  // de-dupe by id (keep latest updatedAt)
   const m = new Map<string, EventItem>();
   for (const e of out) {
     const prev = m.get(e.id);
@@ -222,6 +213,43 @@ function normalizeEvents(raw: any): EventItem[] {
     else m.set(e.id, prev.updatedAt >= e.updatedAt ? prev : e);
   }
 
+  return Array.from(m.values()).sort((a, b) => (a.date < b.date ? 1 : -1));
+}
+
+function normalizeFin(raw: any): FinanceTx[] {
+  const arr = Array.isArray(raw) ? raw : [];
+  const out: FinanceTx[] = [];
+  for (const x of arr) {
+    const id = String(x?.id ?? x?._id ?? uid());
+    const date = String(x?.date ?? x?.txDate ?? "").slice(0, 10);
+    if (!date) continue;
+
+    const t = String(x?.type ?? "").toLowerCase();
+    const type: TxType = t === "income" ? "Income" : "Expense";
+
+    const amount = parseAmount(x?.amount ?? x?.value ?? 0);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+
+    out.push({
+      id,
+      date,
+      type,
+      amount: Math.abs(amount),
+      category: String(x?.category ?? "Other Income"),
+      vendor: x?.vendor ? String(x.vendor) : undefined,
+      note: x?.note ? String(x.note) : x?.notes ? String(x.notes) : undefined,
+      method: x?.method ? (String(x.method) as PayMethod) : undefined,
+      tags: x?.tags ? String(x.tags) : undefined,
+      createdAt: String(x?.createdAt ?? nowISO()),
+      updatedAt: String(x?.updatedAt ?? nowISO()),
+    });
+  }
+  const m = new Map<string, FinanceTx>();
+  for (const tx of out) {
+    const prev = m.get(tx.id);
+    if (!prev) m.set(tx.id, tx);
+    else m.set(tx.id, prev.updatedAt >= tx.updatedAt ? prev : tx);
+  }
   return Array.from(m.values()).sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 
@@ -237,7 +265,10 @@ function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
     border: hc ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.10)",
     soft: hc ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.04)",
     inputBg: hc ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-    hoverSolidBlack: "#000000", // ✅ IMPORTANT: not transparent, not white
+
+    // IMPORTANT: PURE BLACK HOVER (NOT TRANSPARENT)
+    hoverBlack: "#000000",
+
     okBg: "rgba(34,197,94,0.12)",
     okBd: hc ? "rgba(34,197,94,0.45)" : "rgba(34,197,94,0.28)",
     okTx: "#86EFAC",
@@ -251,15 +282,51 @@ function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
 
   switch (theme) {
     case "Midnight Purple":
-      return { ...base, glow1: "rgba(139,92,246,0.22)", glow2: "rgba(212,175,55,0.14)", accentBg: "rgba(139,92,246,0.16)", accentBd: hc ? "rgba(139,92,246,0.55)" : "rgba(139,92,246,0.30)", accentTx: "#DDD6FE" };
+      return {
+        ...base,
+        glow1: "rgba(139,92,246,0.22)",
+        glow2: "rgba(212,175,55,0.14)",
+        accentBg: "rgba(139,92,246,0.16)",
+        accentBd: hc ? "rgba(139,92,246,0.55)" : "rgba(139,92,246,0.30)",
+        accentTx: "#DDD6FE",
+      };
     case "Emerald Night":
-      return { ...base, glow1: "rgba(16,185,129,0.18)", glow2: "rgba(212,175,55,0.12)", accentBg: "rgba(16,185,129,0.16)", accentBd: hc ? "rgba(16,185,129,0.55)" : "rgba(16,185,129,0.30)", accentTx: "#A7F3D0" };
+      return {
+        ...base,
+        glow1: "rgba(16,185,129,0.18)",
+        glow2: "rgba(212,175,55,0.12)",
+        accentBg: "rgba(16,185,129,0.16)",
+        accentBd: hc ? "rgba(16,185,129,0.55)" : "rgba(16,185,129,0.30)",
+        accentTx: "#A7F3D0",
+      };
     case "Ocean Blue":
-      return { ...base, glow1: "rgba(59,130,246,0.22)", glow2: "rgba(34,211,238,0.14)", accentBg: "rgba(59,130,246,0.16)", accentBd: hc ? "rgba(59,130,246,0.55)" : "rgba(59,130,246,0.30)", accentTx: "#BFDBFE" };
+      return {
+        ...base,
+        glow1: "rgba(59,130,246,0.22)",
+        glow2: "rgba(34,211,238,0.14)",
+        accentBg: "rgba(59,130,246,0.16)",
+        accentBd: hc ? "rgba(59,130,246,0.55)" : "rgba(59,130,246,0.30)",
+        accentTx: "#BFDBFE",
+      };
     case "Ruby Noir":
-      return { ...base, glow1: "rgba(244,63,94,0.18)", glow2: "rgba(212,175,55,0.10)", accentBg: "rgba(244,63,94,0.14)", accentBd: hc ? "rgba(244,63,94,0.50)" : "rgba(244,63,94,0.26)", accentTx: "#FDA4AF" };
+      return {
+        ...base,
+        glow1: "rgba(244,63,94,0.18)",
+        glow2: "rgba(212,175,55,0.10)",
+        accentBg: "rgba(244,63,94,0.14)",
+        accentBd: hc ? "rgba(244,63,94,0.50)" : "rgba(244,63,94,0.26)",
+        accentTx: "#FDA4AF",
+      };
     case "Carbon Black":
-      return { ...base, bg: "#03040A", glow1: "rgba(255,255,255,0.10)", glow2: "rgba(212,175,55,0.10)", accentBg: "rgba(212,175,55,0.14)", accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)", accentTx: "#FDE68A" };
+      return {
+        ...base,
+        bg: "#03040A",
+        glow1: "rgba(255,255,255,0.10)",
+        glow2: "rgba(212,175,55,0.10)",
+        accentBg: "rgba(212,175,55,0.14)",
+        accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)",
+        accentTx: "#FDE68A",
+      };
     case "Ivory Light":
       return {
         ...base,
@@ -278,10 +345,19 @@ function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
         accentTx: "#92400E",
         okTx: "#166534",
         warnTx: "#92400E",
-        hoverSolidBlack: "#000000",
+
+        // still pure black hover
+        hoverBlack: "#000000",
       };
     default:
-      return { ...base, glow1: "rgba(255,215,110,0.18)", glow2: "rgba(120,70,255,0.18)", accentBg: "rgba(212,175,55,0.12)", accentBd: hc ? "rgba(212,175,55,0.50)" : "rgba(212,175,55,0.22)", accentTx: "#FDE68A" };
+      return {
+        ...base,
+        glow1: "rgba(255,215,110,0.18)",
+        glow2: "rgba(120,70,255,0.18)",
+        accentBg: "rgba(212,175,55,0.12)",
+        accentBd: hc ? "rgba(212,175,55,0.50)" : "rgba(212,175,55,0.22)",
+        accentTx: "#FDE68A",
+      };
   }
 }
 
@@ -292,14 +368,17 @@ export default function EventsPage() {
   const [keysUsed, setKeysUsed] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
 
-  const [from, setFrom] = useState(todayYMD());
-  const [to, setTo] = useState(isoPlusDays(60));
+  const [from, setFrom] = useState(isoMinusDays(60));
+  const [to, setTo] = useState(todayYMD());
 
   const [events, setEvents] = useState<EventItem[]>([]);
+  const [finTxs, setFinTxs] = useState<FinanceTx[]>([]);
+
+  // Filters
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<EventStatus | "All">("All");
-  const [cityFilter, setCityFilter] = useState<string>("All");
-  const [packageFilter, setPackageFilter] = useState<EventPackage | "All">("All");
+  const [typeFilter, setTypeFilter] = useState<EventType | "All">("All");
+  const [priorityFilter, setPriorityFilter] = useState<Priority | "All">("All");
 
   // Modal add/edit
   const [openForm, setOpenForm] = useState(false);
@@ -309,28 +388,32 @@ export default function EventsPage() {
     date: string;
     title: string;
     city: string;
+    venue: string;
+
+    status: EventStatus;
+    type: EventType;
+    priority: Priority;
+
+    budget: string;
+    advance: string;
+
     clientName: string;
     clientPhone: string;
-    status: EventStatus;
-    package: EventPackage;
-    guests: string;
-    totalBudget: string;
-    advanceReceived: string;
-    vendorCostEstimate: string;
+
     notes: string;
     tags: string;
   }>({
     date: todayYMD(),
     title: "",
     city: "Surat",
+    venue: "",
+    status: "Planned",
+    type: "Wedding",
+    priority: "Medium",
+    budget: "",
+    advance: "",
     clientName: "",
     clientPhone: "",
-    status: "Lead",
-    package: "Custom",
-    guests: "",
-    totalBudget: "",
-    advanceReceived: "",
-    vendorCostEstimate: "",
     notes: "",
     tags: "",
   });
@@ -345,13 +428,16 @@ export default function EventsPage() {
 
   function toast(t: string) {
     setMsg(t);
-    setTimeout(() => setMsg(""), 1500);
+    setTimeout(() => setMsg(""), 1400);
   }
 
   function hydrate() {
-    const loaded = loadFirstKey<any[]>(EV_KEYS_READ, []);
+    const loaded = loadFirstKey<any[]>(EVENTS_KEYS_READ, []);
     setKeysUsed(loaded.keyUsed);
     setEvents(normalizeEvents(loaded.data));
+
+    const finLoaded = loadFirstKey<any[]>(FIN_KEYS_READ, []);
+    setFinTxs(normalizeFin(finLoaded.data));
   }
 
   function persist(next: EventItem[], toastMsg?: string) {
@@ -368,91 +454,33 @@ export default function EventsPage() {
   const T = ThemeTokens((settings.theme as Theme) || "Royal Gold", settings.highContrast);
   const S = useMemo(() => makeStyles(T, !!settings.compactTables), [T, settings.compactTables]);
 
-  const currency = "INR" as const; // keep simple here; Finance tab controls currency
-
-  const citiesAll = useMemo(() => {
-    const set = new Set<string>();
-    for (const e of events) if (e.city) set.add(e.city);
-    return Array.from(set).sort();
-  }, [events]);
-
   const eventsFiltered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return events.filter((e) => {
       if (!inRange(e.date, from, to)) return false;
       if (statusFilter !== "All" && e.status !== statusFilter) return false;
-      if (cityFilter !== "All" && e.city !== cityFilter) return false;
-      if (packageFilter !== "All" && e.package !== packageFilter) return false;
+      if (typeFilter !== "All" && e.type !== typeFilter) return false;
+      if (priorityFilter !== "All" && e.priority !== priorityFilter) return false;
 
       if (!q) return true;
-      const blob = [
-        e.date,
-        e.title,
-        e.city,
-        e.clientName,
-        e.clientPhone,
-        e.status,
-        e.package,
-        e.notes || "",
-        e.tags || "",
-      ]
+      const blob = [e.date, e.title, e.city || "", e.venue || "", e.status, e.type, e.priority, e.clientName || "", e.clientPhone || "", e.tags || "", e.notes || ""]
         .join(" ")
         .toLowerCase();
       return blob.includes(q);
     });
-  }, [events, from, to, search, statusFilter, cityFilter, packageFilter]);
+  }, [events, from, to, search, statusFilter, typeFilter, priorityFilter]);
 
   const kpis = useMemo(() => {
-    let total = 0;
-    let leads = 0;
-    let confirmed = 0;
-    let completed = 0;
-    let cancelled = 0;
+    const total = eventsFiltered.length;
+    const completed = eventsFiltered.filter((e) => e.status === "Completed").length;
+    const upcoming = eventsFiltered.filter((e) => e.date >= todayYMD() && e.status !== "Cancelled").length;
 
-    let pipelineValue = 0;
-    let expectedRevenue = 0; // confirmed + in progress + completed
-    let advances = 0;
-    let balanceDue = 0;
-    let estCogs = 0;
+    const budgetSum = eventsFiltered.reduce((a, e) => a + (e.budget || 0), 0);
+    const advanceSum = eventsFiltered.reduce((a, e) => a + (e.advance || 0), 0);
+    const balanceSum = eventsFiltered.reduce((a, e) => a + Math.max(0, (e.budget || 0) - (e.advance || 0)), 0);
 
-    for (const e of eventsFiltered) {
-      total += 1;
-      if (e.status === "Lead" || e.status === "Tentative") leads += 1;
-      if (e.status === "Confirmed" || e.status === "In Progress") confirmed += 1;
-      if (e.status === "Completed") completed += 1;
-      if (e.status === "Cancelled") cancelled += 1;
-
-      const booking = e.totalBudget || 0;
-      const adv = e.advanceReceived || 0;
-      const bal = Math.max(0, booking - adv);
-      const cogs = e.vendorCostEstimate || 0;
-
-      // Pipeline: anything not cancelled
-      if (e.status !== "Cancelled") pipelineValue += booking;
-
-      // Expected revenue: confirmed + in progress + completed
-      if (["Confirmed", "In Progress", "Completed"].includes(e.status)) expectedRevenue += booking;
-
-      advances += adv;
-      balanceDue += bal;
-      estCogs += cogs;
-    }
-
-    const estGrossProfit = expectedRevenue - estCogs;
-
-    return {
-      total,
-      leads,
-      confirmed,
-      completed,
-      cancelled,
-      pipelineValue,
-      expectedRevenue,
-      advances,
-      balanceDue,
-      estCogs,
-      estGrossProfit,
-    };
+    const urgent = eventsFiltered.filter((e) => e.priority === "Urgent").length;
+    return { total, completed, upcoming, budgetSum, advanceSum, balanceSum, urgent };
   }, [eventsFiltered]);
 
   function openAdd() {
@@ -461,14 +489,14 @@ export default function EventsPage() {
       date: todayYMD(),
       title: "",
       city: "Surat",
+      venue: "",
+      status: "Planned",
+      type: "Wedding",
+      priority: "Medium",
+      budget: "",
+      advance: "",
       clientName: "",
       clientPhone: "",
-      status: "Lead",
-      package: "Custom",
-      guests: "",
-      totalBudget: "",
-      advanceReceived: "",
-      vendorCostEstimate: "",
       notes: "",
       tags: "",
     });
@@ -482,15 +510,15 @@ export default function EventsPage() {
     setDraft({
       date: e.date,
       title: e.title,
-      city: e.city,
-      clientName: e.clientName,
-      clientPhone: e.clientPhone,
+      city: e.city || "",
+      venue: e.venue || "",
       status: e.status,
-      package: e.package,
-      guests: String(e.guests || ""),
-      totalBudget: String(e.totalBudget || ""),
-      advanceReceived: String(e.advanceReceived || ""),
-      vendorCostEstimate: String(e.vendorCostEstimate || ""),
+      type: e.type,
+      priority: e.priority,
+      budget: e.budget ? String(e.budget) : "",
+      advance: e.advance ? String(e.advance) : "",
+      clientName: e.clientName || "",
+      clientPhone: e.clientPhone || "",
       notes: e.notes || "",
       tags: e.tags || "",
     });
@@ -508,35 +536,39 @@ export default function EventsPage() {
     if (!date) return toast("❌ Date required");
     if (!title) return toast("❌ Title required");
 
-    const next: EventItem = {
+    const budget = parseAmount(draft.budget);
+    const advance = parseAmount(draft.advance);
+
+    const nextItem: EventItem = {
       id: editingId || uid(),
       date,
       title,
-      city: String(draft.city || "Surat").trim() || "Surat",
-      clientName: String(draft.clientName || "").trim(),
-      clientPhone: String(draft.clientPhone || "").trim(),
+      city: draft.city.trim() || undefined,
+      venue: draft.venue.trim() || undefined,
       status: draft.status,
-      package: draft.package,
-      guests: Math.max(0, Math.floor(parseAmount(draft.guests))),
-      totalBudget: Math.max(0, parseAmount(draft.totalBudget)),
-      advanceReceived: Math.max(0, parseAmount(draft.advanceReceived)),
-      vendorCostEstimate: Math.max(0, parseAmount(draft.vendorCostEstimate)),
+      type: draft.type,
+      priority: draft.priority,
+      budget: budget > 0 ? budget : undefined,
+      advance: advance > 0 ? advance : undefined,
+      balanceDue: Math.max(0, (budget > 0 ? budget : 0) - (advance > 0 ? advance : 0)) || undefined,
+      clientName: draft.clientName.trim() || undefined,
+      clientPhone: draft.clientPhone.trim() || undefined,
       notes: draft.notes.trim() || undefined,
       tags: draft.tags.trim() || undefined,
       createdAt: editingId ? String(events.find((x) => x.id === editingId)?.createdAt ?? nowISO()) : nowISO(),
       updatedAt: nowISO(),
     };
 
-    const list = editingId ? events.map((x) => (x.id === editingId ? next : x)) : [next, ...events];
-    list.sort((a, b) => (a.date < b.date ? 1 : -1));
-    persist(list, editingId ? "✅ Updated" : "✅ Added");
+    const next = editingId ? events.map((x) => (x.id === editingId ? nextItem : x)) : [nextItem, ...events];
+    next.sort((a, b) => (a.date < b.date ? 1 : -1));
+    persist(next, editingId ? "✅ Updated" : "✅ Added");
     closeForm();
   }
 
   function removeEvent(id: string) {
     const e = events.find((x) => x.id === id);
     if (!e) return;
-    const ok = confirm(`Delete "${e.title}" on ${e.date}?`);
+    const ok = confirm(`Delete event: "${e.title}" on ${e.date}?`);
     if (!ok) return;
     persist(events.filter((x) => x.id !== id), "🗑️ Deleted");
   }
@@ -544,104 +576,53 @@ export default function EventsPage() {
   function quickStatus(id: string, status: EventStatus) {
     const e = events.find((x) => x.id === id);
     if (!e) return;
-    const next: EventItem = { ...e, status, updatedAt: nowISO() };
-    const list = events.map((x) => (x.id === id ? next : x)).sort((a, b) => (a.date < b.date ? 1 : -1));
-    persist(list, `✅ Status → ${status}`);
+    const next = events.map((x) => (x.id === id ? { ...x, status, updatedAt: nowISO() } : x));
+    persist(next, "✅ Status updated");
   }
 
-  function exportRangeJSON() {
-    exportJSON(`eventura_events_${from}_to_${to}.json`, {
-      version: "eventura-events-advanced-v1",
-      exportedAt: nowISO(),
-      range: { from, to },
-      kpis,
-      events: eventsFiltered,
-    });
-    toast("✅ Exported JSON");
-  }
-  function exportRangeCSV() {
-    exportCSV(`eventura_events_${from}_to_${to}.csv`, eventsFiltered);
-    toast("✅ Exported CSV");
-  }
+  function createAdvanceFinanceTx(e: EventItem) {
+    const adv = Number(e.advance || 0);
+    if (!adv || adv <= 0) return toast("❌ Add an Advance first");
+    const tag = `event:${e.id}`;
 
-  // ✅ Connect to Finance ONLY when user clicks: create finance tx from event
-  function pushToFinance(e: EventItem, kind: "Advance" | "Full Revenue" | "Vendor Cost") {
-    const finRaw = safeLoad<any[]>(FIN_KEY_WRITE, []);
-    const fin = Array.isArray(finRaw) ? finRaw : [];
+    // prevent duplicates: same date + amount + tag + category
+    const exists = finTxs.some(
+      (t) => t.type === "Income" && t.category === "Advance / Token Received" && t.amount === adv && t.date === e.date && (t.tags || "").includes(tag)
+    );
+    if (exists) return toast("⚠️ Finance entry already exists");
 
-    const makeTx = (tx: Omit<FinanceTx, "id" | "createdAt" | "updatedAt">): FinanceTx => ({
-      ...tx,
+    const tx: FinanceTx = {
       id: uid(),
+      date: e.date,
+      type: "Income",
+      amount: adv,
+      category: "Advance / Token Received",
+      vendor: e.clientName || e.title,
+      note: `Advance for: ${e.title}${e.city ? ` (${e.city})` : ""}`,
+      method: "UPI",
+      tags: `${tag}${e.tags ? `,${e.tags}` : ""}`,
       createdAt: nowISO(),
       updatedAt: nowISO(),
-    });
+    };
 
-    let tx: FinanceTx | null = null;
-
-    if (kind === "Advance") {
-      const amt = Math.max(0, e.advanceReceived || 0);
-      if (amt <= 0) return toast("❌ Advance is 0");
-      tx = makeTx({
-        date: e.date,
-        type: "Income",
-        amount: amt,
-        category: "Advance / Token Received",
-        vendor: e.clientName || undefined,
-        note: `Advance for ${e.title} (${e.city})`,
-        method: "UPI",
-        tags: `event:${e.title}${e.tags ? `,${e.tags}` : ""}`,
-      });
-    }
-
-    if (kind === "Full Revenue") {
-      const amt = Math.max(0, e.totalBudget || 0);
-      if (amt <= 0) return toast("❌ Budget is 0");
-      tx = makeTx({
-        date: e.date,
-        type: "Income",
-        amount: amt,
-        category: "Event Booking Revenue",
-        vendor: e.clientName || undefined,
-        note: `Booking revenue for ${e.title} (${e.city})`,
-        method: "Bank",
-        tags: `event:${e.title}${e.tags ? `,${e.tags}` : ""}`,
-      });
-    }
-
-    if (kind === "Vendor Cost") {
-      const amt = Math.max(0, e.vendorCostEstimate || 0);
-      if (amt <= 0) return toast("❌ Vendor cost is 0");
-      tx = makeTx({
-        date: e.date,
-        type: "Expense",
-        amount: amt,
-        category: "Decor Cost",
-        vendor: "Vendors",
-        note: `Estimated vendor cost for ${e.title} (${e.city})`,
-        method: "Bank",
-        tags: `event:${e.title}${e.tags ? `,${e.tags}` : ""}`,
-      });
-    }
-
-    if (!tx) return;
-
-    const next = [tx, ...fin];
-    writeFinanceTx(next);
-    toast("✅ Sent to Finance");
+    const nextFin = [tx, ...finTxs].sort((a, b) => (a.date < b.date ? 1 : -1));
+    setFinTxs(nextFin);
+    writeFin(nextFin);
+    toast("✅ Added to Finance (Advance)");
   }
+
+  const badge = useMemo(() => {
+    const p = kpis.completed;
+    const t = kpis.total;
+    if (t === 0) return { txt: "No events in range", tone: "warn" as const };
+    const rate = t > 0 ? Math.round((p / t) * 100) : 0;
+    if (rate >= 60) return { txt: `Strong completion (${rate}%)`, tone: "ok" as const };
+    if (rate >= 30) return { txt: `Medium completion (${rate}%)`, tone: "warn" as const };
+    return { txt: `Low completion (${rate}%)`, tone: "bad" as const };
+  }, [kpis.completed, kpis.total]);
 
   return (
     <div style={S.app}>
-      {/* ✅ HARD GUARANTEE: hover stays black (not transparent/white) */}
-      <style>{`
-        :root { color-scheme: dark; }
-        .ev-hoverBlack:hover { background: ${T.hoverSolidBlack} !important; }
-        .ev-hoverBlack:hover * { color: ${T.text} !important; }
-        .ev-btn:hover { background: ${T.hoverSolidBlack} !important; }
-        .ev-card:hover { background: ${T.hoverSolidBlack} !important; }
-        .ev-nav:hover { background: ${T.hoverSolidBlack} !important; }
-      `}</style>
-
       <aside style={S.sidebar}>
         <div style={S.brandRow}>
           <div style={S.logoCircle}>E</div>
@@ -652,33 +633,13 @@ export default function EventsPage() {
         </div>
 
         <nav style={S.nav}>
-          <Link href="/dashboard" className="ev-nav" style={S.navItem as any}>
-            📊 Dashboard
-          </Link>
-          <Link href="/events" className="ev-nav" style={S.navActive as any}>
-            📅 Events
-          </Link>
-          <Link href="/finance" className="ev-nav" style={S.navItem as any}>
-            💰 Finance
-          </Link>
-          <Link href="/vendors" className="ev-nav" style={S.navItem as any}>
-            🏷️ Vendors
-          </Link>
-          <Link href="/hr" className="ev-nav" style={S.navItem as any}>
-            🧑‍🤝‍🧑 HR
-          </Link>
-          <Link href="/ai" className="ev-nav" style={S.navItem as any}>
-            🤖 AI
-          </Link>
-          <Link href="/notes" className="ev-nav" style={S.navItem as any}>
-            📝 Notes
-          </Link>
-          <Link href="/reports" className="ev-nav" style={S.navItem as any}>
-            📈 Reports
-          </Link>
-          <Link href="/settings" className="ev-nav" style={S.navItem as any}>
-            ⚙️ Settings
-          </Link>
+          <NavLink href="/dashboard" label="📊 Dashboard" S={S} />
+          <NavLink href="/events" label="📅 Events" S={S} active />
+          <NavLink href="/finance" label="💰 Finance" S={S} />
+          <NavLink href="/vendors" label="🏷️ Vendors" S={S} />
+          <NavLink href="/hr" label="🧑‍🤝‍🧑 HR" S={S} />
+          <NavLink href="/reports" label="📈 Reports" S={S} />
+          <NavLink href="/settings" label="⚙️ Settings" S={S} />
         </nav>
 
         <div style={S.sidebarFooter}>
@@ -697,22 +658,12 @@ export default function EventsPage() {
         <div style={S.header}>
           <div>
             <div style={S.h1}>Events (Advanced)</div>
-            <div style={S.muted}>Pipeline • KPIs • Quick Status • Export • Optional Finance Sync</div>
+            <div style={S.muted}>Custom dropdowns with PURE BLACK hover • Add/Edit/Delete • Quick status updates • Optional Finance linking</div>
           </div>
 
           <div style={S.headerRight}>
-            <button className="ev-btn" style={S.secondaryBtn} onClick={hydrate}>
-              Refresh
-            </button>
-            <button className="ev-btn" style={S.secondaryBtn} onClick={exportRangeJSON}>
-              Export JSON
-            </button>
-            <button className="ev-btn" style={S.secondaryBtn} onClick={exportRangeCSV}>
-              Export CSV
-            </button>
-            <button className="ev-btn" style={S.primaryBtn} onClick={openAdd}>
-              + Add Event
-            </button>
+            <HoverBtn label="Refresh" kind="secondary" S={S} onClick={hydrate} />
+            <HoverBtn label="+ Add Event" kind="primary" S={S} onClick={openAdd} />
           </div>
         </div>
 
@@ -736,7 +687,7 @@ export default function EventsPage() {
               <div style={S.smallMuted}>Search</div>
               <input
                 style={{ ...S.input, width: "100%" }}
-                placeholder="client, title, phone, tags..."
+                placeholder="title, client, city, venue, tags..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -744,96 +695,48 @@ export default function EventsPage() {
 
             <div style={S.field}>
               <div style={S.smallMuted}>Status</div>
-              <select style={S.select} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)}>
-                <option value="All">All</option>
-                <option value="Lead">Lead</option>
-                <option value="Tentative">Tentative</option>
-                <option value="Confirmed">Confirmed</option>
-                <option value="In Progress">In Progress</option>
-                <option value="Completed">Completed</option>
-                <option value="Cancelled">Cancelled</option>
-              </select>
+              <Dropdown value={statusFilter} onChange={(v) => setStatusFilter(v as any)} options={["All", "Planned", "Confirmed", "In Progress", "Completed", "Cancelled"]} S={S} />
             </div>
 
             <div style={S.field}>
-              <div style={S.smallMuted}>City</div>
-              <select style={S.select} value={cityFilter} onChange={(e) => setCityFilter(e.target.value)}>
-                <option value="All">All</option>
-                {citiesAll.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
+              <div style={S.smallMuted}>Type</div>
+              <Dropdown value={typeFilter} onChange={(v) => setTypeFilter(v as any)} options={["All", "Wedding", "Corporate", "Birthday", "Engagement", "Festival", "Exhibition", "Other"]} S={S} />
             </div>
 
             <div style={S.field}>
-              <div style={S.smallMuted}>Package</div>
-              <select style={S.select} value={packageFilter} onChange={(e) => setPackageFilter(e.target.value as any)}>
-                <option value="All">All</option>
-                <option value="Silver">Silver</option>
-                <option value="Gold">Gold</option>
-                <option value="Platinum">Platinum</option>
-                <option value="Custom">Custom</option>
-              </select>
+              <div style={S.smallMuted}>Priority</div>
+              <Dropdown value={priorityFilter} onChange={(v) => setPriorityFilter(v as any)} options={["All", "Low", "Medium", "High", "Urgent"]} S={S} />
             </div>
           </div>
         </section>
 
         {/* KPIs */}
         <div style={S.kpiGrid}>
-          <div className="ev-card" style={S.kpiCard}>
-            <div style={S.kpiLabel}>Total (Range)</div>
+          <div style={S.kpiCard}>
+            <div style={S.kpiLabel}>Events (Range)</div>
             <div style={S.kpiValue}>{kpis.total}</div>
-            <div style={S.kpiSub}>Leads: {kpis.leads} • Confirmed: {kpis.confirmed}</div>
+            <div style={S.kpiSub}>Upcoming: {kpis.upcoming}</div>
           </div>
-
-          <div className="ev-card" style={S.kpiCard}>
-            <div style={S.kpiLabel}>Pipeline Value</div>
-            <div style={S.kpiValue}>{formatMoney(kpis.pipelineValue, currency)}</div>
-            <div style={S.kpiSub}>Not cancelled</div>
+          <div style={S.kpiCard}>
+            <div style={S.kpiLabel}>Budget Total (Range)</div>
+            <div style={S.kpiValue}>{formatMoney(kpis.budgetSum, "INR")}</div>
+            <div style={S.kpiSub}>Advance: {formatMoney(kpis.advanceSum, "INR")}</div>
           </div>
-
-          <div className="ev-card" style={S.kpiCard}>
-            <div style={S.kpiLabel}>Expected Revenue</div>
-            <div style={S.kpiValue}>{formatMoney(kpis.expectedRevenue, currency)}</div>
-            <div style={S.kpiSub}>Confirmed + In Progress + Completed</div>
+          <div style={S.kpiCard}>
+            <div style={S.kpiLabel}>Balance Due (Range)</div>
+            <div style={S.kpiValue}>{formatMoney(kpis.balanceSum, "INR")}</div>
+            <div style={S.kpiSub}>Urgent: {kpis.urgent}</div>
           </div>
-
-          <div className="ev-card" style={S.kpiCard}>
-            <div style={S.kpiLabel}>Gross (Est.)</div>
-            <div style={S.kpiValue}>{formatMoney(kpis.estGrossProfit, currency)}</div>
-            <div style={S.kpiSub}>COGS est: {formatMoney(kpis.estCogs, currency)}</div>
-          </div>
-        </div>
-
-        <div style={S.kpiGrid}>
-          <div className="ev-card" style={S.kpiCard}>
-            <div style={S.kpiLabel}>Advance Received</div>
-            <div style={S.kpiValue}>{formatMoney(kpis.advances, currency)}</div>
-            <div style={S.kpiSub}>Cash collected in range</div>
-          </div>
-
-          <div className="ev-card" style={S.kpiCard}>
-            <div style={S.kpiLabel}>Balance Due</div>
-            <div style={S.kpiValue}>{formatMoney(kpis.balanceDue, currency)}</div>
-            <div style={S.kpiSub}>Budget - Advance</div>
-          </div>
-
-          <div className="ev-card" style={S.kpiCard}>
-            <div style={S.kpiLabel}>Completed</div>
+          <div style={S.kpiCard}>
+            <div style={S.kpiLabel}>Completion</div>
             <div style={S.kpiValue}>{kpis.completed}</div>
-            <div style={S.kpiSub}>Cancelled: {kpis.cancelled}</div>
-          </div>
-
-          <div className="ev-card" style={S.kpiCard}>
-            <div style={S.kpiLabel}>Action</div>
-            <div style={S.kpiValue}>Export</div>
-            <div style={S.kpiSub}>CSV/JSON from top buttons</div>
+            <div style={S.kpiSub}>
+              <span style={badge.tone === "ok" ? S.badgeOk : badge.tone === "bad" ? S.badgeBad : S.badgeWarn}>{badge.txt}</span>
+            </div>
           </div>
         </div>
 
-        {/* Events list */}
+        {/* Events List */}
         <section style={S.panel}>
           <div style={S.panelTitle}>Events</div>
 
@@ -841,90 +744,17 @@ export default function EventsPage() {
             <div style={S.empty}>No events found in this range/filter.</div>
           ) : (
             <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-              {eventsFiltered.slice(0, 150).map((e) => {
-                const bal = Math.max(0, (e.totalBudget || 0) - (e.advanceReceived || 0));
-                const statusTone =
-                  e.status === "Completed"
-                    ? "ok"
-                    : e.status === "Cancelled"
-                      ? "bad"
-                      : e.status === "Confirmed" || e.status === "In Progress"
-                        ? "warn"
-                        : "neutral";
-
-                return (
-                  <div key={e.id} className="ev-hoverBlack ev-card" style={S.card}>
-                    <div style={S.rowBetween}>
-                      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                        <span
-                          style={
-                            statusTone === "ok"
-                              ? S.pillOk
-                              : statusTone === "bad"
-                                ? S.pillBad
-                                : statusTone === "warn"
-                                  ? S.pillWarn
-                                  : S.pill
-                          }
-                        >
-                          {e.status}
-                        </span>
-
-                        <div style={{ fontWeight: 950, fontSize: 14 }}>{e.title}</div>
-                        <span style={S.pill}>{e.city}</span>
-                        <span style={S.pill}>{e.package}</span>
-                        {e.clientName ? <span style={S.pill}>Client: {e.clientName}</span> : null}
-                        {e.clientPhone ? <span style={S.pill}>📞 {e.clientPhone}</span> : null}
-                        {e.tags ? <span style={S.pill}>Tags: {e.tags}</span> : null}
-                      </div>
-
-                      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                        <span style={S.pillMoney}>{formatMoney(e.totalBudget || 0, currency)}</span>
-                        <button className="ev-btn" style={S.secondaryBtn} onClick={() => openEdit(e.id)}>
-                          Edit
-                        </button>
-                        <button className="ev-btn" style={S.dangerBtn} onClick={() => removeEvent(e.id)}>
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-
-                    <div style={S.metaLine}>
-                      <span style={S.metaItem}>📅 {e.date}</span>
-                      <span style={S.metaItem}>Guests: {e.guests || 0}</span>
-                      <span style={S.metaItem}>Advance: {formatMoney(e.advanceReceived || 0, currency)}</span>
-                      <span style={S.metaItem}>Balance: {formatMoney(bal, currency)}</span>
-                      <span style={S.metaItem}>COGS est: {formatMoney(e.vendorCostEstimate || 0, currency)}</span>
-                    </div>
-
-                    {e.notes ? <div style={S.noteLine}>{e.notes}</div> : null}
-
-                    <div style={S.actionsRow}>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button className="ev-btn" style={S.miniBtn} onClick={() => quickStatus(e.id, "Lead")}>Lead</button>
-                        <button className="ev-btn" style={S.miniBtn} onClick={() => quickStatus(e.id, "Tentative")}>Tentative</button>
-                        <button className="ev-btn" style={S.miniBtn} onClick={() => quickStatus(e.id, "Confirmed")}>Confirm</button>
-                        <button className="ev-btn" style={S.miniBtn} onClick={() => quickStatus(e.id, "In Progress")}>In Progress</button>
-                        <button className="ev-btn" style={S.miniBtn} onClick={() => quickStatus(e.id, "Completed")}>Complete</button>
-                        <button className="ev-btn" style={S.miniBtnBad} onClick={() => quickStatus(e.id, "Cancelled")}>Cancel</button>
-                      </div>
-
-                      {/* Connect to Finance ONLY when needed */}
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                        <button className="ev-btn" style={S.miniBtn} onClick={() => pushToFinance(e, "Advance")}>
-                          ➜ Finance: Advance
-                        </button>
-                        <button className="ev-btn" style={S.miniBtn} onClick={() => pushToFinance(e, "Full Revenue")}>
-                          ➜ Finance: Revenue
-                        </button>
-                        <button className="ev-btn" style={S.miniBtn} onClick={() => pushToFinance(e, "Vendor Cost")}>
-                          ➜ Finance: Vendor Cost
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {eventsFiltered.slice(0, 150).map((e) => (
+                <EventCard
+                  key={e.id}
+                  e={e}
+                  S={S}
+                  onEdit={() => openEdit(e.id)}
+                  onDelete={() => removeEvent(e.id)}
+                  onQuickStatus={(s) => quickStatus(e.id, s)}
+                  onAddAdvanceToFinance={() => createAdvanceFinanceTx(e)}
+                />
+              ))}
             </div>
           )}
         </section>
@@ -935,112 +765,298 @@ export default function EventsPage() {
             <div style={S.modal} onClick={(ev) => ev.stopPropagation()}>
               <div style={S.modalHeader}>
                 <div style={S.modalTitle}>{editingId ? "Edit Event" : "Add Event"}</div>
-                <button className="ev-btn" style={S.secondaryBtn} onClick={closeForm}>
-                  Close
-                </button>
+                <HoverBtn label="Close" kind="secondary" S={S} onClick={closeForm} />
               </div>
 
               <div style={S.modalGrid}>
-                <Field label="Date">
+                <div style={S.field}>
+                  <div style={S.smallMuted}>Date</div>
                   <input style={S.input} type="date" value={draft.date} onChange={(e) => setDraft((d) => ({ ...d, date: e.target.value }))} />
-                </Field>
+                </div>
 
-                <Field label="Status">
-                  <select style={S.select} value={draft.status} onChange={(e) => setDraft((d) => ({ ...d, status: e.target.value as EventStatus }))}>
-                    <option value="Lead">Lead</option>
-                    <option value="Tentative">Tentative</option>
-                    <option value="Confirmed">Confirmed</option>
-                    <option value="In Progress">In Progress</option>
-                    <option value="Completed">Completed</option>
-                    <option value="Cancelled">Cancelled</option>
-                  </select>
-                </Field>
+                <div style={S.fieldWide}>
+                  <div style={S.smallMuted}>Title</div>
+                  <input style={{ ...S.input, width: "100%" }} value={draft.title} onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))} placeholder="e.g. Patel Wedding at Farmhouse" />
+                </div>
 
-                <Field label="Package">
-                  <select style={S.select} value={draft.package} onChange={(e) => setDraft((d) => ({ ...d, package: e.target.value as EventPackage }))}>
-                    <option value="Silver">Silver</option>
-                    <option value="Gold">Gold</option>
-                    <option value="Platinum">Platinum</option>
-                    <option value="Custom">Custom</option>
-                  </select>
-                </Field>
+                <div style={S.field}>
+                  <div style={S.smallMuted}>Status</div>
+                  <Dropdown value={draft.status} onChange={(v) => setDraft((d) => ({ ...d, status: v as any }))} options={["Planned", "Confirmed", "In Progress", "Completed", "Cancelled"]} S={S} />
+                </div>
 
-                <Field label="City">
-                  <input style={S.input} value={draft.city} onChange={(e) => setDraft((d) => ({ ...d, city: e.target.value }))} />
-                </Field>
+                <div style={S.field}>
+                  <div style={S.smallMuted}>Type</div>
+                  <Dropdown value={draft.type} onChange={(v) => setDraft((d) => ({ ...d, type: v as any }))} options={["Wedding", "Corporate", "Birthday", "Engagement", "Festival", "Exhibition", "Other"]} S={S} />
+                </div>
 
-                <FieldWide label="Title">
-                  <input style={{ ...S.input, width: "100%" }} placeholder="Wedding / Corporate / Pool party..." value={draft.title} onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))} />
-                </FieldWide>
+                <div style={S.field}>
+                  <div style={S.smallMuted}>Priority</div>
+                  <Dropdown value={draft.priority} onChange={(v) => setDraft((d) => ({ ...d, priority: v as any }))} options={["Low", "Medium", "High", "Urgent"]} S={S} />
+                </div>
 
-                <FieldWide label="Client Name">
-                  <input style={{ ...S.input, width: "100%" }} value={draft.clientName} onChange={(e) => setDraft((d) => ({ ...d, clientName: e.target.value }))} />
-                </FieldWide>
+                <div style={S.field}>
+                  <div style={S.smallMuted}>City</div>
+                  <input style={S.input} value={draft.city} onChange={(e) => setDraft((d) => ({ ...d, city: e.target.value }))} placeholder="Surat" />
+                </div>
 
-                <Field label="Client Phone">
-                  <input style={S.input} value={draft.clientPhone} onChange={(e) => setDraft((d) => ({ ...d, clientPhone: e.target.value }))} />
-                </Field>
+                <div style={S.fieldWide}>
+                  <div style={S.smallMuted}>Venue</div>
+                  <input style={{ ...S.input, width: "100%" }} value={draft.venue} onChange={(e) => setDraft((d) => ({ ...d, venue: e.target.value }))} placeholder="optional" />
+                </div>
 
-                <Field label="Guests">
-                  <input style={S.input} inputMode="numeric" value={draft.guests} onChange={(e) => setDraft((d) => ({ ...d, guests: e.target.value }))} placeholder="e.g. 150" />
-                </Field>
+                <div style={S.field}>
+                  <div style={S.smallMuted}>Budget (INR)</div>
+                  <input style={S.input} type="text" inputMode="decimal" value={draft.budget} onChange={(e) => setDraft((d) => ({ ...d, budget: e.target.value }))} placeholder="e.g. 500000" />
+                </div>
 
-                <Field label="Total Budget">
-                  <input style={S.input} inputMode="decimal" value={draft.totalBudget} onChange={(e) => setDraft((d) => ({ ...d, totalBudget: e.target.value }))} placeholder="e.g. 250000" />
-                </Field>
+                <div style={S.field}>
+                  <div style={S.smallMuted}>Advance (INR)</div>
+                  <input style={S.input} type="text" inputMode="decimal" value={draft.advance} onChange={(e) => setDraft((d) => ({ ...d, advance: e.target.value }))} placeholder="e.g. 50000" />
+                </div>
 
-                <Field label="Advance">
-                  <input style={S.input} inputMode="decimal" value={draft.advanceReceived} onChange={(e) => setDraft((d) => ({ ...d, advanceReceived: e.target.value }))} placeholder="e.g. 50000" />
-                </Field>
+                <div style={S.fieldWide}>
+                  <div style={S.smallMuted}>Client Name</div>
+                  <input style={{ ...S.input, width: "100%" }} value={draft.clientName} onChange={(e) => setDraft((d) => ({ ...d, clientName: e.target.value }))} placeholder="optional" />
+                </div>
 
-                <Field label="COGS Est.">
-                  <input style={S.input} inputMode="decimal" value={draft.vendorCostEstimate} onChange={(e) => setDraft((d) => ({ ...d, vendorCostEstimate: e.target.value }))} placeholder="e.g. 120000" />
-                </Field>
+                <div style={S.fieldWide}>
+                  <div style={S.smallMuted}>Client Phone</div>
+                  <input style={{ ...S.input, width: "100%" }} value={draft.clientPhone} onChange={(e) => setDraft((d) => ({ ...d, clientPhone: e.target.value }))} placeholder="optional" />
+                </div>
 
-                <FieldWide label="Tags (comma separated)">
+                <div style={S.fieldWide}>
+                  <div style={S.smallMuted}>Tags (comma separated)</div>
                   <input style={{ ...S.input, width: "100%" }} value={draft.tags} onChange={(e) => setDraft((d) => ({ ...d, tags: e.target.value }))} placeholder="wedding, vip, urgent" />
-                </FieldWide>
+                </div>
 
-                <FieldWide label="Notes">
-                  <input style={{ ...S.input, width: "100%" }} value={draft.notes} onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))} placeholder="important info, venue details, timeline..." />
-                </FieldWide>
+                <div style={S.fieldWide}>
+                  <div style={S.smallMuted}>Notes</div>
+                  <textarea style={{ ...S.textarea, width: "100%" }} value={draft.notes} onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))} placeholder="important notes / requirements..." />
+                </div>
               </div>
 
               <div style={S.modalFooter}>
-                <button className="ev-btn" style={S.primaryBtn} onClick={saveDraft}>
-                  {editingId ? "Save Changes" : "Add Event"}
-                </button>
+                <HoverBtn label={editingId ? "Save Changes" : "Add Event"} kind="primary" S={S} onClick={saveDraft} />
               </div>
             </div>
           </div>
         ) : null}
 
-        <div style={S.footerNote}>✅ Advanced Events • ✅ Hover always solid black • ✅ Deploy-safe</div>
+        <div style={S.footerNote}>
+          ✅ Custom dropdowns (pure black hover) • ✅ Deploy-safe • ✅ Optional “Advance → Finance” link
+        </div>
       </main>
     </div>
   );
 }
 
-/* ================== SMALL UI ================== */
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+/* ================== COMPONENTS ================== */
+function NavLink({ href, label, S, active }: { href: string; label: string; S: any; active?: boolean }) {
+  const [h, setH] = useState(false);
+  const base = active ? S.navActive : S.navItem;
+  const hovered = h ? { ...base, background: S.hoverBg, border: `1px solid ${S.hoverBd}` } : base;
   return (
-    <div style={{ display: "grid", gap: 6 }}>
-      <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 900 }}>{label}</div>
-      {children}
+    <Link
+      href={href}
+      style={hovered as any}
+      onMouseEnter={() => setH(true)}
+      onMouseLeave={() => setH(false)}
+    >
+      {label}
+    </Link>
+  );
+}
+
+function HoverBtn({ label, onClick, kind, S }: { label: string; onClick: () => void; kind: "primary" | "secondary" | "danger"; S: any }) {
+  const [h, setH] = useState(false);
+  const base = kind === "primary" ? S.primaryBtn : kind === "danger" ? S.dangerBtn : S.secondaryBtn;
+  const hovered = h ? { ...base, background: S.hoverBg, border: `1px solid ${S.hoverBd}` } : base;
+  return (
+    <button
+      style={hovered}
+      onClick={onClick}
+      onMouseEnter={() => setH(true)}
+      onMouseLeave={() => setH(false)}
+    >
+      {label}
+    </button>
+  );
+}
+
+/**
+ * Custom Dropdown (Fixes your issue)
+ * - No native <select>
+ * - Menu hover is PURE BLACK
+ */
+function Dropdown({
+  value,
+  onChange,
+  options,
+  S,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  S: any;
+}) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (t.closest?.("[data-dd-root='1']")) return;
+      setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
+  return (
+    <div style={{ position: "relative" }} data-dd-root="1">
+      <button
+        type="button"
+        style={S.ddBtn}
+        onClick={() => setOpen((s: boolean) => !s)}
+      >
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</span>
+        <span style={{ opacity: 0.9 }}>▾</span>
+      </button>
+
+      {open ? (
+        <div style={S.ddMenu}>
+          {options.map((opt) => (
+            <DDItem
+              key={opt}
+              label={opt}
+              active={opt === value}
+              S={S}
+              onClick={() => {
+                onChange(opt);
+                setOpen(false);
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }
-function FieldWide({ label, children }: { label: string; children: React.ReactNode }) {
+
+function DDItem({ label, active, onClick, S }: { label: string; active?: boolean; onClick: () => void; S: any }) {
+  const [h, setH] = useState(false);
+  const bg = h ? S.ddHoverBg : active ? S.ddActiveBg : "transparent";
+  const bd = h ? S.ddHoverBd : "transparent";
   return (
-    <div style={{ display: "grid", gap: 6, gridColumn: "span 2" as any }}>
-      <div style={{ fontSize: 12, opacity: 0.85, fontWeight: 900 }}>{label}</div>
-      {children}
+    <button
+      type="button"
+      style={{ ...S.ddItem, background: bg, border: `1px solid ${bd}` }}
+      onClick={onClick}
+      onMouseEnter={() => setH(true)}
+      onMouseLeave={() => setH(false)}
+    >
+      {label}
+    </button>
+  );
+}
+
+function EventCard({
+  e,
+  S,
+  onEdit,
+  onDelete,
+  onQuickStatus,
+  onAddAdvanceToFinance,
+}: {
+  e: EventItem;
+  S: any;
+  onEdit: () => void;
+  onDelete: () => void;
+  onQuickStatus: (s: EventStatus) => void;
+  onAddAdvanceToFinance: () => void;
+}) {
+  const [h, setH] = useState(false);
+  const card = h ? { ...S.card, background: S.hoverCardBg, border: `1px solid ${S.hoverBd}` } : S.card;
+  const budget = Number(e.budget || 0);
+  const adv = Number(e.advance || 0);
+  const bal = Math.max(0, budget - adv);
+
+  const statusStyle =
+    e.status === "Completed"
+      ? S.pillOk
+      : e.status === "Cancelled"
+      ? S.pillBad
+      : e.status === "Confirmed"
+      ? S.pillOk2
+      : e.status === "In Progress"
+      ? S.pillWarn
+      : S.pill;
+
+  const prStyle =
+    e.priority === "Urgent"
+      ? S.pillBad
+      : e.priority === "High"
+      ? S.pillWarn
+      : e.priority === "Low"
+      ? S.pill
+      : S.pillOk2;
+
+  return (
+    <div
+      style={card}
+      onMouseEnter={() => setH(true)}
+      onMouseLeave={() => setH(false)}
+    >
+      <div style={S.rowBetween}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={S.dateChip}>{e.date}</div>
+          <div style={{ fontWeight: 950, fontSize: 15 }}>{e.title}</div>
+          <span style={statusStyle}>{e.status}</span>
+          <span style={S.pill}>{e.type}</span>
+          <span style={prStyle}>Priority: {e.priority}</span>
+          {e.city ? <span style={S.pill}>📍 {e.city}</span> : null}
+          {e.venue ? <span style={S.pill}>🏛 {e.venue}</span> : null}
+        </div>
+
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {budget > 0 ? <span style={S.moneyPill}>Budget {formatMoney(budget, "INR")}</span> : null}
+          {adv > 0 ? <span style={S.moneyPill}>Advance {formatMoney(adv, "INR")}</span> : null}
+          {budget > 0 ? <span style={S.moneyPill}>Balance {formatMoney(bal, "INR")}</span> : null}
+        </div>
+      </div>
+
+      <div style={S.metaLine}>
+        {e.clientName ? <span><b>Client:</b> {e.clientName}</span> : null}
+        {e.clientPhone ? <span> • <b>Phone:</b> {e.clientPhone}</span> : null}
+        {e.tags ? <span> • <b>Tags:</b> {e.tags}</span> : null}
+      </div>
+
+      {e.notes ? <div style={S.notes}>{e.notes}</div> : null}
+
+      <div style={S.cardFooter}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <HoverBtn label="Planned" kind="secondary" S={S} onClick={() => onQuickStatus("Planned")} />
+          <HoverBtn label="Confirmed" kind="secondary" S={S} onClick={() => onQuickStatus("Confirmed")} />
+          <HoverBtn label="In Progress" kind="secondary" S={S} onClick={() => onQuickStatus("In Progress")} />
+          <HoverBtn label="Completed" kind="secondary" S={S} onClick={() => onQuickStatus("Completed")} />
+          <HoverBtn label="Cancelled" kind="secondary" S={S} onClick={() => onQuickStatus("Cancelled")} />
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <HoverBtn label="Add Advance → Finance" kind="secondary" S={S} onClick={onAddAdvanceToFinance} />
+          <HoverBtn label="Edit" kind="primary" S={S} onClick={onEdit} />
+          <HoverBtn label="Delete" kind="danger" S={S} onClick={onDelete} />
+        </div>
+      </div>
     </div>
   );
 }
 
 /* ================== STYLES ================== */
 function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
+  const hoverBg = T.hoverBlack; // PURE BLACK
+  const hoverBd = T.accentBd;
+
   return {
     app: {
       minHeight: "100vh",
@@ -1172,27 +1188,6 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       cursor: "pointer",
     },
 
-    miniBtn: {
-      padding: compact ? "8px 10px" : "9px 12px",
-      borderRadius: 12,
-      border: `1px solid ${T.border}`,
-      background: T.soft,
-      color: T.text,
-      fontWeight: 950,
-      cursor: "pointer",
-      fontSize: 12,
-    },
-    miniBtnBad: {
-      padding: compact ? "8px 10px" : "9px 12px",
-      borderRadius: 12,
-      border: `1px solid ${T.badBd}`,
-      background: T.badBg,
-      color: T.badTx,
-      fontWeight: 950,
-      cursor: "pointer",
-      fontSize: 12,
-    },
-
     panel: { marginTop: 12, padding: 14, borderRadius: 18, border: `1px solid ${T.border}`, background: T.panel, backdropFilter: "blur(10px)" },
     panelTitle: { fontWeight: 950, color: T.accentTx },
 
@@ -1216,8 +1211,8 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       outline: "none",
       fontSize: 14,
     },
-    select: {
-      width: 220,
+    textarea: {
+      minHeight: 110,
       padding: compact ? "10px 10px" : "12px 12px",
       borderRadius: 14,
       border: `1px solid ${T.border}`,
@@ -1225,6 +1220,7 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       color: T.text,
       outline: "none",
       fontSize: 14,
+      resize: "vertical",
     },
 
     kpiGrid: { marginTop: 12, display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 },
@@ -1233,34 +1229,53 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
     kpiValue: { marginTop: 8, fontSize: 20, fontWeight: 950 },
     kpiSub: { marginTop: 6, color: T.muted, fontSize: 12, lineHeight: 1.3 },
 
-    card: { padding: 14, borderRadius: 18, border: `1px solid ${T.border}`, background: T.soft },
+    badgeOk: { display: "inline-flex", padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.okBd}`, background: T.okBg, color: T.okTx, fontWeight: 950, fontSize: 12 },
+    badgeWarn: { display: "inline-flex", padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.warnBd}`, background: T.warnBg, color: T.warnTx, fontWeight: 950, fontSize: 12 },
+    badgeBad: { display: "inline-flex", padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.badBd}`, background: T.badBg, color: T.badTx, fontWeight: 950, fontSize: 12 },
+
+    empty: { marginTop: 12, padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft, color: T.muted, fontWeight: 900 },
+
     rowBetween: { display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" },
+
+    card: { padding: 14, borderRadius: 18, border: `1px solid ${T.border}`, background: T.soft },
+    hoverCardBg: hoverBg,
+    hoverBg,
+    hoverBd,
+
+    dateChip: {
+      padding: "6px 10px",
+      borderRadius: 999,
+      border: `1px solid ${T.border}`,
+      background: "transparent",
+      fontWeight: 950,
+      fontSize: 12,
+      whiteSpace: "nowrap",
+    },
 
     pill: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.border}`, background: "transparent", fontWeight: 950, fontSize: 12, whiteSpace: "nowrap" },
     pillOk: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.okBd}`, background: T.okBg, color: T.okTx, fontWeight: 950, fontSize: 12, whiteSpace: "nowrap" },
+    pillOk2: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.accentBd}`, background: T.accentBg, color: T.accentTx, fontWeight: 950, fontSize: 12, whiteSpace: "nowrap" },
     pillWarn: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.warnBd}`, background: T.warnBg, color: T.warnTx, fontWeight: 950, fontSize: 12, whiteSpace: "nowrap" },
     pillBad: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.badBd}`, background: T.badBg, color: T.badTx, fontWeight: 950, fontSize: 12, whiteSpace: "nowrap" },
-    pillMoney: { padding: "8px 12px", borderRadius: 999, border: `1px solid ${T.accentBd}`, background: T.accentBg, color: T.accentTx, fontWeight: 950, whiteSpace: "nowrap" },
 
-    metaLine: { marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" },
-    metaItem: { color: T.muted, fontSize: 12, fontWeight: 900 },
-    noteLine: { marginTop: 10, color: T.text, fontSize: 13, opacity: 0.95 },
+    moneyPill: { padding: "8px 12px", borderRadius: 999, border: `1px solid ${T.accentBd}`, background: T.accentBg, color: T.accentTx, fontWeight: 950, whiteSpace: "nowrap" },
 
-    actionsRow: { marginTop: 12, display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" },
+    metaLine: { marginTop: 10, color: T.muted, fontSize: 12, fontWeight: 900, lineHeight: 1.4 },
+    notes: { marginTop: 10, padding: 12, borderRadius: 14, border: `1px solid ${T.border}`, background: "rgba(255,255,255,0.02)", color: T.text, fontSize: 13, lineHeight: 1.45, fontWeight: 700 },
 
-    empty: { marginTop: 12, padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft, color: T.muted, fontWeight: 900 },
+    cardFooter: { marginTop: 12, display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" },
 
     modalOverlay: {
       position: "fixed",
       inset: 0,
-      background: "rgba(0,0,0,0.60)",
+      background: "rgba(0,0,0,0.55)",
       display: "grid",
       placeItems: "center",
       padding: 14,
       zIndex: 50,
     },
     modal: {
-      width: "min(980px, 100%)",
+      width: "min(1100px, 100%)",
       borderRadius: 18,
       border: `1px solid ${T.border}`,
       background: T.panel2,
@@ -1269,8 +1284,56 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
     },
     modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" },
     modalTitle: { fontWeight: 950, fontSize: 18, color: T.accentTx },
-    modalGrid: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, alignItems: "end" },
+    modalGrid: { marginTop: 12, display: "grid", gridTemplateColumns: "220px 1fr 220px 220px 220px", gap: 10, alignItems: "end" },
     modalFooter: { marginTop: 12, display: "flex", justifyContent: "flex-end" },
+
+    // Custom Dropdown styles
+    ddBtn: {
+      width: 220,
+      padding: compact ? "10px 10px" : "12px 12px",
+      borderRadius: 14,
+      border: `1px solid ${T.border}`,
+      background: T.inputBg,
+      color: T.text,
+      outline: "none",
+      fontSize: 14,
+      fontWeight: 900,
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 10,
+    },
+    ddMenu: {
+      position: "absolute",
+      top: "calc(100% + 8px)",
+      left: 0,
+      width: 220,
+      borderRadius: 14,
+      border: `1px solid ${T.border}`,
+      background: T.panel2,
+      backdropFilter: "blur(10px)",
+      padding: 8,
+      display: "grid",
+      gap: 6,
+      zIndex: 60,
+      boxShadow: "0 18px 60px rgba(0,0,0,0.55)",
+    },
+    ddItem: {
+      width: "100%",
+      textAlign: "left",
+      padding: "10px 10px",
+      borderRadius: 12,
+      border: "1px solid transparent",
+      background: "transparent",
+      color: T.text,
+      cursor: "pointer",
+      fontWeight: 950,
+      fontSize: 13,
+    },
+    ddHoverBg: hoverBg,         // PURE BLACK hover
+    ddHoverBd: T.accentBd,
+    ddActiveBg: "rgba(255,255,255,0.06)",
 
     footerNote: { color: T.muted, fontSize: 12, textAlign: "center", padding: 10 },
   };
