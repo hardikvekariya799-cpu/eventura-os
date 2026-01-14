@@ -7,12 +7,7 @@ import Link from "next/link";
 const LS_EMAIL = "eventura_email";
 const LS_SETTINGS = "eventura_os_settings_v3";
 
-const EVT_KEYS_READ = [
-  "eventura-events",
-  "eventura_os_events_v1",
-  "eventura_events_v1",
-  "eventura_os_evt_v1",
-];
+const EVT_KEYS_READ = ["eventura-events", "eventura_os_events_v1", "eventura_events_v1", "eventura_os_evt_v1"];
 const EVT_KEY_WRITE = "eventura-events";
 
 // Optional: write finance income ONLY when user clicks button (explicit)
@@ -225,7 +220,7 @@ function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
     border: hc ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.10)",
     soft: hc ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.04)",
     inputBg: hc ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-    hoverBlack: "#000000", // PURE BLACK
+    hoverBlack: "#000000", // PURE BLACK hover
     okBg: "rgba(34,197,94,0.12)",
     okBd: hc ? "rgba(34,197,94,0.45)" : "rgba(34,197,94,0.28)",
     okTx: "#86EFAC",
@@ -239,51 +234,15 @@ function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
 
   switch (theme) {
     case "Midnight Purple":
-      return {
-        ...base,
-        glow1: "rgba(139,92,246,0.22)",
-        glow2: "rgba(212,175,55,0.14)",
-        accentBg: "rgba(139,92,246,0.16)",
-        accentBd: hc ? "rgba(139,92,246,0.55)" : "rgba(139,92,246,0.30)",
-        accentTx: "#DDD6FE",
-      };
+      return { ...base, glow1: "rgba(139,92,246,0.22)", glow2: "rgba(212,175,55,0.14)", accentBg: "rgba(139,92,246,0.16)", accentBd: hc ? "rgba(139,92,246,0.55)" : "rgba(139,92,246,0.30)", accentTx: "#DDD6FE" };
     case "Emerald Night":
-      return {
-        ...base,
-        glow1: "rgba(16,185,129,0.18)",
-        glow2: "rgba(212,175,55,0.12)",
-        accentBg: "rgba(16,185,129,0.16)",
-        accentBd: hc ? "rgba(16,185,129,0.55)" : "rgba(16,185,129,0.30)",
-        accentTx: "#A7F3D0",
-      };
+      return { ...base, glow1: "rgba(16,185,129,0.18)", glow2: "rgba(212,175,55,0.12)", accentBg: "rgba(16,185,129,0.16)", accentBd: hc ? "rgba(16,185,129,0.55)" : "rgba(16,185,129,0.30)", accentTx: "#A7F3D0" };
     case "Ocean Blue":
-      return {
-        ...base,
-        glow1: "rgba(59,130,246,0.22)",
-        glow2: "rgba(34,211,238,0.14)",
-        accentBg: "rgba(59,130,246,0.16)",
-        accentBd: hc ? "rgba(59,130,246,0.55)" : "rgba(59,130,246,0.30)",
-        accentTx: "#BFDBFE",
-      };
+      return { ...base, glow1: "rgba(59,130,246,0.22)", glow2: "rgba(34,211,238,0.14)", accentBg: "rgba(59,130,246,0.16)", accentBd: hc ? "rgba(59,130,246,0.55)" : "rgba(59,130,246,0.30)", accentTx: "#BFDBFE" };
     case "Ruby Noir":
-      return {
-        ...base,
-        glow1: "rgba(244,63,94,0.18)",
-        glow2: "rgba(212,175,55,0.10)",
-        accentBg: "rgba(244,63,94,0.14)",
-        accentBd: hc ? "rgba(244,63,94,0.50)" : "rgba(244,63,94,0.26)",
-        accentTx: "#FDA4AF",
-      };
+      return { ...base, glow1: "rgba(244,63,94,0.18)", glow2: "rgba(212,175,55,0.10)", accentBg: "rgba(244,63,94,0.14)", accentBd: hc ? "rgba(244,63,94,0.50)" : "rgba(244,63,94,0.26)", accentTx: "#FDA4AF" };
     case "Carbon Black":
-      return {
-        ...base,
-        bg: "#03040A",
-        glow1: "rgba(255,255,255,0.10)",
-        glow2: "rgba(212,175,55,0.10)",
-        accentBg: "rgba(212,175,55,0.14)",
-        accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)",
-        accentTx: "#FDE68A",
-      };
+      return { ...base, bg: "#03040A", glow1: "rgba(255,255,255,0.10)", glow2: "rgba(212,175,55,0.10)", accentBg: "rgba(212,175,55,0.14)", accentBd: hc ? "rgba(212,175,55,0.55)" : "rgba(212,175,55,0.28)", accentTx: "#FDE68A" };
     case "Ivory Light":
       return {
         ...base,
@@ -305,14 +264,7 @@ function ThemeTokens(theme: Theme = "Royal Gold", highContrast?: boolean) {
         hoverBlack: "#000000",
       };
     default:
-      return {
-        ...base,
-        glow1: "rgba(255,215,110,0.18)",
-        glow2: "rgba(120,70,255,0.18)",
-        accentBg: "rgba(212,175,55,0.12)",
-        accentBd: hc ? "rgba(212,175,55,0.50)" : "rgba(212,175,55,0.22)",
-        accentTx: "#FDE68A",
-      };
+      return { ...base, glow1: "rgba(255,215,110,0.18)", glow2: "rgba(120,70,255,0.18)", accentBg: "rgba(212,175,55,0.12)", accentBd: hc ? "rgba(212,175,55,0.50)" : "rgba(212,175,55,0.22)", accentTx: "#FDE68A" };
   }
 }
 
@@ -420,22 +372,7 @@ export default function EventsPage() {
       if (cityFilter !== "All" && (e.city || "") !== cityFilter) return false;
 
       if (!q) return true;
-      const blob = [
-        e.date,
-        e.title,
-        e.type,
-        e.status,
-        e.priority,
-        e.clientName || "",
-        e.clientPhone || "",
-        e.city || "",
-        e.venue || "",
-        e.assignedTo || "",
-        e.notes || "",
-        e.tags || "",
-      ]
-        .join(" ")
-        .toLowerCase();
+      const blob = [e.date, e.title, e.type, e.status, e.priority, e.clientName || "", e.clientPhone || "", e.city || "", e.venue || "", e.assignedTo || "", e.notes || "", e.tags || ""].join(" ").toLowerCase();
       return blob.includes(q);
     });
   }, [events, from, to, search, statusFilter, typeFilter, cityFilter, priorityFilter]);
@@ -582,16 +519,14 @@ export default function EventsPage() {
     toast("✅ Income added to Finance");
   }
 
-  // “Auto” insights panel (no external connections)
   const insights = useMemo(() => {
-    const list = eventsFiltered
+    const next6 = eventsFiltered
       .filter((e) => e.status !== "Cancelled")
       .sort((a, b) => (a.date > b.date ? 1 : -1))
       .slice(0, 6);
 
-    const overdue = eventsFiltered.filter((e) => e.date < todayYMD() && e.status !== "Completed" && e.status !== "Cancelled").slice(0, 6);
-
-    return { next6: list, overdue6: overdue };
+    const overdue6 = eventsFiltered.filter((e) => e.date < todayYMD() && e.status !== "Completed" && e.status !== "Cancelled").slice(0, 6);
+    return { next6, overdue6 };
   }, [eventsFiltered]);
 
   return (
@@ -606,13 +541,13 @@ export default function EventsPage() {
         </div>
 
         <nav style={S.nav}>
-          <NavLink href="/dashboard" label="📊 Dashboard" S={S} active={false} />
-          <NavLink href="/events" label="📅 Events" S={S} active />
-          <NavLink href="/finance" label="💰 Finance" S={S} active={false} />
-          <NavLink href="/vendors" label="🏷️ Vendors" S={S} active={false} />
-          <NavLink href="/hr" label="🧑‍🤝‍🧑 HR" S={S} active={false} />
-          <NavLink href="/reports" label="📈 Reports" S={S} active={false} />
-          <NavLink href="/settings" label="⚙️ Settings" S={S} active={false} />
+          <NavLink href="/dashboard" label="📊 Dashboard" S={S} T={T} active={false} />
+          <NavLink href="/events" label="📅 Events" S={S} T={T} active />
+          <NavLink href="/finance" label="💰 Finance" S={S} T={T} active={false} />
+          <NavLink href="/vendors" label="🏷️ Vendors" S={S} T={T} active={false} />
+          <NavLink href="/hr" label="🧑‍🤝‍🧑 HR" S={S} T={T} active={false} />
+          <NavLink href="/reports" label="📈 Reports" S={S} T={T} active={false} />
+          <NavLink href="/settings" label="⚙️ Settings" S={S} T={T} active={false} />
         </nav>
 
         <div style={S.sidebarFooter}>
@@ -632,7 +567,7 @@ export default function EventsPage() {
           <div>
             <div style={S.h1}>Events (Advanced)</div>
             <div style={S.muted}>
-              Add/Edit/Delete • Filters • Auto Insights • <b>Pure Black</b> hover for dropdown menus/options
+              Add/Edit/Delete • Filters • Auto Insights • <b>Pure Black</b> hover dropdown menus/options
             </div>
           </div>
 
@@ -648,7 +583,6 @@ export default function EventsPage() {
 
         {msg ? <div style={S.msg}>{msg}</div> : null}
 
-        {/* Filters */}
         <section style={S.panel}>
           <div style={S.panelTitle}>Filters</div>
 
@@ -673,45 +607,28 @@ export default function EventsPage() {
               />
             </div>
 
-            {/* Custom dropdowns (PURE BLACK hover) */}
             <div style={S.field}>
               <div style={S.smallMuted}>Status</div>
-              <Dropdown
-                value={statusFilter}
-                options={["All", "Planned", "Confirmed", "In Progress", "Completed", "Cancelled"]}
-                onChange={(v) => setStatusFilter(v as any)}
-                S={S}
-              />
+              <Dropdown value={statusFilter} options={["All", "Planned", "Confirmed", "In Progress", "Completed", "Cancelled"]} onChange={(v) => setStatusFilter(v as any)} S={S} T={T} />
             </div>
 
             <div style={S.field}>
               <div style={S.smallMuted}>Type</div>
-              <Dropdown
-                value={typeFilter}
-                options={["All", "Wedding", "Corporate", "Birthday", "Engagement", "Festival", "Other"]}
-                onChange={(v) => setTypeFilter(v as any)}
-                S={S}
-              />
+              <Dropdown value={typeFilter} options={["All", "Wedding", "Corporate", "Birthday", "Engagement", "Festival", "Other"]} onChange={(v) => setTypeFilter(v as any)} S={S} T={T} />
             </div>
 
             <div style={S.field}>
               <div style={S.smallMuted}>Priority</div>
-              <Dropdown value={priorityFilter} options={["All", "Low", "Medium", "High", "Urgent"]} onChange={(v) => setPriorityFilter(v as any)} S={S} />
+              <Dropdown value={priorityFilter} options={["All", "Low", "Medium", "High", "Urgent"]} onChange={(v) => setPriorityFilter(v as any)} S={S} T={T} />
             </div>
 
             <div style={S.field}>
               <div style={S.smallMuted}>City</div>
-              <Dropdown
-                value={cityFilter}
-                options={["All", ...citiesAll]}
-                onChange={(v) => setCityFilter(v)}
-                S={S}
-              />
+              <Dropdown value={cityFilter} options={["All", ...citiesAll]} onChange={(v) => setCityFilter(v)} S={S} T={T} />
             </div>
           </div>
         </section>
 
-        {/* KPIs */}
         <div style={S.kpiGrid}>
           <div style={S.kpiCard}>
             <div style={S.kpiLabel}>Events (Filtered)</div>
@@ -724,7 +641,7 @@ export default function EventsPage() {
             <div style={S.kpiSub}>Auto reminder list below</div>
           </div>
           <div style={S.kpiCard}>
-            <div style={S.kpiLabel}>Overdue (not completed)</div>
+            <div style={S.kpiLabel}>Overdue</div>
             <div style={S.kpiValue}>{kpis.overdue}</div>
             <div style={S.kpiSub}>Fix status or reschedule</div>
           </div>
@@ -737,23 +654,12 @@ export default function EventsPage() {
           </div>
         </div>
 
-        {/* Auto Insights */}
         <div style={S.grid2}>
           <section style={S.panel}>
             <div style={S.panelTitle}>Auto Insights</div>
             <div style={S.statement}>
-              <InsightRow
-                label="Next 7 days focus"
-                value={`${kpis.upcoming7} event(s)`}
-                S={S}
-                strong
-              />
-              <InsightRow
-                label="Overdue items"
-                value={`${kpis.overdue} event(s)`}
-                S={S}
-                dim={kpis.overdue === 0}
-              />
+              <InsightRow label="Next 7 days focus" value={`${kpis.upcoming7} event(s)`} S={S} strong />
+              <InsightRow label="Overdue items" value={`${kpis.overdue} event(s)`} S={S} dim={kpis.overdue === 0} />
               <div style={S.hr} />
               <div style={S.smallNote}>
                 Tip: Use the <b>Status</b> dropdown on each event card. Hover is always <b>pure black</b>.
@@ -770,7 +676,9 @@ export default function EventsPage() {
                 {insights.next6.map((e) => (
                   <div key={e.id} style={S.reminderCard}>
                     <div style={S.rowBetween}>
-                      <div style={{ fontWeight: 950 }}>{e.date} • {e.title}</div>
+                      <div style={{ fontWeight: 950 }}>
+                        {e.date} • {e.title}
+                      </div>
                       <span style={pillByStatus(e.status, S)}>{e.status}</span>
                     </div>
                     <div style={S.smallMuted}>
@@ -783,7 +691,6 @@ export default function EventsPage() {
           </section>
         </div>
 
-        {/* Overdue list */}
         {insights.overdue6.length ? (
           <section style={S.panel}>
             <div style={S.panelTitle}>Overdue (Auto Flag)</div>
@@ -800,18 +707,23 @@ export default function EventsPage() {
                       {e.city ? <span style={S.pill}>{e.city}</span> : null}
                     </div>
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                      <button style={S.secondaryBtn} onClick={() => openEdit(e.id)}>Edit</button>
-                      <button style={S.primaryBtn} onClick={() => quickStatus(e.id, "Completed")}>Mark Completed</button>
+                      <button style={S.secondaryBtn} onClick={() => openEdit(e.id)}>
+                        Edit
+                      </button>
+                      <button style={S.primaryBtn} onClick={() => quickStatus(e.id, "Completed")}>
+                        Mark Completed
+                      </button>
                     </div>
                   </div>
-                  <div style={S.smallMuted}>{e.date} • Current: {e.status}</div>
+                  <div style={S.smallMuted}>
+                    {e.date} • Current: {e.status}
+                  </div>
                 </div>
               ))}
             </div>
           </section>
         ) : null}
 
-        {/* Events List */}
         <section style={S.panel}>
           <div style={S.panelTitle}>Events</div>
 
@@ -844,11 +756,16 @@ export default function EventsPage() {
                           options={["Planned", "Confirmed", "In Progress", "Completed", "Cancelled"]}
                           onChange={(v) => quickStatus(e.id, v as EventStatus)}
                           S={S}
+                          T={T}
                           compact
                         />
 
-                        <button style={S.secondaryBtn} onClick={() => openEdit(e.id)}>Edit</button>
-                        <button style={S.dangerBtn} onClick={() => removeEvent(e.id)}>Delete</button>
+                        <button style={S.secondaryBtn} onClick={() => openEdit(e.id)}>
+                          Edit
+                        </button>
+                        <button style={S.dangerBtn} onClick={() => removeEvent(e.id)}>
+                          Delete
+                        </button>
                       </div>
                     </div>
 
@@ -868,7 +785,7 @@ export default function EventsPage() {
                       <div style={S.cardMini}>
                         <div style={S.smallMuted}>Due</div>
                         <div style={S.cardMiniVal}>{formatMoneyINR(due)}</div>
-                        <div style={S.smallMuted}>Recommended: collect 50%+ before execution</div>
+                        <div style={S.smallMuted}>Collect 50%+ before execution</div>
                       </div>
 
                       <div style={S.cardMini}>
@@ -884,11 +801,7 @@ export default function EventsPage() {
                       <button style={S.secondaryBtn} onClick={() => addIncomeToFinance(e)}>
                         + Add Income to Finance
                       </button>
-                      <Link
-                        href="/finance"
-                        style={S.linkBtn as any}
-                        title="Go to Finance tab"
-                      >
+                      <Link href="/finance" style={S.linkBtn as any} title="Go to Finance tab">
                         Open Finance
                       </Link>
                     </div>
@@ -899,13 +812,14 @@ export default function EventsPage() {
           )}
         </section>
 
-        {/* Modal */}
         {openForm ? (
           <div style={S.modalOverlay} onClick={closeForm}>
             <div style={S.modal} onClick={(e) => e.stopPropagation()}>
               <div style={S.modalHeader}>
                 <div style={S.modalTitle}>{editingId ? "Edit Event" : "Add Event"}</div>
-                <button style={S.secondaryBtn} onClick={closeForm}>Close</button>
+                <button style={S.secondaryBtn} onClick={closeForm}>
+                  Close
+                </button>
               </div>
 
               <div style={S.modalGrid}>
@@ -926,6 +840,7 @@ export default function EventsPage() {
                     options={["Wedding", "Corporate", "Birthday", "Engagement", "Festival", "Other"]}
                     onChange={(v) => setDraft((d) => ({ ...d, type: v as EventType }))}
                     S={S}
+                    T={T}
                   />
                 </div>
 
@@ -936,6 +851,7 @@ export default function EventsPage() {
                     options={["Planned", "Confirmed", "In Progress", "Completed", "Cancelled"]}
                     onChange={(v) => setDraft((d) => ({ ...d, status: v as EventStatus }))}
                     S={S}
+                    T={T}
                   />
                 </div>
 
@@ -946,6 +862,7 @@ export default function EventsPage() {
                     options={["Low", "Medium", "High", "Urgent"]}
                     onChange={(v) => setDraft((d) => ({ ...d, priority: v as Priority }))}
                     S={S}
+                    T={T}
                   />
                 </div>
 
@@ -1004,25 +921,21 @@ export default function EventsPage() {
           </div>
         ) : null}
 
-        <div style={S.footerNote}>✅ Deploy-safe • ✅ Pure Black hover on dropdown menus/options • ✅ Cross-tab write only when you click “Add Income to Finance”</div>
+        <div style={S.footerNote}>✅ Deploy-safe • ✅ Pure Black hover on dropdown menus/options</div>
       </main>
     </div>
   );
 }
 
 /* ================== UI COMPONENTS ================== */
-function NavLink({ href, label, S, active }: { href: string; label: string; S: any; active?: boolean }) {
+function NavLink({ href, label, S, T, active }: { href: string; label: string; S: any; T: any; active?: boolean }) {
   const [h, setH] = useState(false);
   const base = active ? S.navActive : S.navItem;
-  const bg = h && !active ? S.hoverBlack : base.background;
-  const bd = h && !active ? S.hoverBd : base.border;
+  const bg = h && !active ? T.hoverBlack : base.background;
+  const bd = h && !active ? `1px solid ${T.accentBd}` : base.border;
+
   return (
-    <Link
-      href={href}
-      style={{ ...base, background: bg, border: bd } as any}
-      onMouseEnter={() => setH(true)}
-      onMouseLeave={() => setH(false)}
-    >
+    <Link href={href} style={{ ...base, background: bg, border: bd } as any} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}>
       {label}
     </Link>
   );
@@ -1033,32 +946,29 @@ function Dropdown({
   options,
   onChange,
   S,
+  T,
   compact,
 }: {
   value: string;
   options: string[];
   onChange: (v: string) => void;
   S: any;
+  T: any;
   compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [h, setH] = useState(false);
 
+  const baseBtn = compact ? S.ddBtnCompact : S.ddBtn;
   const btnStyle: CSSProperties = {
-    ...(compact ? S.ddBtnCompact : S.ddBtn),
-    background: h ? S.hoverBlack : (compact ? S.ddBtnCompact.background : S.ddBtn.background),
-    border: h ? `1px solid ${S.hoverBdColor}` : (compact ? S.ddBtnCompact.border : S.ddBtn.border),
+    ...baseBtn,
+    background: h ? T.hoverBlack : baseBtn.background,
+    border: h ? `1px solid ${T.accentBd}` : baseBtn.border,
   };
 
   return (
     <div style={S.ddWrap}>
-      <button
-        type="button"
-        style={btnStyle}
-        onClick={() => setOpen((v) => !v)}
-        onMouseEnter={() => setH(true)}
-        onMouseLeave={() => setH(false)}
-      >
+      <button type="button" style={btnStyle} onClick={() => setOpen((v) => !v)} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}>
         <span style={{ fontWeight: 950 }}>{value}</span>
         <span style={{ opacity: 0.9 }}>▾</span>
       </button>
@@ -1075,6 +985,7 @@ function Dropdown({
                 setOpen(false);
               }}
               S={S}
+              T={T}
             />
           ))}
         </div>
@@ -1083,25 +994,14 @@ function Dropdown({
   );
 }
 
-function DDItem({ label, active, onClick, S }: { label: string; active?: boolean; onClick: () => void; S: any }) {
+function DDItem({ label, active, onClick, S, T }: { label: string; active?: boolean; onClick: () => void; S: any; T: any }) {
   const [h, setH] = useState(false);
 
-  const bg = h
-    ? "#000000" // PURE BLACK hover
-    : active
-    ? "rgba(255,255,255,0.06)" // active background
-    : "transparent";
-
-  const bd = h ? S.hoverBdColor : "transparent";
+  const bg = h ? "#000000" : active ? "rgba(255,255,255,0.06)" : "transparent";
+  const bd = h ? `1px solid ${T.accentBd}` : "1px solid transparent";
 
   return (
-    <button
-      type="button"
-      style={{ ...S.ddItem, background: bg, border: `1px solid ${bd}` }}
-      onClick={onClick}
-      onMouseEnter={() => setH(true)}
-      onMouseLeave={() => setH(false)}
-    >
+    <button type="button" style={{ ...S.ddItem, background: bg, border: bd }} onClick={onClick} onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}>
       {label}
     </button>
   );
@@ -1126,9 +1026,6 @@ function InsightRow({ label, value, S, strong, dim }: { label: string; value: st
 
 /* ================== STYLES ================== */
 function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
-  const hoverBg = T.hoverBlack;
-  const hoverBdColor = T.accentBd;
-
   return {
     app: {
       minHeight: "100vh",
@@ -1137,8 +1034,7 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
                    radial-gradient(900px 700px at 80% 20%, ${T.glow2}, transparent 55%),
                    ${T.bg}`,
       color: T.text,
-      fontFamily:
-        'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
+      fontFamily: 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji"',
     },
 
     sidebar: {
@@ -1230,15 +1126,7 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
     smallMuted: { color: T.muted, fontSize: 12 },
     smallNote: { color: T.muted, fontSize: 12, lineHeight: 1.35 },
 
-    msg: {
-      marginTop: 12,
-      padding: 10,
-      borderRadius: 14,
-      border: `1px solid ${T.border}`,
-      background: T.soft,
-      color: T.text,
-      fontSize: 13,
-    },
+    msg: { marginTop: 12, padding: 10, borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft, color: T.text, fontSize: 13 },
 
     primaryBtn: {
       padding: "12px 14px",
@@ -1279,23 +1167,10 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       alignItems: "center",
     },
 
-    panel: {
-      marginTop: 12,
-      padding: 14,
-      borderRadius: 18,
-      border: `1px solid ${T.border}`,
-      background: T.panel,
-      backdropFilter: "blur(10px)",
-    },
+    panel: { marginTop: 12, padding: 14, borderRadius: 18, border: `1px solid ${T.border}`, background: T.panel, backdropFilter: "blur(10px)" },
     panelTitle: { fontWeight: 950, color: T.accentTx },
 
-    filtersGrid: {
-      marginTop: 12,
-      display: "grid",
-      gap: 10,
-      gridTemplateColumns: "220px 220px 1fr 220px 220px 220px 220px",
-      alignItems: "end",
-    },
+    filtersGrid: { marginTop: 12, display: "grid", gap: 10, gridTemplateColumns: "220px 220px 1fr 220px 220px 220px 220px", alignItems: "end" },
     field: { display: "grid", gap: 6 },
     fieldWide: { display: "grid", gap: 6 },
 
@@ -1319,34 +1194,16 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
     grid2: { marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
 
     statement: { marginTop: 12, display: "grid", gap: 10 },
-    row: {
-      display: "flex",
-      justifyContent: "space-between",
-      gap: 10,
-      padding: "10px 12px",
-      borderRadius: 14,
-      border: `1px solid ${T.border}`,
-      background: T.soft,
-    },
+    row: { display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderRadius: 14, border: `1px solid ${T.border}`, background: T.soft },
     hr: { height: 1, background: T.border, margin: "4px 0" },
 
     empty: { marginTop: 12, padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft, color: T.muted, fontWeight: 900 },
 
     txCard: { padding: 14, borderRadius: 18, border: `1px solid ${T.border}`, background: T.soft },
-
     reminderCard: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: T.soft },
-
     rowBetween: { display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" },
 
-    pill: {
-      padding: "6px 10px",
-      borderRadius: 999,
-      border: `1px solid ${T.border}`,
-      background: "transparent",
-      fontWeight: 950,
-      fontSize: 12,
-      whiteSpace: "nowrap",
-    },
+    pill: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.border}`, background: "transparent", fontWeight: 950, fontSize: 12, whiteSpace: "nowrap" },
     pillOk: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.okBd}`, background: T.okBg, color: T.okTx, fontWeight: 950, fontSize: 12, whiteSpace: "nowrap" },
     pillWarn: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.warnBd}`, background: T.warnBg, color: T.warnTx, fontWeight: 950, fontSize: 12, whiteSpace: "nowrap" },
     pillBad: { padding: "6px 10px", borderRadius: 999, border: `1px solid ${T.badBd}`, background: T.badBg, color: T.badTx, fontWeight: 950, fontSize: 12, whiteSpace: "nowrap" },
@@ -1356,7 +1213,6 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
     cardMini: { padding: 12, borderRadius: 16, border: `1px solid ${T.border}`, background: "rgba(255,255,255,0.02)" },
     cardMiniVal: { marginTop: 6, fontWeight: 950 },
 
-    // Dropdown (custom) — PURE BLACK hover is handled in component state
     ddWrap: { position: "relative" },
     ddBtn: {
       width: 220,
@@ -1417,28 +1273,8 @@ function makeStyles(T: any, compact: boolean): Record<string, CSSProperties> {
       border: "1px solid transparent",
     },
 
-    // hover helpers exposed for components
-    hoverBlack: hoverBg,
-    hoverBdColor: hoverBdColor,
-    hoverBd: `1px solid ${hoverBdColor}`,
-
-    modalOverlay: {
-      position: "fixed",
-      inset: 0,
-      background: "rgba(0,0,0,0.55)",
-      display: "grid",
-      placeItems: "center",
-      padding: 14,
-      zIndex: 80,
-    },
-    modal: {
-      width: "min(1050px, 100%)",
-      borderRadius: 18,
-      border: `1px solid ${T.border}`,
-      background: T.panel2,
-      backdropFilter: "blur(10px)",
-      padding: 14,
-    },
+    modalOverlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "grid", placeItems: "center", padding: 14, zIndex: 80 },
+    modal: { width: "min(1050px, 100%)", borderRadius: 18, border: `1px solid ${T.border}`, background: T.panel2, backdropFilter: "blur(10px)", padding: 14 },
     modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" },
     modalTitle: { fontWeight: 950, fontSize: 18, color: T.accentTx },
     modalGrid: { marginTop: 12, display: "grid", gridTemplateColumns: "220px 1fr 220px 220px 220px", gap: 10, alignItems: "end" },
