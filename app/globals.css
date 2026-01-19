@@ -229,3 +229,58 @@ body {
   font-size: 13px;
   color: var(--muted);
 }
+/* ===================== EVENTURA GLOBAL UI (DARK CONTROLS) ===================== */
+/* Put this at the BOTTOM of app/globals.css */
+
+/* Force browser native controls (select dropdowns, date pickers, etc.) to use dark UI */
+html,
+body {
+  color-scheme: dark;
+}
+
+/* Make ALL native form controls dark by default */
+select,
+option,
+input,
+textarea,
+button {
+  background-color: #0a0a0a;
+  color: #f9fafb;
+}
+
+/* Stronger fix for dropdown boxes + menus */
+select {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* Dropdown menu options (works in Chromium-based browsers best) */
+option {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+}
+
+/* Hover / focus states */
+select:hover,
+select:focus,
+input:hover,
+input:focus,
+textarea:hover,
+textarea:focus {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.28);
+  outline: none;
+}
+
+/* Prevent weird light autofill */
+input:-webkit-autofill,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-text-fill-color: #ffffff !important;
+  transition: background-color 999999s ease-in-out 0s;
+}
+
+/* Optional: scrollbar dark everywhere */
+* {
+  scrollbar-color: rgba(255, 255, 255, 0.25) #000000;
+}
