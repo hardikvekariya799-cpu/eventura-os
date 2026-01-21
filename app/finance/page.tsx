@@ -4,24 +4,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
-/* ===========================
-   Eventura OS — Finance (Advanced)
-   - Deploy-safe (client-only localStorage access)
-   - Advanced dashboard KPIs
-   - Transactions CRUD + filters + bulk actions
-   - Budgets + variance
-   - AR/AP (receivables/payables) + due tracking
-   - Reports (monthly, category, event, cashflow)
-   - Export (CSV + JSON) + Import (CSV + JSON)
-   =========================== */
-
 /* ================= AUTH / KEYS ================= */
 const DB_FIN = "eventura-finance-transactions";
 const DB_FIN_BUDGETS = "eventura-finance-budgets";
 const DB_FIN_SETTINGS = "eventura-finance-settings";
 const DB_FIN_AUDIT = "eventura-finance-audit";
-const DB_AUTH_ROLE = "eventura-role"; // "CEO" | "Staff" (fallback: CEO)
-const DB_AUTH_EMAIL = "eventura-email"; // optional (fallback blank)
+const DB_AUTH_ROLE = "eventura-role"; // "CEO" | "Staff"
+const DB_AUTH_EMAIL = "eventura-email";
 
 /* ================= TYPES ================= */
 type Role = "CEO" | "Staff";
@@ -49,7 +38,7 @@ type FinanceTx = {
   type: TxType;
   status: TxStatus;
 
-  amount: number; // base amount (pre-tax or total - your choice; we keep totalAmount computed)
+  amount: number;
   currency: "INR" | "CAD" | "USD" | "Other";
 
   category: TxTag;
@@ -57,23 +46,19 @@ type FinanceTx = {
 
   description: string;
 
-  // Parties / Linking
   clientName?: string;
   vendorName?: string;
   eventTitle?: string;
   eventId?: string;
 
-  // Payment / Invoice
   paymentMethod: PayMethod;
-  referenceId?: string; // UTR / Txn ID
+  referenceId?: string;
   invoiceNo?: string;
 
-  // Taxes
   gstRate?: number; // 0–28
-  gstIncluded?: boolean; // if true, amount includes GST
-  tdsRate?: number; // 0–10 typical
+  gstIncluded?: boolean;
+  tdsRate?: number; // 0–20
 
-  // Due / Schedule
   dueDate?: string; // YYYY-MM-DD
   recurring?: {
     enabled: boolean;
@@ -81,7 +66,6 @@ type FinanceTx = {
     nextRun?: string; // YYYY-MM-DD
   };
 
-  // Attachments (store names only in local mode)
   notes?: string;
 };
 
@@ -90,15 +74,13 @@ type BudgetLine = {
   createdAt: string;
   updatedAt: string;
 
-  month: string; // YYYY-MM (budget period)
+  month: string; // YYYY-MM
   currency: "INR" | "CAD" | "USD" | "Other";
 
-  // Targets
-  revenueTarget: number; // Income target
-  expenseCap: number; // Expense cap
-  grossMarginTargetPct: number; // 0–100
+  revenueTarget: number;
+  expenseCap: number;
+  grossMarginTargetPct: number;
 
-  // Optional fixed-cost template breakdown (editable)
   fixedCosts: {
     officeRentUtilities: number;
     salaries: number;
@@ -108,14 +90,13 @@ type BudgetLine = {
     adminCompliance: number;
   };
 
-  // Notes
   notes?: string;
 };
 
 type FinanceSettings = {
   defaultCurrency: "INR" | "CAD" | "USD" | "Other";
   startOfWeek: "Mon" | "Sun";
-  overdueRuleDays: number; // if dueDate < today => overdue
+  overdueRuleDays: number;
   showGst: boolean;
   showTds: boolean;
 };
@@ -184,13 +165,11 @@ function escCSV(val: any) {
   return s;
 }
 function daysBetween(aYMD: string, bYMD: string) {
-  // b - a
   const a = new Date(aYMD + "T00:00:00");
   const b = new Date(bYMD + "T00:00:00");
   return Math.round((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
 }
 function money(n: number, cur: string) {
-  // simple format (no Intl dependency issues)
   const sign = n < 0 ? "-" : "";
   const abs = Math.abs(n);
   const parts = abs.toFixed(2).split(".");
@@ -199,8 +178,6 @@ function money(n: number, cur: string) {
 }
 
 /* ================= DEFAULTS ================= */
-// Uses the Break-Even monthly fixed-cost template: total 2,65,000 split into line items.
-// :contentReference[oaicite:0]{index=0}
 function defaultBudgetLine(month: string, currency: BudgetLine["currency"]): BudgetLine {
   return {
     id: Date.now(),
@@ -222,7 +199,6 @@ function defaultBudgetLine(month: string, currency: BudgetLine["currency"]): Bud
     notes: "Base fixed-cost template (editable).",
   };
 }
-
 function defaultSettings(): FinanceSettings {
   return {
     defaultCurrency: "INR",
@@ -237,7 +213,6 @@ function defaultSettings(): FinanceSettings {
 function cls(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }
-
 function Pill({ label }: { label: string }) {
   return (
     <span className="inline-flex items-center rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[11px] text-white/80">
@@ -245,7 +220,6 @@ function Pill({ label }: { label: string }) {
     </span>
   );
 }
-
 function Btn({
   children,
   onClick,
@@ -276,7 +250,6 @@ function Btn({
     </button>
   );
 }
-
 function Input({
   value,
   onChange,
@@ -298,7 +271,6 @@ function Input({
     />
   );
 }
-
 function Select({
   value,
   onChange,
@@ -322,7 +294,6 @@ function Select({
     </select>
   );
 }
-
 function Modal({
   open,
   title,
@@ -430,7 +401,10 @@ export default function FinancePage() {
       setEmail(localStorage.getItem(DB_AUTH_EMAIL) || "");
       const rawTx = safeJsonParse<FinanceTx[]>(localStorage.getItem(DB_FIN), []);
       const rawBud = safeJsonParse<BudgetLine[]>(localStorage.getItem(DB_FIN_BUDGETS), []);
-      const rawSet = safeJsonParse<FinanceSettings>(localStorage.getItem(DB_FIN_SETTINGS), defaultSettings());
+      const rawSet = safeJsonParse<FinanceSettings>(
+        localStorage.getItem(DB_FIN_SETTINGS),
+        defaultSettings()
+      );
       const rawAud = safeJsonParse<AuditItem[]>(localStorage.getItem(DB_FIN_AUDIT), []);
       setTxs(Array.isArray(rawTx) ? rawTx : []);
       setBudgets(Array.isArray(rawBud) ? rawBud : []);
@@ -448,21 +422,18 @@ export default function FinancePage() {
       localStorage.setItem(DB_FIN, JSON.stringify(txs));
     } catch {}
   }, [txs, mounted]);
-
   useEffect(() => {
     if (!mounted) return;
     try {
       localStorage.setItem(DB_FIN_BUDGETS, JSON.stringify(budgets));
     } catch {}
   }, [budgets, mounted]);
-
   useEffect(() => {
     if (!mounted) return;
     try {
       localStorage.setItem(DB_FIN_SETTINGS, JSON.stringify(settings));
     } catch {}
   }, [settings, mounted]);
-
   useEffect(() => {
     if (!mounted) return;
     try {
@@ -471,21 +442,28 @@ export default function FinancePage() {
   }, [audit, mounted]);
 
   /* ================= AUTO RULES ================= */
-  // 1) Auto mark overdue
+
+  // 1) Auto mark overdue (TYPE-SAFE FIX)
   useEffect(() => {
     if (!mounted) return;
+
     const today = toYMD(new Date());
     let changed = false;
-    const next = txs.map((t) => {
+
+    const next: FinanceTx[] = txs.map((t): FinanceTx => {
       if (t.status === "Paid") return t;
-      if (t.dueDate && daysBetween(t.dueDate, today) > settings.overdueRuleDays) {
-        if (t.status !== "Overdue") {
-          changed = true;
-          return { ...t, status: "Overdue", updatedAt: nowISO() };
-        }
+
+      const due = t.dueDate;
+      if (!due) return t;
+
+      const isOver = daysBetween(due, today) > settings.overdueRuleDays;
+      if (isOver && t.status !== "Overdue") {
+        changed = true;
+        return { ...t, status: "Overdue" as TxStatus, updatedAt: nowISO() };
       }
       return t;
     });
+
     if (changed) {
       setTxs(next);
       pushAudit("AUTO_OVERDUE_SCAN", "Auto-marked overdue items based on dueDate.");
@@ -493,12 +471,12 @@ export default function FinancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, settings.overdueRuleDays]);
 
-  // 2) Recurring (creates a cloned Tx when nextRun <= today)
+  // 2) Recurring (creates cloned Tx when nextRun <= today) — TYPE-SAFE
   useEffect(() => {
     if (!mounted) return;
+
     const today = toYMD(new Date());
     let created = 0;
-    const nextTxs: FinanceTx[] = [...txs];
 
     function addMonths(ymd: string, months: number) {
       const d = new Date(ymd + "T00:00:00");
@@ -511,26 +489,25 @@ export default function FinancePage() {
       return toYMD(d);
     }
 
-    const updated = txs.map((t) => {
+    const newOnes: FinanceTx[] = [];
+    const updated: FinanceTx[] = txs.map((t): FinanceTx => {
       if (!t.recurring?.enabled || !t.recurring.nextRun) return t;
       if (t.recurring.nextRun > today) return t;
 
-      // create new tx for nextRun date
       const newTx: FinanceTx = {
         ...t,
         id: Date.now() + Math.floor(Math.random() * 1000),
         createdAt: nowISO(),
         updatedAt: nowISO(),
         date: t.recurring.nextRun,
-        status: "Planned",
+        status: "Planned" as TxStatus,
         referenceId: "",
         invoiceNo: "",
         notes: (t.notes ? t.notes + "\n" : "") + `Auto-created from recurring (${t.recurring.freq}).`,
       };
-      nextTxs.unshift(newTx);
+      newOnes.push(newTx);
       created += 1;
 
-      // advance nextRun
       let nextRun = t.recurring.nextRun;
       if (t.recurring.freq === "Weekly") nextRun = addDays(nextRun, 7);
       if (t.recurring.freq === "Monthly") nextRun = addMonths(nextRun, 1);
@@ -545,17 +522,29 @@ export default function FinancePage() {
     });
 
     if (created > 0) {
-      setTxs(updated.length ? nextTxs : nextTxs);
+      setTxs((prev) => [...newOnes, ...updated]);
       pushAudit("AUTO_RECUR_CREATE", `Auto-created ${created} recurring transaction(s).`);
       notify(`Auto-created ${created} recurring tx.`);
-    } else if (updated.some((u, i) => u !== txs[i])) {
-      setTxs(updated);
+    } else {
+      // only update if changed
+      const changed = updated.some((u, i) => u !== txs[i]);
+      if (changed) setTxs(updated);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted]);
 
   /* ================= DERIVED ================= */
   const currency = settings.defaultCurrency;
+
+  function totalAmount(t: FinanceTx) {
+    const base = parseNum(t.amount, 0);
+    const gstRate = clamp(parseNum(t.gstRate, 0), 0, 28);
+    const gstAdd = t.gstIncluded ? 0 : base * (gstRate / 100);
+    const subtotal = base + gstAdd;
+    const tdsRate = clamp(parseNum(t.tdsRate, 0), 0, 20);
+    const tds = subtotal * (tdsRate / 100);
+    return { base, gstRate, gstAdd, subtotal, tds };
+  }
 
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
@@ -585,26 +574,15 @@ export default function FinancePage() {
       .sort((a, b) => (a.date === b.date ? b.id - a.id : b.date.localeCompare(a.date)));
   }, [txs, q, fType, fStatus, fCategory, fCur, from, to]);
 
-  function totalAmount(t: FinanceTx) {
-    // If gstIncluded: amount already includes GST; else add GST
-    const base = parseNum(t.amount, 0);
-    const gstRate = clamp(parseNum(t.gstRate, 0), 0, 28);
-    const gstAdd = t.gstIncluded ? 0 : base * (gstRate / 100);
-    const subtotal = base + gstAdd;
-
-    // TDS as withheld (only meaningful for certain expense/vendor)
-    const tdsRate = clamp(parseNum(t.tdsRate, 0), 0, 20);
-    const tds = subtotal * (tdsRate / 100);
-
-    // We treat totalAmount as subtotal; and show tds separately in UI
-    return { base, gstRate, gstAdd, subtotal, tds };
-  }
-
   const kpis = useMemo(() => {
     const curTx = txs.filter((t) => t.currency === currency);
     const paid = curTx.filter((t) => t.status === "Paid");
-    const income = paid.filter((t) => t.type === "Income").reduce((s, t) => s + totalAmount(t).subtotal, 0);
-    const expense = paid.filter((t) => t.type === "Expense").reduce((s, t) => s + totalAmount(t).subtotal, 0);
+    const income = paid
+      .filter((t) => t.type === "Income")
+      .reduce((s, t) => s + totalAmount(t).subtotal, 0);
+    const expense = paid
+      .filter((t) => t.type === "Expense")
+      .reduce((s, t) => s + totalAmount(t).subtotal, 0);
     const net = income - expense;
 
     const openAR = curTx
@@ -617,7 +595,6 @@ export default function FinancePage() {
 
     const overdueCount = curTx.filter((t) => t.status === "Overdue").length;
 
-    // burn/runway from last 60 days expenses
     const today = toYMD(new Date());
     const since = toYMD(new Date(Date.now() - 60 * 24 * 60 * 60 * 1000));
     const recentExp = paid
@@ -626,27 +603,12 @@ export default function FinancePage() {
     const dailyBurn = recentExp / 60;
     const monthlyBurn = dailyBurn * 30;
 
-    // cash balance approximation: net paid overall (can be replaced by bank balance later)
     const cashBalance = net;
-
     const runwayMonths = monthlyBurn > 0 ? cashBalance / monthlyBurn : 999;
-
     const grossMarginPct = income > 0 ? ((income - expense) / income) * 100 : 0;
 
-    return {
-      income,
-      expense,
-      net,
-      openAR,
-      openAP,
-      overdueCount,
-      monthlyBurn,
-      cashBalance,
-      runwayMonths,
-      grossMarginPct,
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [txs, currency, settings.showGst, settings.showTds]);
+    return { income, expense, net, openAR, openAP, overdueCount, monthlyBurn, cashBalance, runwayMonths, grossMarginPct };
+  }, [txs, currency]);
 
   const last12 = useMemo(() => {
     const months: string[] = [];
@@ -657,7 +619,6 @@ export default function FinancePage() {
       dd.setMonth(d.getMonth() - i);
       months.unshift(toYM(dd));
     }
-
     const curTx = txs.filter((t) => t.currency === currency && t.status === "Paid");
     const map: Record<string, { inc: number; exp: number; net: number }> = {};
     months.forEach((m) => (map[m] = { inc: 0, exp: 0, net: 0 }));
@@ -670,7 +631,6 @@ export default function FinancePage() {
     }
     months.forEach((m) => (map[m].net = map[m].inc - map[m].exp));
     return { months, map };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [txs, currency]);
 
   const byCategory = useMemo(() => {
@@ -686,7 +646,6 @@ export default function FinancePage() {
     const rows = Object.entries(map).map(([k, v]) => ({ category: k, ...v, net: v.inc - v.exp }));
     rows.sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
     return rows;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [txs, currency]);
 
   const budgetForThisMonth = useMemo(() => {
@@ -697,9 +656,7 @@ export default function FinancePage() {
   const variance = useMemo(() => {
     if (!budgetForThisMonth) return null;
     const m = budgetForThisMonth.month;
-    const curPaid = txs.filter(
-      (t) => t.currency === currency && t.status === "Paid" && t.date.startsWith(m)
-    );
+    const curPaid = txs.filter((t) => t.currency === currency && t.status === "Paid" && t.date.startsWith(m));
     const inc = curPaid.filter((t) => t.type === "Income").reduce((s, t) => s + totalAmount(t).subtotal, 0);
     const exp = curPaid.filter((t) => t.type === "Expense").reduce((s, t) => s + totalAmount(t).subtotal, 0);
     const gmPct = inc > 0 ? ((inc - exp) / inc) * 100 : 0;
@@ -711,7 +668,6 @@ export default function FinancePage() {
       expVsCap: exp - budgetForThisMonth.expenseCap,
       gmVsTarget: gmPct - budgetForThisMonth.grossMarginTargetPct,
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [budgetForThisMonth, txs, currency]);
 
   /* ================= ACTIONS: TX ================= */
@@ -722,8 +678,8 @@ export default function FinancePage() {
       createdAt: nowISO(),
       updatedAt: nowISO(),
       date: today,
-      type: type || "Expense",
-      status: "Planned",
+      type: (type || "Expense") as TxType,
+      status: "Planned" as TxStatus,
       amount: 0,
       currency,
       category: "Other",
@@ -739,22 +695,23 @@ export default function FinancePage() {
     setEditingTx(base);
     setOpenTxModal(true);
   }
-
   function openEditTx(id: number) {
     const t = txs.find((x) => x.id === id);
     if (!t) return;
     setEditingTx({ ...t });
     setOpenTxModal(true);
   }
-
   function saveTx() {
     if (!editingTx) return;
+
     const clean: FinanceTx = {
       ...editingTx,
       updatedAt: nowISO(),
       amount: parseNum(editingTx.amount, 0),
       gstRate: clamp(parseNum(editingTx.gstRate, 0), 0, 28),
       tdsRate: clamp(parseNum(editingTx.tdsRate, 0), 0, 20),
+      status: editingTx.status as TxStatus,
+      type: editingTx.type as TxType,
       description: (editingTx.description || "").trim(),
       subcategory: (editingTx.subcategory || "").trim() || undefined,
       clientName: (editingTx.clientName || "").trim() || undefined,
@@ -774,19 +731,12 @@ export default function FinancePage() {
       notes: (editingTx.notes || "").trim() || undefined,
     };
 
-    if (!clean.description) {
-      notify("Description required.");
-      return;
-    }
-    if (!clean.date) {
-      notify("Date required.");
-      return;
-    }
+    if (!clean.description) return notify("Description required.");
+    if (!clean.date) return notify("Date required.");
 
     setTxs((prev) => {
       const exists = prev.some((t) => t.id === clean.id);
-      const next = exists ? prev.map((t) => (t.id === clean.id ? clean : t)) : [clean, ...prev];
-      return next;
+      return exists ? prev.map((t) => (t.id === clean.id ? clean : t)) : [clean, ...prev];
     });
 
     pushAudit(
@@ -797,7 +747,6 @@ export default function FinancePage() {
     setEditingTx(null);
     notify("Saved.");
   }
-
   function deleteTx(id: number) {
     const t = txs.find((x) => x.id === id);
     if (!t) return;
@@ -805,17 +754,15 @@ export default function FinancePage() {
     pushAudit("DELETE_TX", `Deleted tx #${id} (${t.type} ${t.description})`);
     notify("Deleted.");
   }
-
   function bulkSetStatus(status: TxStatus) {
     if (!selectedIds.length) return;
     setTxs((prev) =>
-      prev.map((t) => (selectedIds.includes(t.id) ? { ...t, status, updatedAt: nowISO() } : t))
+      prev.map((t) => (selectedIds.includes(t.id) ? { ...t, status: status as TxStatus, updatedAt: nowISO() } : t))
     );
     pushAudit("BULK_UPDATE", `Bulk set status=${status} for ${selectedIds.length} tx.`);
     setSelected({});
     notify("Bulk updated.");
   }
-
   function bulkDelete() {
     if (!selectedIds.length) return;
     setTxs((prev) => prev.filter((t) => !selectedIds.includes(t.id)));
@@ -827,20 +774,18 @@ export default function FinancePage() {
   /* ================= ACTIONS: BUDGET ================= */
   function openCreateBudget() {
     const m = toYM(new Date());
-    const base = defaultBudgetLine(m, currency);
-    setEditingBudget(base);
+    setEditingBudget(defaultBudgetLine(m, currency));
     setOpenBudgetModal(true);
   }
-
   function openEditBudget(id: number) {
     const b = budgets.find((x) => x.id === id);
     if (!b) return;
     setEditingBudget({ ...b, fixedCosts: { ...b.fixedCosts } });
     setOpenBudgetModal(true);
   }
-
   function saveBudget() {
     if (!editingBudget) return;
+
     const clean: BudgetLine = {
       ...editingBudget,
       updatedAt: nowISO(),
@@ -857,10 +802,9 @@ export default function FinancePage() {
       },
       notes: (editingBudget.notes || "").trim() || undefined,
     };
-    if (!clean.month) {
-      notify("Month required.");
-      return;
-    }
+
+    if (!clean.month) return notify("Month required.");
+
     setBudgets((prev) => {
       const exists = prev.some((b) => b.id === clean.id);
       const sameKey = prev.some((b) => b.id !== clean.id && b.month === clean.month && b.currency === clean.currency);
@@ -870,15 +814,12 @@ export default function FinancePage() {
       }
       return exists ? prev.map((b) => (b.id === clean.id ? clean : b)) : [clean, ...prev];
     });
-    pushAudit(
-      budgets.some((b) => b.id === clean.id) ? "UPDATE_BUDGET" : "CREATE_BUDGET",
-      `Budget ${clean.month} (${clean.currency})`
-    );
+
+    pushAudit(budgets.some((b) => b.id === clean.id) ? "UPDATE_BUDGET" : "CREATE_BUDGET", `Budget ${clean.month} (${clean.currency})`);
     setOpenBudgetModal(false);
     setEditingBudget(null);
     notify("Saved.");
   }
-
   function deleteBudget(id: number) {
     const b = budgets.find((x) => x.id === id);
     if (!b) return;
@@ -959,14 +900,7 @@ export default function FinancePage() {
   }
 
   function exportJSON() {
-    const payload = {
-      version: 1,
-      exportedAt: nowISO(),
-      settings,
-      budgets,
-      txs,
-      audit,
-    };
+    const payload = { version: 1, exportedAt: nowISO(), settings, budgets, txs, audit };
     downloadText(`eventura_finance_backup_${toYMD(new Date())}.json`, JSON.stringify(payload, null, 2), "application/json");
     pushAudit("EXPORT", `Exported JSON backup (tx=${txs.length}, budgets=${budgets.length})`);
     notify("JSON exported.");
@@ -992,14 +926,36 @@ export default function FinancePage() {
     }
   }
 
+  function parseCSVLine(line: string) {
+    const out: string[] = [];
+    let cur = "";
+    let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQ) {
+        if (ch === '"') {
+          if (line[i + 1] === '"') {
+            cur += '"';
+            i++;
+          } else inQ = false;
+        } else cur += ch;
+      } else {
+        if (ch === '"') inQ = true;
+        else if (ch === ",") {
+          out.push(cur);
+          cur = "";
+        } else cur += ch;
+      }
+    }
+    out.push(cur);
+    return out.map((s) => s.trim());
+  }
+
   function importCSV() {
-    // basic CSV (headers required; extra columns ignored)
     const raw = importText || "";
     const lines = raw.split(/\r?\n/).filter((l) => l.trim().length > 0);
-    if (lines.length < 2) {
-      notify("CSV needs header + rows.");
-      return;
-    }
+    if (lines.length < 2) return notify("CSV needs header + rows.");
+
     const header = parseCSVLine(lines[0]);
     const idx = (k: string) => header.indexOf(k);
 
@@ -1032,57 +988,27 @@ export default function FinancePage() {
         dueDate: get("dueDate") || undefined,
         recurring: {
           enabled: String(get("recurringEnabled")).toLowerCase() === "true",
-          freq: ((get("recurringFreq") as any) || "Monthly") as any,
+          freq: (((get("recurringFreq") as any) || "Monthly") as FinanceTx["recurring"]["freq"]),
           nextRun: get("recurringNextRun") || undefined,
         },
         notes: get("notes") || undefined,
       };
       if (t.description.trim()) next.push(t);
     }
+
     setTxs((prev) => {
-      // merge by id (import overrides)
       const map = new Map<number, FinanceTx>();
       for (const p of prev) map.set(p.id, p);
       for (const n of next) map.set(n.id, n);
       return Array.from(map.values()).sort((a, b) => (a.date === b.date ? b.id - a.id : b.date.localeCompare(a.date)));
     });
+
     pushAudit("IMPORT", `Imported CSV rows=${next.length}`);
     notify("Imported CSV.");
   }
 
-  function parseCSVLine(line: string) {
-    // minimal CSV parser supporting quotes
-    const out: string[] = [];
-    let cur = "";
-    let inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (inQ) {
-        if (ch === '"') {
-          if (line[i + 1] === '"') {
-            cur += '"';
-            i++;
-          } else {
-            inQ = false;
-          }
-        } else {
-          cur += ch;
-        }
-      } else {
-        if (ch === '"') inQ = true;
-        else if (ch === ",") {
-          out.push(cur);
-          cur = "";
-        } else cur += ch;
-      }
-    }
-    out.push(cur);
-    return out.map((s) => s.trim());
-  }
-
   /* ================= FINANCE AI (local) ================= */
   const financeAI = useMemo(() => {
-    // rule-based insights (no external calls)
     const tips: Array<{ title: string; detail: string; level: "OK" | "Warn" | "Alert" }> = [];
     const m = toYM(new Date());
 
@@ -1093,7 +1019,6 @@ export default function FinancePage() {
         level: "Alert",
       });
     }
-
     if (variance && variance.expVsCap > 0) {
       tips.push({
         title: "Expense cap breached (this month)",
@@ -1101,7 +1026,6 @@ export default function FinancePage() {
         level: "Warn",
       });
     }
-
     if (variance && variance.revVsTarget < 0) {
       tips.push({
         title: "Revenue below target (this month)",
@@ -1109,7 +1033,6 @@ export default function FinancePage() {
         level: "Warn",
       });
     }
-
     if (kpis.grossMarginPct < 20 && kpis.income > 0) {
       tips.push({
         title: "Low gross margin",
@@ -1117,7 +1040,6 @@ export default function FinancePage() {
         level: "Warn",
       });
     }
-
     if (kpis.runwayMonths < 2) {
       tips.push({
         title: "Runway is tight",
@@ -1132,7 +1054,6 @@ export default function FinancePage() {
       });
     }
 
-    // Seasonal reminder for wedding/festive months in India (generic)
     const monthNum = Number(m.slice(5, 7));
     if ([10, 11, 12, 1, 2].includes(monthNum)) {
       tips.push({
@@ -1142,10 +1063,7 @@ export default function FinancePage() {
       });
     }
 
-    if (tips.length === 0) {
-      tips.push({ title: "All stable", detail: "No major risks detected. Keep tracking budgets weekly.", level: "OK" });
-    }
-
+    if (tips.length === 0) tips.push({ title: "All stable", detail: "No major risks detected. Keep tracking budgets weekly.", level: "OK" });
     return tips;
   }, [kpis, variance, currency]);
 
@@ -1177,7 +1095,6 @@ export default function FinancePage() {
       </div>
     );
   }
-
   function SectionTitle({ title, right }: { title: string; right?: React.ReactNode }) {
     return (
       <div className="flex items-center justify-between gap-3">
@@ -1207,7 +1124,7 @@ export default function FinancePage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Btn variant="ghost" onClick={() => exportCSV("filtered")} title="Export current filtered view as CSV (Excel opens CSV)">
+            <Btn variant="ghost" onClick={() => exportCSV("filtered")} title="Export current filtered view as CSV">
               Export CSV (Filtered)
             </Btn>
             <Btn variant="ghost" onClick={exportJSON} title="Full backup export (JSON)">
@@ -1273,7 +1190,7 @@ export default function FinancePage() {
                   />
                   <Select
                     value={fStatus}
-                    onChange={(v) => setFStatus(v as any)}
+                    onChange={(v) => setFStatus(v as TxStatus | "All")}
                     options={[
                       { value: "All", label: "All Status" },
                       { value: "Planned", label: "Planned" },
@@ -1363,13 +1280,13 @@ export default function FinancePage() {
 
         {/* Main */}
         <div className="space-y-4">
-          {/* Toast */}
           {toast ? (
             <div className="rounded-2xl border border-white/10 bg-black/60 px-4 py-3 text-sm text-white">
               {toast}
             </div>
           ) : null}
 
+          {/* DASHBOARD */}
           {tab === "Dashboard" ? (
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
@@ -1398,10 +1315,7 @@ export default function FinancePage() {
 
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <SectionTitle
-                    title="Month Trend (Last 12)"
-                    right={<Pill label="Paid only" />}
-                  />
+                  <SectionTitle title="Month Trend (Last 12)" right={<Pill label="Paid only" />} />
                   <div className="mt-3 overflow-auto">
                     <table className="min-w-full border-separate border-spacing-0">
                       <thead>
@@ -1416,10 +1330,7 @@ export default function FinancePage() {
                         {last12.months.map((m) => {
                           const row = last12.map[m];
                           return (
-                            <tr
-                              key={m}
-                              className="text-sm text-white/85 hover:bg-black"
-                            >
+                            <tr key={m} className="text-sm text-white/85 hover:bg-black">
                               <td className="sticky left-0 bg-[#0b0b0b] px-2 py-2">{m}</td>
                               <td className="px-2 py-2">{money(row.inc, currency)}</td>
                               <td className="px-2 py-2">{money(row.exp, currency)}</td>
@@ -1545,6 +1456,7 @@ export default function FinancePage() {
             </div>
           ) : null}
 
+          {/* TRANSACTIONS */}
           {tab === "Transactions" ? (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
               <SectionTitle
@@ -1684,6 +1596,7 @@ export default function FinancePage() {
             </div>
           ) : null}
 
+          {/* BUDGETS */}
           {tab === "Budgets" ? (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
               <SectionTitle
@@ -1696,12 +1609,10 @@ export default function FinancePage() {
                     <Btn
                       variant="outline"
                       onClick={() => {
-                        // create next month budget quickly
                         const d = new Date();
                         d.setMonth(d.getMonth() + 1);
                         const m = toYM(d);
-                        const b = defaultBudgetLine(m, currency);
-                        setEditingBudget(b);
+                        setEditingBudget(defaultBudgetLine(m, currency));
                         setOpenBudgetModal(true);
                       }}
                       disabled={!canEdit}
@@ -1771,6 +1682,7 @@ export default function FinancePage() {
             </div>
           ) : null}
 
+          {/* AR/AP */}
           {tab === "AR/AP" ? (
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
@@ -1804,13 +1716,13 @@ export default function FinancePage() {
                                   <Btn variant="ghost" onClick={() => openEditTx(t.id)}>
                                     Edit
                                   </Btn>
-                                  <Btn variant="ghost" onClick={() => bulkSetStatus("Paid")} disabled>
-                                    {/* placeholder */}
-                                  </Btn>
-                                  <Btn variant="outline" onClick={() => {
-                                    setSelected((p) => ({ ...p, [t.id]: true }));
-                                    notify("Selected for bulk actions.");
-                                  }}>
+                                  <Btn
+                                    variant="outline"
+                                    onClick={() => {
+                                      setSelected((p) => ({ ...p, [t.id]: true }));
+                                      notify("Selected for bulk actions.");
+                                    }}
+                                  >
                                     Select
                                   </Btn>
                                 </div>
@@ -1881,85 +1793,85 @@ export default function FinancePage() {
             </div>
           ) : null}
 
+          {/* REPORTS */}
           {tab === "Reports" ? (
-            <div className="space-y-3">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <SectionTitle title="Reports" right={<Pill label="Use filters on left to slice data" />} />
-                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-                    <div className="text-xs text-white/55">Filtered Totals</div>
-                    {(() => {
-                      const inc = filtered
-                        .filter((t) => t.type === "Income")
-                        .reduce((s, t) => s + totalAmount(t).subtotal, 0);
-                      const exp = filtered
-                        .filter((t) => t.type === "Expense")
-                        .reduce((s, t) => s + totalAmount(t).subtotal, 0);
-                      return (
-                        <div className="mt-2 space-y-1 text-sm">
-                          <div className="flex items-center justify-between">
-                            <span className="text-white/70">Income</span>
-                            <span className="text-emerald-200">{money(inc, currency)}</span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-white/70">Expense</span>
-                            <span className="text-red-200">{money(exp, currency)}</span>
-                          </div>
-                          <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-2">
-                            <span className="text-white/70">Net</span>
-                            <span className={inc - exp >= 0 ? "text-emerald-200" : "text-red-200"}>
-                              {money(inc - exp, currency)}
-                            </span>
-                          </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <SectionTitle title="Reports" right={<Pill label="Use filters on left to slice data" />} />
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+                  <div className="text-xs text-white/55">Filtered Totals</div>
+                  {(() => {
+                    const inc = filtered
+                      .filter((t) => t.type === "Income")
+                      .reduce((s, t) => s + totalAmount(t).subtotal, 0);
+                    const exp = filtered
+                      .filter((t) => t.type === "Expense")
+                      .reduce((s, t) => s + totalAmount(t).subtotal, 0);
+                    return (
+                      <div className="mt-2 space-y-1 text-sm">
+                        <div className="flex items-center justify-between">
+                          <span className="text-white/70">Income</span>
+                          <span className="text-emerald-200">{money(inc, currency)}</span>
                         </div>
-                      );
-                    })()}
-                    <div className="mt-3 flex gap-2">
-                      <Btn variant="outline" onClick={() => exportCSV("filtered")}>
-                        Export CSV
-                      </Btn>
-                    </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-white/70">Expense</span>
+                          <span className="text-red-200">{money(exp, currency)}</span>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between border-t border-white/10 pt-2">
+                          <span className="text-white/70">Net</span>
+                          <span className={inc - exp >= 0 ? "text-emerald-200" : "text-red-200"}>
+                            {money(inc - exp, currency)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  <div className="mt-3 flex gap-2">
+                    <Btn variant="outline" onClick={() => exportCSV("filtered")}>
+                      Export CSV
+                    </Btn>
                   </div>
+                </div>
 
-                  <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-                    <div className="text-xs text-white/55">Top Overdue</div>
-                    <div className="mt-2 space-y-2">
-                      {txs
-                        .filter((t) => t.status === "Overdue")
-                        .sort((a, b) => (a.dueDate || "9999-12-31").localeCompare(b.dueDate || "9999-12-31"))
-                        .slice(0, 6)
-                        .map((t) => (
-                          <div key={t.id} className="rounded-xl border border-white/10 bg-[#0b0b0b] p-2 hover:bg-black">
-                            <div className="text-sm font-semibold">{t.description}</div>
-                            <div className="mt-1 text-xs text-white/60">
-                              {t.type} • {t.currency} • Due: {t.dueDate || "-"}
-                            </div>
+                <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+                  <div className="text-xs text-white/55">Top Overdue</div>
+                  <div className="mt-2 space-y-2">
+                    {txs
+                      .filter((t) => t.status === "Overdue")
+                      .sort((a, b) => (a.dueDate || "9999-12-31").localeCompare(b.dueDate || "9999-12-31"))
+                      .slice(0, 6)
+                      .map((t) => (
+                        <div key={t.id} className="rounded-xl border border-white/10 bg-[#0b0b0b] p-2 hover:bg-black">
+                          <div className="text-sm font-semibold">{t.description}</div>
+                          <div className="mt-1 text-xs text-white/60">
+                            {t.type} • {t.currency} • Due: {t.dueDate || "-"}
                           </div>
-                        ))}
-                      {txs.filter((t) => t.status === "Overdue").length === 0 ? (
-                        <div className="text-sm text-white/60">No overdue items.</div>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-                    <div className="text-xs text-white/55">Audit (latest)</div>
-                    <div className="mt-2 space-y-2">
-                      {audit.slice(0, 8).map((a) => (
-                        <div key={a.id} className="rounded-xl border border-white/10 bg-[#0b0b0b] p-2 hover:bg-black">
-                          <div className="text-xs text-white/60">{new Date(a.at).toLocaleString()}</div>
-                          <div className="text-sm font-semibold">{a.action}</div>
-                          <div className="text-xs text-white/65">{a.details}</div>
                         </div>
                       ))}
-                      {audit.length === 0 ? <div className="text-sm text-white/60">No audit yet.</div> : null}
-                    </div>
+                    {txs.filter((t) => t.status === "Overdue").length === 0 ? (
+                      <div className="text-sm text-white/60">No overdue items.</div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+                  <div className="text-xs text-white/55">Audit (latest)</div>
+                  <div className="mt-2 space-y-2">
+                    {audit.slice(0, 8).map((a) => (
+                      <div key={a.id} className="rounded-xl border border-white/10 bg-[#0b0b0b] p-2 hover:bg-black">
+                        <div className="text-xs text-white/60">{new Date(a.at).toLocaleString()}</div>
+                        <div className="text-sm font-semibold">{a.action}</div>
+                        <div className="text-xs text-white/65">{a.details}</div>
+                      </div>
+                    ))}
+                    {audit.length === 0 ? <div className="text-sm text-white/60">No audit yet.</div> : null}
                   </div>
                 </div>
               </div>
             </div>
           ) : null}
 
+          {/* IMPORT/EXPORT */}
           {tab === "Import/Export" ? (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
               <SectionTitle
@@ -2002,9 +1914,7 @@ export default function FinancePage() {
                       Clear
                     </Btn>
                   </div>
-                  {!canEdit ? (
-                    <div className="mt-2 text-xs text-red-200">Staff role: import disabled.</div>
-                  ) : null}
+                  {!canEdit ? <div className="mt-2 text-xs text-red-200">Staff role: import disabled.</div> : null}
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
@@ -2026,26 +1936,13 @@ export default function FinancePage() {
                     >
                       Download Template
                     </Btn>
-                    <Btn
-                      variant="outline"
-                      onClick={() => {
-                        // also provide sample row
-                        const sample =
-                          "id,date,type,status,currency,amount,gstRate,gstIncluded,tdsRate,total,category,subcategory,description,clientName,vendorName,eventTitle,eventId,paymentMethod,referenceId,invoiceNo,dueDate,recurringEnabled,recurringFreq,recurringNextRun,notes,createdAt,updatedAt\n" +
-                          `${Date.now()},${toYMD(new Date())},Income,Pending,${currency},50000,0,false,0,,Sales,,Wedding booking advance,Client A,,,Wedding A,,Bank,UTR123,INV-001,${toYMD(
-                            new Date(Date.now() + 7 * 86400000)
-                          )},false,Monthly,,Sample note,${nowISO()},${nowISO()}\n`;
-                        downloadText("eventura_finance_csv_sample.csv", sample, "text/csv;charset=utf-8");
-                      }}
-                    >
-                      Download Sample
-                    </Btn>
                   </div>
                 </div>
               </div>
             </div>
           ) : null}
 
+          {/* SETTINGS */}
           {tab === "Settings" ? (
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
               <SectionTitle title="Finance Settings" />
@@ -2056,8 +1953,7 @@ export default function FinancePage() {
                     <Select
                       value={settings.defaultCurrency}
                       onChange={(v) => {
-                        const next = { ...settings, defaultCurrency: v as any };
-                        setSettings(next);
+                        setSettings((p) => ({ ...p, defaultCurrency: v as any }));
                         pushAudit("SETTINGS_UPDATE", `defaultCurrency=${v}`);
                         notify("Saved.");
                       }}
@@ -2078,8 +1974,7 @@ export default function FinancePage() {
                       value={String(settings.overdueRuleDays)}
                       onChange={(v) => {
                         const n = clamp(parseNum(v, 0), -30, 365);
-                        const next = { ...settings, overdueRuleDays: n };
-                        setSettings(next);
+                        setSettings((p) => ({ ...p, overdueRuleDays: n }));
                         pushAudit("SETTINGS_UPDATE", `overdueRuleDays=${n}`);
                       }}
                       type="number"
@@ -2098,8 +1993,7 @@ export default function FinancePage() {
                         type="checkbox"
                         checked={settings.showGst}
                         onChange={(e) => {
-                          const next = { ...settings, showGst: e.target.checked };
-                          setSettings(next);
+                          setSettings((p) => ({ ...p, showGst: e.target.checked }));
                           pushAudit("SETTINGS_UPDATE", `showGst=${e.target.checked}`);
                         }}
                       />
@@ -2110,8 +2004,7 @@ export default function FinancePage() {
                         type="checkbox"
                         checked={settings.showTds}
                         onChange={(e) => {
-                          const next = { ...settings, showTds: e.target.checked };
-                          setSettings(next);
+                          setSettings((p) => ({ ...p, showTds: e.target.checked }));
                           pushAudit("SETTINGS_UPDATE", `showTds=${e.target.checked}`);
                         }}
                       />
@@ -2144,20 +2037,19 @@ export default function FinancePage() {
               </div>
             </div>
           ) : null}
-
-          {/* Default when tab not matched */}
-          {!["Dashboard", "Transactions", "Budgets", "AR/AP", "Reports", "Import/Export", "Settings"].includes(tab) ? (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-white/70">
-              Unknown tab.
-            </div>
-          ) : null}
         </div>
       </div>
 
       {/* TX MODAL */}
       <Modal
         open={openTxModal}
-        title={editingTx ? (txs.some((t) => t.id === editingTx.id) ? "Edit Transaction" : "New Transaction") : "Transaction"}
+        title={
+          editingTx
+            ? txs.some((t) => t.id === editingTx.id)
+              ? "Edit Transaction"
+              : "New Transaction"
+            : "Transaction"
+        }
         onClose={() => {
           setOpenTxModal(false);
           setEditingTx(null);
@@ -2167,8 +2059,7 @@ export default function FinancePage() {
             <div className="text-xs text-white/55">
               {editingTx ? (
                 <>
-                  <span className="font-semibold">Total:</span>{" "}
-                  {money(totalAmount(editingTx).subtotal, editingTx.currency)}
+                  <span className="font-semibold">Total:</span> {money(totalAmount(editingTx).subtotal, editingTx.currency)}
                 </>
               ) : null}
             </div>
@@ -2200,17 +2091,13 @@ export default function FinancePage() {
                 </div>
                 <div>
                   <div className="mb-1 text-xs text-white/55">Due Date</div>
-                  <Input
-                    value={editingTx.dueDate || ""}
-                    onChange={(v) => setEditingTx((p) => ({ ...p!, dueDate: v }))}
-                    type="date"
-                  />
+                  <Input value={editingTx.dueDate || ""} onChange={(v) => setEditingTx((p) => ({ ...p!, dueDate: v }))} type="date" />
                 </div>
                 <div>
                   <div className="mb-1 text-xs text-white/55">Type</div>
                   <Select
                     value={editingTx.type}
-                    onChange={(v) => setEditingTx((p) => ({ ...p!, type: v as any }))}
+                    onChange={(v) => setEditingTx((p) => ({ ...p!, type: v as TxType }))}
                     options={[
                       { value: "Income", label: "Income" },
                       { value: "Expense", label: "Expense" },
@@ -2221,7 +2108,7 @@ export default function FinancePage() {
                   <div className="mb-1 text-xs text-white/55">Status</div>
                   <Select
                     value={editingTx.status}
-                    onChange={(v) => setEditingTx((p) => ({ ...p!, status: v as any }))}
+                    onChange={(v) => setEditingTx((p) => ({ ...p!, status: v as TxStatus }))}
                     options={[
                       { value: "Planned", label: "Planned" },
                       { value: "Pending", label: "Pending" },
@@ -2234,11 +2121,7 @@ export default function FinancePage() {
 
               <div className="mt-3">
                 <div className="mb-1 text-xs text-white/55">Description</div>
-                <Input
-                  value={editingTx.description}
-                  onChange={(v) => setEditingTx((p) => ({ ...p!, description: v }))}
-                  placeholder="e.g., Wedding booking advance / Vendor payment / Office rent…"
-                />
+                <Input value={editingTx.description} onChange={(v) => setEditingTx((p) => ({ ...p!, description: v }))} />
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-2">
@@ -2246,7 +2129,7 @@ export default function FinancePage() {
                   <div className="mb-1 text-xs text-white/55">Category</div>
                   <Select
                     value={editingTx.category}
-                    onChange={(v) => setEditingTx((p) => ({ ...p!, category: v as any }))}
+                    onChange={(v) => setEditingTx((p) => ({ ...p!, category: v as TxTag }))}
                     options={[
                       { value: "Sales", label: "Sales" },
                       { value: "ClientAdvance", label: "Client Advance" },
@@ -2264,11 +2147,7 @@ export default function FinancePage() {
                 </div>
                 <div>
                   <div className="mb-1 text-xs text-white/55">Subcategory</div>
-                  <Input
-                    value={editingTx.subcategory || ""}
-                    onChange={(v) => setEditingTx((p) => ({ ...p!, subcategory: v }))}
-                    placeholder="optional"
-                  />
+                  <Input value={editingTx.subcategory || ""} onChange={(v) => setEditingTx((p) => ({ ...p!, subcategory: v }))} />
                 </div>
               </div>
             </div>
@@ -2301,7 +2180,7 @@ export default function FinancePage() {
                   <div className="mb-1 text-xs text-white/55">Payment Method</div>
                   <Select
                     value={editingTx.paymentMethod}
-                    onChange={(v) => setEditingTx((p) => ({ ...p!, paymentMethod: v as any }))}
+                    onChange={(v) => setEditingTx((p) => ({ ...p!, paymentMethod: v as PayMethod }))}
                     options={[
                       { value: "Bank", label: "Bank" },
                       { value: "UPI", label: "UPI" },
@@ -2314,22 +2193,14 @@ export default function FinancePage() {
                 </div>
                 <div>
                   <div className="mb-1 text-xs text-white/55">Reference ID</div>
-                  <Input
-                    value={editingTx.referenceId || ""}
-                    onChange={(v) => setEditingTx((p) => ({ ...p!, referenceId: v }))}
-                    placeholder="UTR / Txn ID"
-                  />
+                  <Input value={editingTx.referenceId || ""} onChange={(v) => setEditingTx((p) => ({ ...p!, referenceId: v }))} />
                 </div>
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <div>
                   <div className="mb-1 text-xs text-white/55">Invoice No</div>
-                  <Input
-                    value={editingTx.invoiceNo || ""}
-                    onChange={(v) => setEditingTx((p) => ({ ...p!, invoiceNo: v }))}
-                    placeholder="optional"
-                  />
+                  <Input value={editingTx.invoiceNo || ""} onChange={(v) => setEditingTx((p) => ({ ...p!, invoiceNo: v }))} />
                 </div>
                 <div className="flex items-end gap-2">
                   <label className="flex items-center gap-2 text-sm text-white/80">
@@ -2396,35 +2267,19 @@ export default function FinancePage() {
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <div>
                   <div className="mb-1 text-xs text-white/55">Client Name</div>
-                  <Input
-                    value={editingTx.clientName || ""}
-                    onChange={(v) => setEditingTx((p) => ({ ...p!, clientName: v }))}
-                    placeholder="optional"
-                  />
+                  <Input value={editingTx.clientName || ""} onChange={(v) => setEditingTx((p) => ({ ...p!, clientName: v }))} />
                 </div>
                 <div>
                   <div className="mb-1 text-xs text-white/55">Vendor Name</div>
-                  <Input
-                    value={editingTx.vendorName || ""}
-                    onChange={(v) => setEditingTx((p) => ({ ...p!, vendorName: v }))}
-                    placeholder="optional"
-                  />
+                  <Input value={editingTx.vendorName || ""} onChange={(v) => setEditingTx((p) => ({ ...p!, vendorName: v }))} />
                 </div>
                 <div>
                   <div className="mb-1 text-xs text-white/55">Event Title</div>
-                  <Input
-                    value={editingTx.eventTitle || ""}
-                    onChange={(v) => setEditingTx((p) => ({ ...p!, eventTitle: v }))}
-                    placeholder="optional"
-                  />
+                  <Input value={editingTx.eventTitle || ""} onChange={(v) => setEditingTx((p) => ({ ...p!, eventTitle: v }))} />
                 </div>
                 <div>
                   <div className="mb-1 text-xs text-white/55">Event ID</div>
-                  <Input
-                    value={editingTx.eventId || ""}
-                    onChange={(v) => setEditingTx((p) => ({ ...p!, eventId: v }))}
-                    placeholder="optional"
-                  />
+                  <Input value={editingTx.eventId || ""} onChange={(v) => setEditingTx((p) => ({ ...p!, eventId: v }))} />
                 </div>
               </div>
             </div>
@@ -2438,19 +2293,25 @@ export default function FinancePage() {
                   onChange={(e) =>
                     setEditingTx((p) => ({
                       ...p!,
-                      recurring: { ...(p!.recurring || { enabled: false, freq: "Monthly", nextRun: "" }), enabled: e.target.checked },
+                      recurring: {
+                        ...(p!.recurring || { enabled: false, freq: "Monthly", nextRun: "" }),
+                        enabled: e.target.checked,
+                      },
                     }))
                   }
                 />
                 <div className="text-sm text-white/80">Enable recurring</div>
               </div>
+
               {editingTx.recurring?.enabled ? (
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <div>
                     <div className="mb-1 text-xs text-white/55">Frequency</div>
                     <Select
                       value={editingTx.recurring.freq}
-                      onChange={(v) => setEditingTx((p) => ({ ...p!, recurring: { ...p!.recurring!, freq: v as any } }))}
+                      onChange={(v) =>
+                        setEditingTx((p) => ({ ...p!, recurring: { ...p!.recurring!, freq: v as any } }))
+                      }
                       options={[
                         { value: "Weekly", label: "Weekly" },
                         { value: "Monthly", label: "Monthly" },
@@ -2463,14 +2324,13 @@ export default function FinancePage() {
                     <div className="mb-1 text-xs text-white/55">Next Run</div>
                     <Input
                       value={editingTx.recurring.nextRun || ""}
-                      onChange={(v) =>
-                        setEditingTx((p) => ({ ...p!, recurring: { ...p!.recurring!, nextRun: v } }))
-                      }
+                      onChange={(v) => setEditingTx((p) => ({ ...p!, recurring: { ...p!.recurring!, nextRun: v } }))}
                       type="date"
                     />
                   </div>
                 </div>
               ) : null}
+
               <div className="mt-3 text-xs text-white/60">
                 When Next Run date arrives, a new transaction is auto-created (status Planned) and Next Run advances.
               </div>
@@ -2490,6 +2350,7 @@ export default function FinancePage() {
             </div>
           </div>
         ) : null}
+
         {!canEdit ? <div className="mt-3 text-xs text-red-200">Staff role: editing disabled.</div> : null}
       </Modal>
 
@@ -2528,11 +2389,7 @@ export default function FinancePage() {
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <div>
                   <div className="mb-1 text-xs text-white/55">Month</div>
-                  <Input
-                    value={editingBudget.month}
-                    onChange={(v) => setEditingBudget((p) => ({ ...p!, month: v }))}
-                    placeholder="YYYY-MM"
-                  />
+                  <Input value={editingBudget.month} onChange={(v) => setEditingBudget((p) => ({ ...p!, month: v }))} placeholder="YYYY-MM" />
                 </div>
                 <div>
                   <div className="mb-1 text-xs text-white/55">Currency</div>
@@ -2549,29 +2406,15 @@ export default function FinancePage() {
                 </div>
                 <div>
                   <div className="mb-1 text-xs text-white/55">Revenue Target</div>
-                  <Input
-                    value={String(editingBudget.revenueTarget)}
-                    onChange={(v) => setEditingBudget((p) => ({ ...p!, revenueTarget: parseNum(v, 0) }))}
-                    type="number"
-                  />
+                  <Input value={String(editingBudget.revenueTarget)} onChange={(v) => setEditingBudget((p) => ({ ...p!, revenueTarget: parseNum(v, 0) }))} type="number" />
                 </div>
                 <div>
                   <div className="mb-1 text-xs text-white/55">Expense Cap</div>
-                  <Input
-                    value={String(editingBudget.expenseCap)}
-                    onChange={(v) => setEditingBudget((p) => ({ ...p!, expenseCap: parseNum(v, 0) }))}
-                    type="number"
-                  />
+                  <Input value={String(editingBudget.expenseCap)} onChange={(v) => setEditingBudget((p) => ({ ...p!, expenseCap: parseNum(v, 0) }))} type="number" />
                 </div>
                 <div className="md:col-span-2">
                   <div className="mb-1 text-xs text-white/55">Gross Margin Target %</div>
-                  <Input
-                    value={String(editingBudget.grossMarginTargetPct)}
-                    onChange={(v) =>
-                      setEditingBudget((p) => ({ ...p!, grossMarginTargetPct: clamp(parseNum(v, 0), 0, 100) }))
-                    }
-                    type="number"
-                  />
+                  <Input value={String(editingBudget.grossMarginTargetPct)} onChange={(v) => setEditingBudget((p) => ({ ...p!, grossMarginTargetPct: clamp(parseNum(v, 0), 0, 100) }))} type="number" />
                 </div>
               </div>
             </div>
@@ -2581,75 +2424,27 @@ export default function FinancePage() {
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <div>
                   <div className="mb-1 text-xs text-white/55">Office Rent & Utilities</div>
-                  <Input
-                    value={String(editingBudget.fixedCosts.officeRentUtilities)}
-                    onChange={(v) =>
-                      setEditingBudget((p) => ({
-                        ...p!,
-                        fixedCosts: { ...p!.fixedCosts, officeRentUtilities: parseNum(v, 0) },
-                      }))
-                    }
-                    type="number"
-                  />
+                  <Input value={String(editingBudget.fixedCosts.officeRentUtilities)} onChange={(v) => setEditingBudget((p) => ({ ...p!, fixedCosts: { ...p!.fixedCosts, officeRentUtilities: parseNum(v, 0) } }))} type="number" />
                 </div>
                 <div>
                   <div className="mb-1 text-xs text-white/55">Salaries</div>
-                  <Input
-                    value={String(editingBudget.fixedCosts.salaries)}
-                    onChange={(v) =>
-                      setEditingBudget((p) => ({ ...p!, fixedCosts: { ...p!.fixedCosts, salaries: parseNum(v, 0) } }))
-                    }
-                    type="number"
-                  />
+                  <Input value={String(editingBudget.fixedCosts.salaries)} onChange={(v) => setEditingBudget((p) => ({ ...p!, fixedCosts: { ...p!.fixedCosts, salaries: parseNum(v, 0) } }))} type="number" />
                 </div>
                 <div>
                   <div className="mb-1 text-xs text-white/55">Marketing</div>
-                  <Input
-                    value={String(editingBudget.fixedCosts.marketing)}
-                    onChange={(v) =>
-                      setEditingBudget((p) => ({ ...p!, fixedCosts: { ...p!.fixedCosts, marketing: parseNum(v, 0) } }))
-                    }
-                    type="number"
-                  />
+                  <Input value={String(editingBudget.fixedCosts.marketing)} onChange={(v) => setEditingBudget((p) => ({ ...p!, fixedCosts: { ...p!.fixedCosts, marketing: parseNum(v, 0) } }))} type="number" />
                 </div>
                 <div>
                   <div className="mb-1 text-xs text-white/55">Internet & Misc</div>
-                  <Input
-                    value={String(editingBudget.fixedCosts.internetMisc)}
-                    onChange={(v) =>
-                      setEditingBudget((p) => ({
-                        ...p!,
-                        fixedCosts: { ...p!.fixedCosts, internetMisc: parseNum(v, 0) },
-                      }))
-                    }
-                    type="number"
-                  />
+                  <Input value={String(editingBudget.fixedCosts.internetMisc)} onChange={(v) => setEditingBudget((p) => ({ ...p!, fixedCosts: { ...p!.fixedCosts, internetMisc: parseNum(v, 0) } }))} type="number" />
                 </div>
                 <div>
                   <div className="mb-1 text-xs text-white/55">Transport & Logistics</div>
-                  <Input
-                    value={String(editingBudget.fixedCosts.transportLogistics)}
-                    onChange={(v) =>
-                      setEditingBudget((p) => ({
-                        ...p!,
-                        fixedCosts: { ...p!.fixedCosts, transportLogistics: parseNum(v, 0) },
-                      }))
-                    }
-                    type="number"
-                  />
+                  <Input value={String(editingBudget.fixedCosts.transportLogistics)} onChange={(v) => setEditingBudget((p) => ({ ...p!, fixedCosts: { ...p!.fixedCosts, transportLogistics: parseNum(v, 0) } }))} type="number" />
                 </div>
                 <div>
                   <div className="mb-1 text-xs text-white/55">Admin & Compliance</div>
-                  <Input
-                    value={String(editingBudget.fixedCosts.adminCompliance)}
-                    onChange={(v) =>
-                      setEditingBudget((p) => ({
-                        ...p!,
-                        fixedCosts: { ...p!.fixedCosts, adminCompliance: parseNum(v, 0) },
-                      }))
-                    }
-                    type="number"
-                  />
+                  <Input value={String(editingBudget.fixedCosts.adminCompliance)} onChange={(v) => setEditingBudget((p) => ({ ...p!, fixedCosts: { ...p!.fixedCosts, adminCompliance: parseNum(v, 0) } }))} type="number" />
                 </div>
               </div>
 
