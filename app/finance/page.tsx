@@ -4,7 +4,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
-/* ================= STORAGE KEYS ================= */
+/* =========================
+   STORAGE KEYS
+========================= */
 const DB_FIN = "eventura-finance-transactions";
 const DB_FIN_BUDGETS = "eventura-finance-budgets";
 const DB_FIN_SETTINGS = "eventura-finance-settings";
@@ -12,7 +14,9 @@ const DB_FIN_AUDIT = "eventura-finance-audit";
 const DB_AUTH_ROLE = "eventura-role"; // "CEO" | "Staff"
 const DB_AUTH_EMAIL = "eventura-email";
 
-/* ================= TYPES (STRICT & DEPLOY-SAFE) ================= */
+/* =========================
+   TYPES (STRICT + DEPLOY-SAFE)
+========================= */
 type Role = "CEO" | "Staff";
 
 type TxType = "Income" | "Expense";
@@ -34,16 +38,12 @@ type TxTag =
   | "Other";
 
 type RecurringFreq = "Weekly" | "Monthly" | "Quarterly" | "Yearly";
-type Recurring = {
-  enabled: boolean;
-  freq: RecurringFreq;
-  nextRun?: string; // YYYY-MM-DD
-};
+type Recurring = { enabled: boolean; freq: RecurringFreq; nextRun?: string };
 
 type FinanceTx = {
   id: number;
-  createdAt: string; // ISO
-  updatedAt: string; // ISO
+  createdAt: string;
+  updatedAt: string;
 
   date: string; // YYYY-MM-DD
   type: TxType;
@@ -66,11 +66,11 @@ type FinanceTx = {
   referenceId?: string;
   invoiceNo?: string;
 
-  gstRate?: number; // 0–28
+  gstRate?: number;
   gstIncluded?: boolean;
 
-  tdsRate?: number; // 0–20 (withholding)
-  dueDate?: string; // YYYY-MM-DD
+  tdsRate?: number;
+  dueDate?: string;
 
   recurring?: Recurring;
 
@@ -103,11 +103,10 @@ type BudgetLine = {
 
 type FinanceSettings = {
   defaultCurrency: Currency;
-  startOfWeek: "Mon" | "Sun";
-  overdueRuleDays: number; // overdue if today > dueDate + overdueRuleDays
+  overdueRuleDays: number;
   showGst: boolean;
   showTds: boolean;
-  lockStaffEdits: boolean; // if true, Staff cannot edit/delete (view-only)
+  lockStaffEdits: boolean;
 };
 
 type AuditAction =
@@ -126,14 +125,68 @@ type AuditAction =
 
 type AuditItem = {
   id: number;
-  at: string; // ISO
+  at: string;
   actorRole: Role;
   actorEmail?: string;
   action: AuditAction;
   details: string;
 };
 
-/* ================= UTIL ================= */
+/* =========================
+   CONSTANTS + COERCION
+========================= */
+const TX_STATUSES: TxStatus[] = ["Planned", "Pending", "Paid", "Overdue", "Cancelled"];
+const TX_TYPES: TxType[] = ["Income", "Expense"];
+const CURRENCIES: Currency[] = ["INR", "CAD", "USD", "Other"];
+const METHODS: PayMethod[] = ["Cash", "UPI", "Bank", "Card", "Cheque", "Other"];
+const TAGS: TxTag[] = [
+  "Sales",
+  "ClientAdvance",
+  "VendorPayment",
+  "Salary",
+  "Marketing",
+  "Office",
+  "Transport",
+  "Equipment",
+  "Tax",
+  "Refund",
+  "Other",
+];
+const RECUR_FREQS: RecurringFreq[] = ["Weekly", "Monthly", "Quarterly", "Yearly"];
+
+function asRole(v: any): Role {
+  return String(v).toUpperCase() === "STAFF" ? "Staff" : "CEO";
+}
+function asTxType(v: any): TxType {
+  return TX_TYPES.includes(v) ? v : "Expense";
+}
+function asTxStatus(v: any): TxStatus {
+  return TX_STATUSES.includes(v) ? v : "Planned";
+}
+function asCurrency(v: any, fallback: Currency): Currency {
+  return CURRENCIES.includes(v) ? v : fallback;
+}
+function asMethod(v: any): PayMethod {
+  return METHODS.includes(v) ? v : "Bank";
+}
+function asTag(v: any): TxTag {
+  return TAGS.includes(v) ? v : "Other";
+}
+function asRecurring(v: any): Recurring | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const enabled = (v as any).enabled === true || String((v as any).enabled).toLowerCase() === "true";
+  if (!enabled) return undefined;
+  const freq = RECUR_FREQS.includes((v as any).freq) ? (v as any).freq : "Monthly";
+  const nextRun = typeof (v as any).nextRun === "string" ? (v as any).nextRun : undefined;
+  return { enabled: true, freq, nextRun };
+}
+
+/* =========================
+   UTIL
+========================= */
+function cls(...xs: Array<string | false | null | undefined>) {
+  return xs.filter(Boolean).join(" ");
+}
 function nowISO() {
   return new Date().toISOString();
 }
@@ -198,111 +251,9 @@ function addDays(ymd: string, days: number) {
   return toYMD(d);
 }
 
-/* ================= TYPE COERCION (PREVENTS DEPLOY ERRORS) ================= */
-const TX_STATUSES: TxStatus[] = ["Planned", "Pending", "Paid", "Overdue", "Cancelled"];
-const TX_TYPES: TxType[] = ["Income", "Expense"];
-const CURRENCIES: Currency[] = ["INR", "CAD", "USD", "Other"];
-const METHODS: PayMethod[] = ["Cash", "UPI", "Bank", "Card", "Cheque", "Other"];
-const TAGS: TxTag[] = [
-  "Sales",
-  "ClientAdvance",
-  "VendorPayment",
-  "Salary",
-  "Marketing",
-  "Office",
-  "Transport",
-  "Equipment",
-  "Tax",
-  "Refund",
-  "Other",
-];
-const RECUR_FREQS: RecurringFreq[] = ["Weekly", "Monthly", "Quarterly", "Yearly"];
-
-function asRole(v: any): Role {
-  return String(v).toUpperCase() === "STAFF" ? "Staff" : "CEO";
-}
-function asTxType(v: any): TxType {
-  return TX_TYPES.includes(v) ? v : "Expense";
-}
-function asTxStatus(v: any): TxStatus {
-  return TX_STATUSES.includes(v) ? v : "Planned";
-}
-function asCurrency(v: any, fallback: Currency): Currency {
-  return CURRENCIES.includes(v) ? v : fallback;
-}
-function asMethod(v: any): PayMethod {
-  return METHODS.includes(v) ? v : "Bank";
-}
-function asTag(v: any): TxTag {
-  return TAGS.includes(v) ? v : "Other";
-}
-function asRecurring(v: any): Recurring | undefined {
-  if (!v || typeof v !== "object") return undefined;
-  const enabled = String((v as any).enabled).toLowerCase() === "true" || (v as any).enabled === true;
-  if (!enabled) return undefined;
-  const freq = RECUR_FREQS.includes((v as any).freq) ? (v as any).freq : "Monthly";
-  const nextRun = typeof (v as any).nextRun === "string" ? (v as any).nextRun : undefined;
-  return { enabled: true, freq, nextRun };
-}
-function normalizeTx(raw: any, defaultCurrency: Currency): FinanceTx | null {
-  if (!raw || typeof raw !== "object") return null;
-  const id = parseNum((raw as any).id, 0);
-  if (!id) return null;
-
-  const date = typeof (raw as any).date === "string" && (raw as any).date ? (raw as any).date : toYMD(new Date());
-  const type = asTxType((raw as any).type);
-  const status = asTxStatus((raw as any).status);
-
-  const amount = parseNum((raw as any).amount, 0);
-  const currency = asCurrency((raw as any).currency, defaultCurrency);
-
-  const category = asTag((raw as any).category);
-  const description = String((raw as any).description ?? "");
-
-  const tx: FinanceTx = {
-    id,
-    createdAt: typeof (raw as any).createdAt === "string" ? (raw as any).createdAt : nowISO(),
-    updatedAt: typeof (raw as any).updatedAt === "string" ? (raw as any).updatedAt : nowISO(),
-
-    date,
-    type,
-    status,
-
-    amount,
-    currency,
-
-    category,
-    subcategory: typeof (raw as any).subcategory === "string" ? (raw as any).subcategory : undefined,
-
-    description,
-
-    clientName: typeof (raw as any).clientName === "string" ? (raw as any).clientName : undefined,
-    vendorName: typeof (raw as any).vendorName === "string" ? (raw as any).vendorName : undefined,
-    eventTitle: typeof (raw as any).eventTitle === "string" ? (raw as any).eventTitle : undefined,
-    eventId: typeof (raw as any).eventId === "string" ? (raw as any).eventId : undefined,
-
-    paymentMethod: asMethod((raw as any).paymentMethod),
-    referenceId: typeof (raw as any).referenceId === "string" ? (raw as any).referenceId : undefined,
-    invoiceNo: typeof (raw as any).invoiceNo === "string" ? (raw as any).invoiceNo : undefined,
-
-    gstRate: Number.isFinite(parseNum((raw as any).gstRate, NaN)) ? clamp(parseNum((raw as any).gstRate, 0), 0, 28) : undefined,
-    gstIncluded: typeof (raw as any).gstIncluded === "boolean" ? (raw as any).gstIncluded : undefined,
-
-    tdsRate: Number.isFinite(parseNum((raw as any).tdsRate, NaN)) ? clamp(parseNum((raw as any).tdsRate, 0), 0, 20) : undefined,
-    dueDate: typeof (raw as any).dueDate === "string" ? (raw as any).dueDate : undefined,
-
-    recurring: asRecurring((raw as any).recurring),
-
-    notes: typeof (raw as any).notes === "string" ? (raw as any).notes : undefined,
-  };
-
-  return tx;
-}
-
 function defaultSettings(): FinanceSettings {
   return {
     defaultCurrency: "INR",
-    startOfWeek: "Mon",
     overdueRuleDays: 0,
     showGst: true,
     showTds: true,
@@ -331,45 +282,123 @@ function defaultBudgetLine(month: string, currency: Currency): BudgetLine {
   };
 }
 
-/* ================= UI PRIMITIVES ================= */
-function cls(...xs: Array<string | false | null | undefined>) {
-  return xs.filter(Boolean).join(" ");
+function normalizeTx(raw: any, defaultCurrency: Currency): FinanceTx | null {
+  if (!raw || typeof raw !== "object") return null;
+  const id = parseNum((raw as any).id, 0);
+  if (!id) return null;
+
+  const date = typeof (raw as any).date === "string" && (raw as any).date ? (raw as any).date : toYMD(new Date());
+  const tx: FinanceTx = {
+    id,
+    createdAt: typeof (raw as any).createdAt === "string" ? (raw as any).createdAt : nowISO(),
+    updatedAt: typeof (raw as any).updatedAt === "string" ? (raw as any).updatedAt : nowISO(),
+
+    date,
+    type: asTxType((raw as any).type),
+    status: asTxStatus((raw as any).status),
+
+    amount: parseNum((raw as any).amount, 0),
+    currency: asCurrency((raw as any).currency, defaultCurrency),
+
+    category: asTag((raw as any).category),
+    subcategory: typeof (raw as any).subcategory === "string" ? (raw as any).subcategory : undefined,
+
+    description: String((raw as any).description ?? ""),
+
+    clientName: typeof (raw as any).clientName === "string" ? (raw as any).clientName : undefined,
+    vendorName: typeof (raw as any).vendorName === "string" ? (raw as any).vendorName : undefined,
+    eventTitle: typeof (raw as any).eventTitle === "string" ? (raw as any).eventTitle : undefined,
+    eventId: typeof (raw as any).eventId === "string" ? (raw as any).eventId : undefined,
+
+    paymentMethod: asMethod((raw as any).paymentMethod),
+    referenceId: typeof (raw as any).referenceId === "string" ? (raw as any).referenceId : undefined,
+    invoiceNo: typeof (raw as any).invoiceNo === "string" ? (raw as any).invoiceNo : undefined,
+
+    gstRate: (raw as any).gstRate == null ? undefined : clamp(parseNum((raw as any).gstRate, 0), 0, 28),
+    gstIncluded: typeof (raw as any).gstIncluded === "boolean" ? (raw as any).gstIncluded : undefined,
+
+    tdsRate: (raw as any).tdsRate == null ? undefined : clamp(parseNum((raw as any).tdsRate, 0), 0, 20),
+    dueDate: typeof (raw as any).dueDate === "string" ? (raw as any).dueDate : undefined,
+
+    recurring: asRecurring((raw as any).recurring),
+
+    notes: typeof (raw as any).notes === "string" ? (raw as any).notes : undefined,
+  };
+
+  return tx;
 }
-function Pill({ label }: { label: string }) {
+
+function calcTotals(t: FinanceTx) {
+  const base = parseNum(t.amount, 0);
+  const gstRate = clamp(parseNum(t.gstRate, 0), 0, 28);
+  const gstAdd = t.gstIncluded ? 0 : base * (gstRate / 100);
+  const subtotal = base + gstAdd;
+  const tdsRate = clamp(parseNum(t.tdsRate, 0), 0, 20);
+  const tds = subtotal * (tdsRate / 100);
+  const net = subtotal - tds;
+  return { base, gstRate, gstAdd, subtotal, tdsRate, tds, net };
+}
+
+/* =========================
+   UI ATOMS (REAL APP LOOK)
+========================= */
+function Card({ title, right, children }: { title?: string; right?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <span className="inline-flex items-center rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[11px] text-white/80">
-      {label}
-    </span>
+    <div className="rounded-2xl border border-white/10 bg-white/5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+      {title ? (
+        <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+          <div className="text-sm font-semibold text-white">{title}</div>
+          <div className="text-xs text-white/60">{right}</div>
+        </div>
+      ) : null}
+      <div className="p-4">{children}</div>
+    </div>
   );
+}
+function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/30 p-4 hover:bg-black/50 transition">
+      <div className="text-xs text-white/60">{label}</div>
+      <div className="mt-2 text-xl font-semibold text-white tracking-tight">{value}</div>
+      {sub ? <div className="mt-1 text-xs text-white/45">{sub}</div> : null}
+    </div>
+  );
+}
+function Pill({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "neutral" | "good" | "bad" | "warn" }) {
+  const m =
+    tone === "good"
+      ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200"
+      : tone === "bad"
+      ? "border-rose-400/25 bg-rose-400/10 text-rose-200"
+      : tone === "warn"
+      ? "border-amber-400/25 bg-amber-400/10 text-amber-200"
+      : "border-white/15 bg-white/5 text-white/80";
+  return <span className={cls("inline-flex items-center rounded-full border px-2.5 py-1 text-[11px]", m)}>{children}</span>;
 }
 function Btn({
   children,
   onClick,
   variant = "primary",
   disabled,
-  title,
   type = "button",
 }: {
   children: React.ReactNode;
   onClick?: () => void;
-  variant?: "primary" | "ghost" | "danger" | "outline";
+  variant?: "primary" | "outline" | "ghost" | "danger";
   disabled?: boolean;
-  title?: string;
   type?: "button" | "submit";
 }) {
-  const base =
-    "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm transition border select-none";
-  const styles =
+  const base = "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm transition border select-none";
+  const v =
     variant === "primary"
       ? "border-white/15 bg-white/10 text-white hover:bg-black hover:border-white/25"
       : variant === "outline"
-      ? "border-white/20 bg-transparent text-white hover:bg-black"
+      ? "border-white/20 bg-transparent text-white/90 hover:bg-black"
       : variant === "danger"
-      ? "border-red-500/40 bg-red-500/10 text-red-200 hover:bg-black hover:border-red-500/70"
-      : "border-transparent bg-transparent text-white/85 hover:bg-black hover:text-white";
-  const dis = disabled ? "opacity-50 pointer-events-none" : "";
+      ? "border-rose-400/35 bg-rose-400/10 text-rose-200 hover:bg-black hover:border-rose-400/60"
+      : "border-transparent bg-transparent text-white/80 hover:bg-black hover:text-white";
   return (
-    <button type={type} title={title} onClick={onClick} className={cls(base, styles, dis)}>
+    <button type={type} onClick={onClick} disabled={disabled} className={cls(base, v, disabled && "opacity-50 pointer-events-none")}>
       {children}
     </button>
   );
@@ -473,7 +502,7 @@ function Modal({
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="w-full max-w-4xl overflow-hidden rounded-2xl border border-white/15 bg-[#0b0b0b] shadow-2xl">
+      <div className="w-full max-w-5xl overflow-hidden rounded-2xl border border-white/15 bg-[#0b0b0b] shadow-2xl">
         <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
           <div className="text-base font-semibold text-white">{title}</div>
           <button
@@ -489,30 +518,36 @@ function Modal({
     </div>
   );
 }
-function StatCard({ title, value, hint }: { title: string; value: string; hint?: string }) {
+
+/* =========================
+   CHARTS (NO LIBS)
+========================= */
+function SparkBars({ values }: { values: number[] }) {
+  const max = Math.max(1, ...values.map((v) => Math.abs(v)));
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-4 hover:bg-black transition">
-      <div className="text-xs text-white/60">{title}</div>
-      <div className="mt-1 text-xl font-semibold text-white">{value}</div>
-      {hint ? <div className="mt-1 text-xs text-white/45">{hint}</div> : null}
+    <div className="flex h-10 items-end gap-1">
+      {values.map((v, i) => {
+        const h = clamp((Math.abs(v) / max) * 100, 4, 100);
+        const pos = v >= 0;
+        return (
+          <div
+            key={i}
+            title={String(v)}
+            className={cls("w-2 rounded-sm", pos ? "bg-white/40" : "bg-white/20")}
+            style={{ height: `${h}%` }}
+          />
+        );
+      })}
     </div>
   );
 }
-function MiniBar({
-  label,
-  value,
-  max,
-}: {
-  label: string;
-  value: number;
-  max: number;
-}) {
+function ProgressRow({ label, value, max, right }: { label: string; value: number; max: number; right: string }) {
   const pct = max <= 0 ? 0 : clamp((value / max) * 100, 0, 100);
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-3 hover:bg-black transition">
-      <div className="flex items-center justify-between text-xs text-white/70">
+    <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+      <div className="flex items-center justify-between text-xs text-white/65">
         <span>{label}</span>
-        <span>{pct.toFixed(0)}%</span>
+        <span className="text-white/80">{right}</span>
       </div>
       <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white/10">
         <div className="h-2 rounded-full bg-white/35" style={{ width: `${pct}%` }} />
@@ -521,52 +556,43 @@ function MiniBar({
   );
 }
 
-/* ================= PAGE ================= */
-type Tab =
-  | "Overview"
-  | "Transactions"
-  | "Budgets"
-  | "AR/AP"
-  | "Reports"
-  | "Import/Export"
-  | "Audit"
-  | "Settings";
+/* =========================
+   PAGE
+========================= */
+type Tab = "Dashboard" | "Transactions" | "Budgets" | "AR/AP" | "Reports" | "Import/Export" | "Audit" | "Settings";
 
 export default function FinancePage() {
   const [mounted, setMounted] = useState(false);
 
-  // Auth context
   const [role, setRole] = useState<Role>("CEO");
   const [email, setEmail] = useState<string>("");
 
-  // Data
   const [txs, setTxs] = useState<FinanceTx[]>([]);
   const [budgets, setBudgets] = useState<BudgetLine[]>([]);
   const [settings, setSettings] = useState<FinanceSettings>(defaultSettings());
   const [audit, setAudit] = useState<AuditItem[]>([]);
 
-  // UI
-  const [tab, setTab] = useState<Tab>("Overview");
+  const [tab, setTab] = useState<Tab>("Dashboard");
   const [toast, setToast] = useState("");
   const toastRef = useRef<number | null>(null);
 
-  // Filters
+  // filters
   const [q, setQ] = useState("");
   const [fType, setFType] = useState<TxType | "All">("All");
   const [fStatus, setFStatus] = useState<TxStatus | "All">("All");
   const [fCategory, setFCategory] = useState<TxTag | "All">("All");
   const [fCur, setFCur] = useState<Currency | "All">("All");
-  const [from, setFrom] = useState<string>("");
-  const [to, setTo] = useState<string>("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
 
-  // Selection
+  // selection
   const [selected, setSelected] = useState<Record<number, boolean>>({});
   const selectedIds = useMemo(
     () => Object.keys(selected).filter((k) => selected[Number(k)]).map((k) => Number(k)),
     [selected]
   );
 
-  // Modals
+  // modals
   const [openTxModal, setOpenTxModal] = useState(false);
   const [editingTx, setEditingTx] = useState<FinanceTx | null>(null);
 
@@ -576,7 +602,6 @@ export default function FinancePage() {
   const [openInvoiceModal, setOpenInvoiceModal] = useState(false);
   const [invoiceTx, setInvoiceTx] = useState<FinanceTx | null>(null);
 
-  // Import / Export
   const [importText, setImportText] = useState("");
 
   const isCEO = role === "CEO";
@@ -587,7 +612,6 @@ export default function FinancePage() {
     if (toastRef.current) window.clearTimeout(toastRef.current);
     toastRef.current = window.setTimeout(() => setToast(""), 2200);
   }
-
   function pushAudit(action: AuditAction, details: string) {
     const item: AuditItem = {
       id: Date.now() + Math.floor(Math.random() * 1000),
@@ -600,30 +624,27 @@ export default function FinancePage() {
     setAudit((prev) => [item, ...prev].slice(0, 800));
   }
 
-  /* ================= LOAD / SAVE ================= */
+  /* ============ LOAD ============ */
   useEffect(() => {
     setMounted(true);
-    const r = localStorage.getItem(DB_AUTH_ROLE);
-    const e = localStorage.getItem(DB_AUTH_EMAIL);
-    const loadedRole = asRole(r);
+
+    const loadedRole = asRole(localStorage.getItem(DB_AUTH_ROLE));
+    const loadedEmail = localStorage.getItem(DB_AUTH_EMAIL) || "";
     setRole(loadedRole);
-    setEmail(e || "");
+    setEmail(loadedEmail);
 
     const rawSet = safeJsonParse<FinanceSettings>(localStorage.getItem(DB_FIN_SETTINGS), defaultSettings());
-    const nextSettings: FinanceSettings = { ...defaultSettings(), ...(rawSet || {}) };
-    nextSettings.defaultCurrency = asCurrency((nextSettings as any).defaultCurrency, "INR");
-    nextSettings.startOfWeek = nextSettings.startOfWeek === "Sun" ? "Sun" : "Mon";
-    nextSettings.overdueRuleDays = clamp(parseNum((nextSettings as any).overdueRuleDays, 0), 0, 60);
-    nextSettings.showGst = !!(nextSettings as any).showGst;
-    nextSettings.showTds = !!(nextSettings as any).showTds;
-    nextSettings.lockStaffEdits = (nextSettings as any).lockStaffEdits !== false; // default true
-    setSettings(nextSettings);
+    const s: FinanceSettings = { ...defaultSettings(), ...(rawSet || {}) };
+    s.defaultCurrency = asCurrency((s as any).defaultCurrency, "INR");
+    s.overdueRuleDays = clamp(parseNum((s as any).overdueRuleDays, 0), 0, 60);
+    s.showGst = !!(s as any).showGst;
+    s.showTds = !!(s as any).showTds;
+    s.lockStaffEdits = (s as any).lockStaffEdits !== false;
+    setSettings(s);
 
     const rawTx = safeJsonParse<any[]>(localStorage.getItem(DB_FIN), []);
     const normTx: FinanceTx[] = Array.isArray(rawTx)
-      ? rawTx
-          .map((t) => normalizeTx(t, nextSettings.defaultCurrency))
-          .filter((x): x is FinanceTx => !!x)
+      ? rawTx.map((t) => normalizeTx(t, s.defaultCurrency)).filter((x): x is FinanceTx => !!x)
       : [];
     setTxs(normTx);
 
@@ -632,9 +653,9 @@ export default function FinancePage() {
       ? rawBud
           .filter((b) => b && typeof b === "object")
           .map((b) => {
-            const month = typeof b.month === "string" && b.month ? b.month : toYM(new Date());
-            const currency = asCurrency((b as any).currency, nextSettings.defaultCurrency);
-            const fixed = (b as any).fixedCosts || {};
+            const month = typeof (b as any).month === "string" && (b as any).month ? (b as any).month : toYM(new Date());
+            const currency = asCurrency((b as any).currency, s.defaultCurrency);
+            const fx = (b as any).fixedCosts || {};
             return {
               id: parseNum((b as any).id, Date.now()),
               createdAt: typeof (b as any).createdAt === "string" ? (b as any).createdAt : nowISO(),
@@ -645,12 +666,12 @@ export default function FinancePage() {
               expenseCap: parseNum((b as any).expenseCap, 0),
               grossMarginTargetPct: clamp(parseNum((b as any).grossMarginTargetPct, 25), 0, 80),
               fixedCosts: {
-                officeRentUtilities: parseNum(fixed.officeRentUtilities, 0),
-                salaries: parseNum(fixed.salaries, 0),
-                marketing: parseNum(fixed.marketing, 0),
-                internetMisc: parseNum(fixed.internetMisc, 0),
-                transportLogistics: parseNum(fixed.transportLogistics, 0),
-                adminCompliance: parseNum(fixed.adminCompliance, 0),
+                officeRentUtilities: parseNum(fx.officeRentUtilities, 0),
+                salaries: parseNum(fx.salaries, 0),
+                marketing: parseNum(fx.marketing, 0),
+                internetMisc: parseNum(fx.internetMisc, 0),
+                transportLogistics: parseNum(fx.transportLogistics, 0),
+                adminCompliance: parseNum(fx.adminCompliance, 0),
               },
               notes: typeof (b as any).notes === "string" ? (b as any).notes : undefined,
             };
@@ -674,6 +695,7 @@ export default function FinancePage() {
     setAudit(normAud);
   }, []);
 
+  /* ============ SAVE ============ */
   useEffect(() => {
     if (!mounted) return;
     try {
@@ -702,8 +724,7 @@ export default function FinancePage() {
     } catch {}
   }, [audit, mounted]);
 
-  /* ================= AUTO RULES (DEPLOY-SAFE) ================= */
-  // Auto mark overdue
+  /* ============ AUTO: OVERDUE ============ */
   useEffect(() => {
     if (!mounted) return;
     const today = toYMD(new Date());
@@ -712,7 +733,6 @@ export default function FinancePage() {
     const next: FinanceTx[] = txs.map((t): FinanceTx => {
       if (t.status === "Paid" || t.status === "Cancelled") return t;
       if (!t.dueDate) return t;
-
       const isOver = daysBetween(t.dueDate, today) > settings.overdueRuleDays;
       if (isOver && t.status !== "Overdue") {
         changed = true;
@@ -728,14 +748,12 @@ export default function FinancePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, settings.overdueRuleDays]);
 
-  // Auto create recurring instances
+  /* ============ AUTO: RECURRING ============ */
   useEffect(() => {
     if (!mounted) return;
-
     const today = toYMD(new Date());
-    const newOnes: FinanceTx[] = [];
-    let created = 0;
-    let recurUpdated = false;
+    const created: FinanceTx[] = [];
+    let made = 0;
 
     const updated: FinanceTx[] = txs.map((t): FinanceTx => {
       const r = t.recurring;
@@ -753,8 +771,8 @@ export default function FinancePage() {
         invoiceNo: "",
         notes: (t.notes ? t.notes + "\n" : "") + `Auto-created from recurring (${r.freq}).`,
       };
-      newOnes.push(newTx);
-      created++;
+      created.push(newTx);
+      made++;
 
       let nextRun = r.nextRun;
       if (r.freq === "Weekly") nextRun = addDays(nextRun, 7);
@@ -762,34 +780,21 @@ export default function FinancePage() {
       if (r.freq === "Quarterly") nextRun = addMonths(nextRun, 3);
       if (r.freq === "Yearly") nextRun = addMonths(nextRun, 12);
 
-      recurUpdated = true;
       return { ...t, updatedAt: nowISO(), recurring: { ...r, nextRun } };
     });
 
-    if (created > 0) {
-      setTxs((prev) => [...newOnes, ...updated]);
-      pushAudit("AUTO_RECUR_CREATE", `Auto-created ${created} recurring transaction(s).`);
-      notify(`Auto-created ${created} recurring tx.`);
-    } else if (recurUpdated) {
-      setTxs(updated);
+    if (made > 0) {
+      setTxs((prev) => [...created, ...updated]);
+      pushAudit("AUTO_RECUR_CREATE", `Auto-created ${made} recurring transaction(s).`);
+      notify(`Auto-created ${made} recurring`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted]);
 
-  /* ================= DERIVED / CALC ================= */
+  /* ============ DERIVED ============ */
   const baseCurrency = settings.defaultCurrency;
-  const todayYMD = useMemo(() => toYMD(new Date()), []);
-
-  function calcTotals(t: FinanceTx) {
-    const base = parseNum(t.amount, 0);
-    const gstRate = clamp(parseNum(t.gstRate, 0), 0, 28);
-    const gstAdd = t.gstIncluded ? 0 : base * (gstRate / 100);
-    const subtotal = base + gstAdd;
-    const tdsRate = clamp(parseNum(t.tdsRate, 0), 0, 20);
-    const tds = subtotal * (tdsRate / 100);
-    const net = subtotal - tds;
-    return { base, gstRate, gstAdd, subtotal, tdsRate, tds, net };
-  }
+  const monthNow = toYM(new Date());
+  const todayYMD = toYMD(new Date());
 
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
@@ -802,6 +807,7 @@ export default function FinancePage() {
         if (from && t.date < from) return false;
         if (to && t.date > to) return false;
         if (!qq) return true;
+
         const blob = [
           t.description,
           t.clientName,
@@ -817,49 +823,33 @@ export default function FinancePage() {
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
+
         return blob.includes(qq);
       })
       .sort((a, b) => (a.date === b.date ? b.id - a.id : b.date.localeCompare(a.date)));
   }, [txs, q, fType, fStatus, fCategory, fCur, from, to]);
 
-  const selectedTxs = useMemo(() => {
-    const set = new Set(selectedIds);
-    return filtered.filter((t) => set.has(t.id));
-  }, [filtered, selectedIds]);
-
-  const monthNow = toYM(new Date());
   const txThisMonth = useMemo(() => txs.filter((t) => t.date.slice(0, 7) === monthNow), [txs, monthNow]);
 
   const kpis = useMemo(() => {
-    const income = (rows: FinanceTx[]) =>
-      rows
-        .filter((t) => t.type === "Income" && t.status !== "Cancelled")
-        .reduce((s, t) => s + calcTotals(t).net, 0);
+    const sumNet = (rows: FinanceTx[]) => rows.reduce((s, t) => s + calcTotals(t).net, 0);
 
-    const expense = (rows: FinanceTx[]) =>
-      rows
-        .filter((t) => t.type === "Expense" && t.status !== "Cancelled")
-        .reduce((s, t) => s + calcTotals(t).net, 0);
-
-    const ar = txs
-      .filter((t) => t.type === "Income" && (t.status === "Pending" || t.status === "Overdue" || t.status === "Planned"))
-      .reduce((s, t) => s + calcTotals(t).net, 0);
-
-    const ap = txs
-      .filter((t) => t.type === "Expense" && (t.status === "Pending" || t.status === "Overdue" || t.status === "Planned"))
-      .reduce((s, t) => s + calcTotals(t).net, 0);
-
-    const overdueCount = txs.filter((t) => t.status === "Overdue").length;
-
-    const mIncome = income(txThisMonth);
-    const mExpense = expense(txThisMonth);
+    const mIncome = sumNet(txThisMonth.filter((t) => t.type === "Income" && t.status !== "Cancelled"));
+    const mExpense = sumNet(txThisMonth.filter((t) => t.type === "Expense" && t.status !== "Cancelled"));
     const mNet = mIncome - mExpense;
 
-    const ytdIncome = income(txs.filter((t) => t.date.slice(0, 4) === String(new Date().getFullYear())));
-    const ytdExpense = expense(txs.filter((t) => t.date.slice(0, 4) === String(new Date().getFullYear())));
-    const ytdNet = ytdIncome - ytdExpense;
+    const ar = sumNet(
+      txs.filter((t) => t.type === "Income" && (t.status === "Planned" || t.status === "Pending" || t.status === "Overdue"))
+    );
+    const ap = sumNet(
+      txs.filter((t) => t.type === "Expense" && (t.status === "Planned" || t.status === "Pending" || t.status === "Overdue"))
+    );
+    const overdueCount = txs.filter((t) => t.status === "Overdue").length;
 
-    // runway using current month budget fixed-cost total (if exists) else 265k
+    const cashIn = sumNet(txs.filter((t) => t.type === "Income" && t.status === "Paid"));
+    const cashOut = sumNet(txs.filter((t) => t.type === "Expense" && t.status === "Paid"));
+    const cash = cashIn - cashOut;
+
     const b = budgets.find((x) => x.month === monthNow) || null;
     const fixed =
       b
@@ -871,77 +861,61 @@ export default function FinancePage() {
           b.fixedCosts.adminCompliance
         : 265000;
 
-    // simplistic cash balance estimate: paid income - paid expenses (all time)
-    const cashIn = txs
-      .filter((t) => t.type === "Income" && t.status === "Paid")
-      .reduce((s, t) => s + calcTotals(t).net, 0);
-    const cashOut = txs
-      .filter((t) => t.type === "Expense" && t.status === "Paid")
-      .reduce((s, t) => s + calcTotals(t).net, 0);
-    const cash = cashIn - cashOut;
     const runwayMonths = fixed > 0 ? cash / fixed : 0;
 
-    return { mIncome, mExpense, mNet, ytdNet, ar, ap, overdueCount, fixed, cash, runwayMonths };
-  }, [txs, txThisMonth, budgets, monthNow]);
+    return { mIncome, mExpense, mNet, ar, ap, overdueCount, cash, fixed, runwayMonths };
+  }, [txThisMonth, txs, budgets, monthNow]);
 
-  const categorySpendThisMonth = useMemo(() => {
+  const monthSeries = useMemo(() => {
+    const map = new Map<string, { inc: number; exp: number }>();
+    for (const t of txs) {
+      if (t.status === "Cancelled") continue;
+      const ym = t.date.slice(0, 7);
+      const cur = map.get(ym) || { inc: 0, exp: 0 };
+      const v = calcTotals(t).net;
+      if (t.type === "Income") cur.inc += v;
+      else cur.exp += v;
+      map.set(ym, cur);
+    }
+    const arr = Array.from(map.entries())
+      .map(([month, v]) => ({ month, inc: v.inc, exp: v.exp, net: v.inc - v.exp }))
+      .sort((a, b) => a.month.localeCompare(b.month))
+      .slice(-12);
+    return arr;
+  }, [txs]);
+
+  const topSpendThisMonth = useMemo(() => {
     const m = new Map<string, number>();
     for (const t of txThisMonth) {
       if (t.status === "Cancelled") continue;
-      const k = `${t.type}:${t.category}`;
-      m.set(k, (m.get(k) || 0) + calcTotals(t).net);
+      if (t.type !== "Expense") continue;
+      const key = t.category;
+      m.set(key, (m.get(key) || 0) + calcTotals(t).net);
     }
     const arr = Array.from(m.entries()).map(([k, v]) => ({ k, v }));
-    arr.sort((a, b) => Math.abs(b.v) - Math.abs(a.v));
+    arr.sort((a, b) => b.v - a.v);
     return arr.slice(0, 8);
   }, [txThisMonth]);
 
-  const insights = useMemo(() => {
-    // heuristic insights (no AI deps, but feels “AI-like”)
-    const notes: string[] = [];
-    const b = budgets.find((x) => x.month === monthNow) || null;
+  /* ============ ACTIONS ============ */
+  function toggleSelect(id: number) {
+    setSelected((p) => ({ ...p, [id]: !p[id] }));
+  }
+  function clearSelection() {
+    setSelected({});
+  }
+  function selectAllFiltered() {
+    const map: Record<number, boolean> = {};
+    for (const t of filtered) map[t.id] = true;
+    setSelected(map);
+  }
 
-    if (kpis.overdueCount > 0) notes.push(`You have ${kpis.overdueCount} overdue items. Prioritize collection + vendor settlements.`);
-    if (kpis.ar > 0) notes.push(`Outstanding receivables ≈ ${money(kpis.ar, baseCurrency)}. Push 50-40-10 collection discipline.`);
-    if (kpis.ap > 0) notes.push(`Outstanding payables ≈ ${money(kpis.ap, baseCurrency)}. Schedule payments around client milestones.`);
-
-    if (b) {
-      const spent = txThisMonth
-        .filter((t) => t.type === "Expense" && t.status !== "Cancelled")
-        .reduce((s, t) => s + calcTotals(t).net, 0);
-      if (b.expenseCap > 0) {
-        const pct = (spent / b.expenseCap) * 100;
-        if (pct > 100) notes.push(`Monthly expense cap exceeded (${pct.toFixed(0)}%). Review vendor rates + reduce rentals.`);
-        else if (pct > 80) notes.push(`Monthly expenses at ${pct.toFixed(0)}% of cap. Watch approvals for the rest of the month.`);
-      }
-      const rev = txThisMonth
-        .filter((t) => t.type === "Income" && t.status !== "Cancelled")
-        .reduce((s, t) => s + calcTotals(t).net, 0);
-      if (b.revenueTarget > 0 && rev < b.revenueTarget * 0.7) notes.push(`Revenue tracking below target. Increase lead follow-ups + upsell packages.`);
-    } else {
-      notes.push(`No budget set for ${monthNow}. Create one to track variance + runway precisely.`);
-    }
-
-    const top = categorySpendThisMonth[0];
-    if (top) {
-      const [tt, cat] = top.k.split(":");
-      notes.push(`Top driver this month: ${cat} (${tt}) at ${money(top.v, baseCurrency)}.`);
-    }
-
-    if (kpis.runwayMonths < 2) notes.push(`Runway is low (${kpis.runwayMonths.toFixed(1)} months). Tighten capex + collect advances faster.`);
-    else notes.push(`Runway looks okay (${kpis.runwayMonths.toFixed(1)} months). Keep reserves intact.`);
-
-    return notes.slice(0, 6);
-  }, [budgets, monthNow, kpis, categorySpendThisMonth, baseCurrency, txThisMonth]);
-
-  /* ================= CRUD ================= */
   function openNewTx() {
-    const d = toYMD(new Date());
     const tx: FinanceTx = {
       id: Date.now(),
       createdAt: nowISO(),
       updatedAt: nowISO(),
-      date: d,
+      date: todayYMD,
       type: "Expense",
       status: "Planned",
       amount: 0,
@@ -960,7 +934,7 @@ export default function FinancePage() {
       gstIncluded: false,
       tdsRate: 0,
       dueDate: "",
-      recurring: { enabled: false, freq: "Monthly", nextRun: "" },
+      recurring: undefined,
       notes: "",
     };
     setEditingTx(tx);
@@ -968,12 +942,14 @@ export default function FinancePage() {
   }
 
   function openEditTx(t: FinanceTx) {
-    setEditingTx({ ...t });
+    setEditingTx({ ...t, recurring: t.recurring ? { ...t.recurring } : undefined });
     setOpenTxModal(true);
   }
 
   function saveTx(tx: FinanceTx) {
     if (!canEdit) return notify("Edit locked for Staff.");
+    if (!tx.description.trim()) return notify("Description required.");
+
     const clean: FinanceTx = {
       ...tx,
       type: asTxType(tx.type),
@@ -982,12 +958,11 @@ export default function FinancePage() {
       category: asTag(tx.category),
       paymentMethod: asMethod(tx.paymentMethod),
       amount: parseNum(tx.amount, 0),
-      gstRate: tx.gstRate != null ? clamp(parseNum(tx.gstRate, 0), 0, 28) : undefined,
-      tdsRate: tx.tdsRate != null ? clamp(parseNum(tx.tdsRate, 0), 0, 20) : undefined,
+      gstRate: tx.gstRate == null ? undefined : clamp(parseNum(tx.gstRate, 0), 0, 28),
+      tdsRate: tx.tdsRate == null ? undefined : clamp(parseNum(tx.tdsRate, 0), 0, 20),
       gstIncluded: !!tx.gstIncluded,
-      description: String(tx.description ?? ""),
       updatedAt: nowISO(),
-      recurring: tx.recurring ? asRecurring(tx.recurring) : undefined,
+      recurring: asRecurring(tx.recurring),
     };
 
     setTxs((prev) => {
@@ -996,8 +971,11 @@ export default function FinancePage() {
       return next.sort((a, b) => (a.date === b.date ? b.id - a.id : b.date.localeCompare(a.date)));
     });
 
-    pushAudit(editingTx && txs.some((p) => p.id === tx.id) ? "UPDATE_TX" : "CREATE_TX", `${clean.type} ${clean.status} ${money(calcTotals(clean).net, clean.currency)} • ${clean.description}`);
-    notify("Saved.");
+    pushAudit(
+      txs.some((p) => p.id === clean.id) ? "UPDATE_TX" : "CREATE_TX",
+      `${clean.type} ${clean.status} • ${money(calcTotals(clean).net, clean.currency)} • ${clean.description}`
+    );
+    notify("Saved");
     setOpenTxModal(false);
     setEditingTx(null);
   }
@@ -1006,57 +984,45 @@ export default function FinancePage() {
     if (!canEdit) return notify("Edit locked for Staff.");
     const t = txs.find((x) => x.id === id);
     setTxs((prev) => prev.filter((p) => p.id !== id));
-    pushAudit("DELETE_TX", t ? `${t.type} ${t.status} ${money(calcTotals(t).net, t.currency)} • ${t.description}` : `Deleted tx ${id}`);
-    notify("Deleted.");
-  }
-
-  function toggleSelect(id: number) {
-    setSelected((prev) => ({ ...prev, [id]: !prev[id] }));
-  }
-  function clearSelection() {
-    setSelected({});
-  }
-  function selectAllFiltered() {
-    const map: Record<number, boolean> = {};
-    for (const t of filtered) map[t.id] = true;
-    setSelected(map);
+    pushAudit("DELETE_TX", t ? `Deleted • ${t.description}` : `Deleted tx ${id}`);
+    notify("Deleted");
   }
 
   function bulkUpdateStatus(status: TxStatus) {
     if (!canEdit) return notify("Edit locked for Staff.");
     if (selectedIds.length === 0) return notify("Select rows first.");
     const set = new Set(selectedIds);
-    setTxs((prev) =>
-      prev.map((t) => (set.has(t.id) ? { ...t, status, updatedAt: nowISO() } : t))
-    );
-    pushAudit("BULK_UPDATE", `Status → ${status} for ${selectedIds.length} tx.`);
-    notify("Bulk updated.");
+    setTxs((prev) => prev.map((t) => (set.has(t.id) ? { ...t, status, updatedAt: nowISO() } : t)));
+    pushAudit("BULK_UPDATE", `Status → ${status} for ${selectedIds.length} tx`);
+    notify("Bulk updated");
   }
+
   function bulkDelete() {
     if (!canEdit) return notify("Edit locked for Staff.");
     if (selectedIds.length === 0) return notify("Select rows first.");
     const set = new Set(selectedIds);
     setTxs((prev) => prev.filter((t) => !set.has(t.id)));
-    pushAudit("BULK_UPDATE", `Deleted ${selectedIds.length} tx.`);
+    pushAudit("BULK_UPDATE", `Deleted ${selectedIds.length} tx`);
     clearSelection();
-    notify("Bulk deleted.");
+    notify("Bulk deleted");
   }
 
-  /* ================= BUDGETS ================= */
   function openNewBudget() {
-    const b = defaultBudgetLine(toYM(new Date()), baseCurrency);
-    setEditingBudget(b);
+    setEditingBudget(defaultBudgetLine(toYM(new Date()), baseCurrency));
     setOpenBudgetModal(true);
   }
+
   function openEditBudget(b: BudgetLine) {
     setEditingBudget({ ...b, fixedCosts: { ...b.fixedCosts } });
     setOpenBudgetModal(true);
   }
+
   function saveBudget(b: BudgetLine) {
     if (!canEdit) return notify("Edit locked for Staff.");
     const clean: BudgetLine = {
       ...b,
       updatedAt: nowISO(),
+      month: String(b.month || monthNow),
       currency: asCurrency(b.currency, baseCurrency),
       revenueTarget: parseNum(b.revenueTarget, 0),
       expenseCap: parseNum(b.expenseCap, 0),
@@ -1070,60 +1036,100 @@ export default function FinancePage() {
         adminCompliance: parseNum(b.fixedCosts.adminCompliance, 0),
       },
     };
+
     setBudgets((prev) => {
       const exists = prev.some((x) => x.id === clean.id || x.month === clean.month);
-      const next = exists
-        ? prev.map((x) => (x.id === clean.id || x.month === clean.month ? clean : x))
-        : [clean, ...prev];
+      const next = exists ? prev.map((x) => (x.id === clean.id || x.month === clean.month ? clean : x)) : [clean, ...prev];
       next.sort((a, b2) => b2.month.localeCompare(a.month));
       return next;
     });
-    pushAudit(
-      budgets.some((x) => x.id === clean.id || x.month === clean.month) ? "UPDATE_BUDGET" : "CREATE_BUDGET",
-      `Budget ${clean.month} saved. cap=${money(clean.expenseCap, clean.currency)}`
-    );
-    notify("Budget saved.");
+
+    pushAudit("UPDATE_BUDGET", `Budget saved • ${clean.month}`);
+    notify("Budget saved");
     setOpenBudgetModal(false);
     setEditingBudget(null);
   }
+
   function deleteBudget(id: number) {
     if (!canEdit) return notify("Edit locked for Staff.");
     const b = budgets.find((x) => x.id === id);
     setBudgets((prev) => prev.filter((x) => x.id !== id));
-    pushAudit("DELETE_BUDGET", b ? `Deleted budget ${b.month}` : `Deleted budget ${id}`);
-    notify("Budget deleted.");
-  }
-  function generateBudgetsNext12() {
-    if (!canEdit) return notify("Edit locked for Staff.");
-    const base = budgets.find((x) => x.month === monthNow) || defaultBudgetLine(monthNow, baseCurrency);
-    const next: BudgetLine[] = [];
-    const start = new Date(monthNow + "-01T00:00:00");
-    for (let i = 0; i < 12; i++) {
-      const d = new Date(start);
-      d.setMonth(d.getMonth() + i);
-      const ym = toYM(d);
-      const line: BudgetLine = {
-        ...base,
-        id: Date.now() + i * 17,
-        createdAt: nowISO(),
-        updatedAt: nowISO(),
-        month: ym,
-      };
-      next.push(line);
-    }
-    setBudgets((prev) => {
-      const map = new Map<string, BudgetLine>();
-      for (const p of prev) map.set(p.month, p);
-      for (const n of next) if (!map.has(n.month)) map.set(n.month, n);
-      const arr = Array.from(map.values());
-      arr.sort((a, b) => b.month.localeCompare(a.month));
-      return arr;
-    });
-    pushAudit("CREATE_BUDGET", "Generated budgets for next 12 months (template).");
-    notify("Generated next 12 months budgets.");
+    pushAudit("DELETE_BUDGET", b ? `Deleted budget • ${b.month}` : `Deleted budget ${id}`);
+    notify("Budget deleted");
   }
 
-  /* ================= IMPORT / EXPORT ================= */
+  function seedDemoData() {
+    if (!canEdit) return notify("Edit locked for Staff.");
+    const d = todayYMD;
+    const demo: FinanceTx[] = [
+      {
+        id: Date.now() + 1,
+        createdAt: nowISO(),
+        updatedAt: nowISO(),
+        date: d,
+        type: "Income",
+        status: "Paid",
+        amount: 250000,
+        currency: baseCurrency,
+        category: "Sales",
+        description: "Wedding package (Gold)",
+        clientName: "Client A",
+        paymentMethod: "Bank",
+        gstRate: 18,
+        gstIncluded: false,
+        tdsRate: 0,
+        notes: "50% advance + milestone collection",
+      },
+      {
+        id: Date.now() + 2,
+        createdAt: nowISO(),
+        updatedAt: nowISO(),
+        date: d,
+        type: "Expense",
+        status: "Pending",
+        amount: 120000,
+        currency: baseCurrency,
+        category: "VendorPayment",
+        description: "Decorator vendor settlement",
+        vendorName: "Vendor X",
+        paymentMethod: "UPI",
+        dueDate: addDays(d, 7),
+      },
+      {
+        id: Date.now() + 3,
+        createdAt: nowISO(),
+        updatedAt: nowISO(),
+        date: d,
+        type: "Expense",
+        status: "Paid",
+        amount: 30000,
+        currency: baseCurrency,
+        category: "Marketing",
+        description: "Meta Ads (lead gen)",
+        paymentMethod: "Card",
+      },
+      {
+        id: Date.now() + 4,
+        createdAt: nowISO(),
+        updatedAt: nowISO(),
+        date: d,
+        type: "Expense",
+        status: "Planned",
+        amount: 150000,
+        currency: baseCurrency,
+        category: "Salary",
+        description: "Salaries (month)",
+        paymentMethod: "Bank",
+        recurring: { enabled: true, freq: "Monthly", nextRun: addMonths(d, 1) },
+      },
+    ];
+    setTxs((prev) => [...demo, ...prev]);
+    if (!budgets.some((b) => b.month === monthNow)) setBudgets((prev) => [defaultBudgetLine(monthNow, baseCurrency), ...prev]);
+    pushAudit("CREATE_TX", "Seeded demo finance data");
+    notify("Demo added");
+  }
+
+  /* ============ EXPORTS ============ */
   const CSV_HEADERS = [
     "id",
     "date",
@@ -1192,7 +1198,7 @@ export default function FinancePage() {
     }
     downloadText(`eventura_finance_${which}_${toYMD(new Date())}.csv`, lines.join("\n"), "text/csv;charset=utf-8");
     pushAudit("EXPORT", `Exported CSV (${which}) rows=${rows.length}`);
-    notify("CSV exported.");
+    notify("CSV exported");
   }
 
   function exportExcelXls(which: "filtered" | "all") {
@@ -1238,45 +1244,120 @@ export default function FinancePage() {
       <tbody>${body}</tbody></table></body></html>`;
     downloadText(`eventura_finance_${which}_${toYMD(new Date())}.xls`, html, "application/vnd.ms-excel;charset=utf-8");
     pushAudit("EXPORT", `Exported Excel (.xls) (${which}) rows=${rows.length}`);
-    notify("Excel exported.");
+    notify("Excel exported");
+  }
+
+  /* ============ INVOICE PRINT ============ */
+  function openInvoice(t: FinanceTx) {
+    setInvoiceTx(t);
+    setOpenInvoiceModal(true);
+  }
+  function printInvoice() {
+    if (!invoiceTx) return;
+    const c = calcTotals(invoiceTx);
+    const html = `<!doctype html>
+<html><head><meta charset="utf-8"/>
+<title>Invoice</title>
+<style>
+body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#fff;color:#111}
+.card{border:1px solid #ddd;border-radius:12px;padding:16px}
+.h1{font-size:18px;font-weight:700;margin:0 0 6px}
+.muted{color:#666;font-size:12px}
+.row{display:flex;justify-content:space-between;gap:12px;margin-top:10px}
+.table{width:100%;border-collapse:collapse;margin-top:12px}
+.table th,.table td{border:1px solid #ddd;padding:8px;font-size:12px;text-align:left}
+.right{text-align:right}
+.badge{display:inline-block;border:1px solid #ddd;border-radius:999px;padding:4px 10px;font-size:12px}
+</style></head>
+<body>
+<div class="card">
+  <div class="row">
+    <div>
+      <div class="h1">Eventura — Invoice</div>
+      <div class="muted">Date: ${invoiceTx.date}</div>
+      <div class="muted">Invoice No: ${invoiceTx.invoiceNo || "-"}</div>
+      <div class="muted">Reference: ${invoiceTx.referenceId || "-"}</div>
+    </div>
+    <div class="right">
+      <div class="badge">${invoiceTx.status}</div>
+      <div class="muted" style="margin-top:6px">Currency: ${invoiceTx.currency}</div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div>
+      <div class="muted">Billed To</div>
+      <div><b>${invoiceTx.clientName || "Client"}</b></div>
+      <div class="muted">${invoiceTx.eventTitle || ""}</div>
+    </div>
+    <div>
+      <div class="muted">Description</div>
+      <div><b>${(invoiceTx.description || "").replace(/</g, "&lt;")}</b></div>
+      <div class="muted">Category: ${invoiceTx.category}${invoiceTx.subcategory ? " / " + invoiceTx.subcategory : ""}</div>
+    </div>
+  </div>
+
+  <table class="table">
+    <thead><tr><th>Item</th><th class="right">Amount</th></tr></thead>
+    <tbody>
+      <tr><td>Base</td><td class="right">${money(c.base, invoiceTx.currency)}</td></tr>
+      <tr><td>GST (${c.gstRate}%)</td><td class="right">${money(c.gstAdd, invoiceTx.currency)}</td></tr>
+      <tr><td>TDS (${c.tdsRate}%)</td><td class="right">-${money(c.tds, invoiceTx.currency)}</td></tr>
+      <tr><td><b>Net Total</b></td><td class="right"><b>${money(c.net, invoiceTx.currency)}</b></td></tr>
+    </tbody>
+  </table>
+
+  <div class="muted" style="margin-top:10px">Notes: ${(invoiceTx.notes || "-").replace(/</g, "&lt;")}</div>
+</div>
+<script>window.onload=function(){window.print();}</script>
+</body></html>`;
+    const w = window.open("", "_blank");
+    if (!w) return notify("Popup blocked. Allow popups to print invoice.");
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  }
+
+  /* ============ IMPORT (CSV/JSON) ============ */
+  function handleFileUpload(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImportText(String(reader.result || ""));
+      notify("File loaded");
+    };
+    reader.readAsText(file);
   }
 
   function exportJSONBackup() {
     const payload = { version: 3, exportedAt: nowISO(), settings, budgets, txs, audit };
-    downloadText(
-      `eventura_finance_backup_${toYMD(new Date())}.json`,
-      JSON.stringify(payload, null, 2),
-      "application/json"
-    );
-    pushAudit("EXPORT", `Exported JSON backup (tx=${txs.length}, budgets=${budgets.length})`);
-    notify("JSON exported.");
+    downloadText(`eventura_finance_backup_${toYMD(new Date())}.json`, JSON.stringify(payload, null, 2), "application/json");
+    pushAudit("EXPORT", `Exported JSON backup`);
+    notify("JSON exported");
   }
 
   function importJSONBackup() {
     if (!canEdit) return notify("Edit locked for Staff.");
     try {
       const obj = JSON.parse(importText || "{}");
+
       const rawSet = obj.settings ? (obj.settings as any) : null;
-      const nextSettings: FinanceSettings = { ...defaultSettings(), ...(rawSet || {}) };
-      nextSettings.defaultCurrency = asCurrency((nextSettings as any).defaultCurrency, "INR");
-      nextSettings.startOfWeek = nextSettings.startOfWeek === "Sun" ? "Sun" : "Mon";
-      nextSettings.overdueRuleDays = clamp(parseNum((nextSettings as any).overdueRuleDays, 0), 0, 60);
-      nextSettings.showGst = !!(nextSettings as any).showGst;
-      nextSettings.showTds = !!(nextSettings as any).showTds;
-      nextSettings.lockStaffEdits = (nextSettings as any).lockStaffEdits !== false;
+      const s: FinanceSettings = { ...defaultSettings(), ...(rawSet || {}) };
+      s.defaultCurrency = asCurrency((s as any).defaultCurrency, "INR");
+      s.overdueRuleDays = clamp(parseNum((s as any).overdueRuleDays, 0), 0, 60);
+      s.showGst = !!(s as any).showGst;
+      s.showTds = !!(s as any).showTds;
+      s.lockStaffEdits = (s as any).lockStaffEdits !== false;
 
       const rawTx = Array.isArray(obj.txs) ? (obj.txs as any[]) : [];
-      const normTx: FinanceTx[] = rawTx
-        .map((t) => normalizeTx(t, nextSettings.defaultCurrency))
-        .filter((x): x is FinanceTx => !!x);
+      const normTx: FinanceTx[] = rawTx.map((t) => normalizeTx(t, s.defaultCurrency)).filter((x): x is FinanceTx => !!x);
 
       const rawBud = Array.isArray(obj.budgets) ? (obj.budgets as any[]) : [];
       const normBud: BudgetLine[] = rawBud
         .filter((b) => b && typeof b === "object")
         .map((b) => {
-          const month = typeof b.month === "string" && b.month ? b.month : toYM(new Date());
-          const currency = asCurrency((b as any).currency, nextSettings.defaultCurrency);
-          const fixed = (b as any).fixedCosts || {};
+          const month = typeof (b as any).month === "string" && (b as any).month ? (b as any).month : toYM(new Date());
+          const currency = asCurrency((b as any).currency, s.defaultCurrency);
+          const fx = (b as any).fixedCosts || {};
           return {
             id: parseNum((b as any).id, Date.now()),
             createdAt: typeof (b as any).createdAt === "string" ? (b as any).createdAt : nowISO(),
@@ -1287,12 +1368,12 @@ export default function FinancePage() {
             expenseCap: parseNum((b as any).expenseCap, 0),
             grossMarginTargetPct: clamp(parseNum((b as any).grossMarginTargetPct, 25), 0, 80),
             fixedCosts: {
-              officeRentUtilities: parseNum(fixed.officeRentUtilities, 0),
-              salaries: parseNum(fixed.salaries, 0),
-              marketing: parseNum(fixed.marketing, 0),
-              internetMisc: parseNum(fixed.internetMisc, 0),
-              transportLogistics: parseNum(fixed.transportLogistics, 0),
-              adminCompliance: parseNum(fixed.adminCompliance, 0),
+              officeRentUtilities: parseNum(fx.officeRentUtilities, 0),
+              salaries: parseNum(fx.salaries, 0),
+              marketing: parseNum(fx.marketing, 0),
+              internetMisc: parseNum(fx.internetMisc, 0),
+              transportLogistics: parseNum(fx.transportLogistics, 0),
+              adminCompliance: parseNum(fx.adminCompliance, 0),
             },
             notes: typeof (b as any).notes === "string" ? (b as any).notes : undefined,
           };
@@ -1310,15 +1391,15 @@ export default function FinancePage() {
           details: String((a as any).details || ""),
         }));
 
-      setSettings(nextSettings);
+      setSettings(s);
       setTxs(normTx);
       setBudgets(normBud);
       setAudit(normAud);
 
       pushAudit("IMPORT", `Imported JSON backup (tx=${normTx.length}, budgets=${normBud.length})`);
-      notify("Imported JSON.");
+      notify("Imported JSON");
     } catch {
-      notify("Invalid JSON.");
+      notify("Invalid JSON");
     }
   }
 
@@ -1371,7 +1452,7 @@ export default function FinancePage() {
         id: parseNum(getCell(cols, "id"), Date.now() + i),
         createdAt: getCell(cols, "createdAt") || nowISO(),
         updatedAt: nowISO(),
-        date: getCell(cols, "date") || toYMD(new Date()),
+        date: getCell(cols, "date") || todayYMD,
         type: getCell(cols, "type"),
         status: getCell(cols, "status"),
         currency: getCell(cols, "currency") || baseCurrency,
@@ -1408,200 +1489,10 @@ export default function FinancePage() {
     });
 
     pushAudit("IMPORT", `Imported CSV rows=${next.length}`);
-    notify("Imported CSV.");
+    notify("Imported CSV");
   }
 
-  function handleFileUpload(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const txt = String(reader.result || "");
-      setImportText(txt);
-      notify("File loaded into import box.");
-    };
-    reader.readAsText(file);
-  }
-
-  function seedDemoData() {
-    if (!canEdit) return notify("Edit locked for Staff.");
-    const d = toYMD(new Date());
-    const demo: FinanceTx[] = [
-      {
-        id: Date.now() + 1,
-        createdAt: nowISO(),
-        updatedAt: nowISO(),
-        date: d,
-        type: "Income",
-        status: "Paid",
-        amount: 250000,
-        currency: baseCurrency,
-        category: "Sales",
-        description: "Wedding package (Gold)",
-        clientName: "Client A",
-        paymentMethod: "Bank",
-        gstRate: 18,
-        gstIncluded: false,
-        tdsRate: 0,
-        notes: "50% advance + milestone collection",
-      },
-      {
-        id: Date.now() + 2,
-        createdAt: nowISO(),
-        updatedAt: nowISO(),
-        date: d,
-        type: "Expense",
-        status: "Pending",
-        amount: 120000,
-        currency: baseCurrency,
-        category: "VendorPayment",
-        description: "Decorator vendor settlement",
-        vendorName: "Vendor X",
-        paymentMethod: "UPI",
-        dueDate: addDays(d, 7),
-        notes: "Negotiate rate for next booking",
-      },
-      {
-        id: Date.now() + 3,
-        createdAt: nowISO(),
-        updatedAt: nowISO(),
-        date: d,
-        type: "Expense",
-        status: "Paid",
-        amount: 30000,
-        currency: baseCurrency,
-        category: "Marketing",
-        description: "Meta Ads (lead gen)",
-        paymentMethod: "Card",
-        notes: "Track CAC in reports",
-      },
-      {
-        id: Date.now() + 4,
-        createdAt: nowISO(),
-        updatedAt: nowISO(),
-        date: d,
-        type: "Expense",
-        status: "Planned",
-        amount: 150000,
-        currency: baseCurrency,
-        category: "Salary",
-        description: "Salaries (month)",
-        paymentMethod: "Bank",
-        recurring: { enabled: true, freq: "Monthly", nextRun: addMonths(d, 1) },
-      },
-    ];
-    setTxs((prev) => [...demo, ...prev]);
-    if (!budgets.some((b) => b.month === monthNow)) {
-      setBudgets((prev) => [defaultBudgetLine(monthNow, baseCurrency), ...prev]);
-    }
-    pushAudit("CREATE_TX", "Seeded demo finance data.");
-    notify("Demo data added.");
-  }
-
-  /* ================= INVOICE (PRINTABLE) ================= */
-  function openInvoice(t: FinanceTx) {
-    setInvoiceTx(t);
-    setOpenInvoiceModal(true);
-  }
-  function printInvoice() {
-    if (!invoiceTx) return;
-    const c = calcTotals(invoiceTx);
-    const html = `<!doctype html>
-<html><head><meta charset="utf-8"/>
-<title>Invoice</title>
-<style>
-body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#fff;color:#111}
-.card{border:1px solid #ddd;border-radius:12px;padding:16px}
-.h1{font-size:18px;font-weight:700;margin:0 0 6px}
-.muted{color:#666;font-size:12px}
-.row{display:flex;justify-content:space-between;gap:12px;margin-top:10px}
-.table{width:100%;border-collapse:collapse;margin-top:12px}
-.table th,.table td{border:1px solid #ddd;padding:8px;font-size:12px;text-align:left}
-.right{text-align:right}
-.badge{display:inline-block;border:1px solid #ddd;border-radius:999px;padding:4px 10px;font-size:12px}
-</style></head>
-<body>
-<div class="card">
-  <div class="row">
-    <div>
-      <div class="h1">Eventura — Invoice</div>
-      <div class="muted">Date: ${invoiceTx.date}</div>
-      <div class="muted">Invoice No: ${invoiceTx.invoiceNo || "-"}</div>
-      <div class="muted">Reference: ${invoiceTx.referenceId || "-"}</div>
-    </div>
-    <div class="right">
-      <div class="badge">${invoiceTx.status}</div>
-      <div class="muted" style="margin-top:6px">Currency: ${invoiceTx.currency}</div>
-    </div>
-  </div>
-
-  <div class="row">
-    <div>
-      <div class="muted">Billed To</div>
-      <div><b>${invoiceTx.clientName || "Client"}</b></div>
-      <div class="muted">${invoiceTx.eventTitle || ""}</div>
-    </div>
-    <div>
-      <div class="muted">Description</div>
-      <div><b>${(invoiceTx.description || "").replace(/</g, "&lt;")}</b></div>
-      <div class="muted">Category: ${invoiceTx.category}${invoiceTx.subcategory ? " / " + invoiceTx.subcategory : ""}</div>
-    </div>
-  </div>
-
-  <table class="table">
-    <thead><tr>
-      <th>Item</th><th class="right">Amount</th>
-    </tr></thead>
-    <tbody>
-      <tr><td>Base</td><td class="right">${money(c.base, invoiceTx.currency)}</td></tr>
-      <tr><td>GST (${c.gstRate}%)</td><td class="right">${money(c.gstAdd, invoiceTx.currency)}</td></tr>
-      <tr><td>TDS (${c.tdsRate}%)</td><td class="right">-${money(c.tds, invoiceTx.currency)}</td></tr>
-      <tr><td><b>Net Total</b></td><td class="right"><b>${money(c.net, invoiceTx.currency)}</b></td></tr>
-    </tbody>
-  </table>
-
-  <div class="muted" style="margin-top:10px">Notes: ${(invoiceTx.notes || "-").replace(/</g, "&lt;")}</div>
-</div>
-<script>window.onload=function(){window.print();}</script>
-</body></html>`;
-    const w = window.open("", "_blank");
-    if (!w) return notify("Popup blocked. Allow popups to print invoice.");
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-  }
-
-  /* ================= REPORTS ================= */
-  const pnlByMonth = useMemo(() => {
-    // base-currency only view; still works if mixed currency (you can filter currency)
-    const map = new Map<string, { income: number; expense: number }>();
-    for (const t of txs) {
-      if (t.status === "Cancelled") continue;
-      const ym = t.date.slice(0, 7);
-      const prev = map.get(ym) || { income: 0, expense: 0 };
-      const v = calcTotals(t).net;
-      if (t.type === "Income") prev.income += v;
-      else prev.expense += v;
-      map.set(ym, prev);
-    }
-    const arr = Array.from(map.entries()).map(([month, v]) => ({ month, ...v, net: v.income - v.expense }));
-    arr.sort((a, b) => a.month.localeCompare(b.month));
-    return arr.slice(-12);
-  }, [txs]);
-
-  const topCategoriesYTD = useMemo(() => {
-    const year = String(new Date().getFullYear());
-    const map = new Map<string, number>();
-    for (const t of txs) {
-      if (t.status === "Cancelled") continue;
-      if (!t.date.startsWith(year)) continue;
-      const key = `${t.type}:${t.category}`;
-      map.set(key, (map.get(key) || 0) + calcTotals(t).net);
-    }
-    const arr = Array.from(map.entries()).map(([k, v]) => ({ k, v }));
-    arr.sort((a, b) => Math.abs(b.v) - Math.abs(a.v));
-    return arr.slice(0, 10);
-  }, [txs]);
-
-  /* ================= AR/AP ================= */
+  /* ============ AR/AP ============ */
   const arap = useMemo(() => {
     const receivables = txs.filter(
       (t) => t.type === "Income" && (t.status === "Planned" || t.status === "Pending" || t.status === "Overdue")
@@ -1627,62 +1518,58 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#ff
       return arr;
     }
 
-    return {
-      receivables,
-      payables,
-      byClient: group(receivables, "clientName"),
-      byVendor: group(payables, "vendorName"),
-    };
+    return { receivables, payables, byClient: group(receivables, "clientName"), byVendor: group(payables, "vendorName") };
   }, [txs]);
 
-  /* ================= SETTINGS ================= */
+  /* ============ SETTINGS UPDATE ============ */
   function updateSettings(patch: Partial<FinanceSettings>) {
     if (!isCEO) return notify("Only CEO can change settings.");
-    const next: FinanceSettings = {
-      ...settings,
-      ...patch,
-    };
+    const next: FinanceSettings = { ...settings, ...patch };
     next.defaultCurrency = asCurrency((next as any).defaultCurrency, "INR");
     next.overdueRuleDays = clamp(parseNum((next as any).overdueRuleDays, 0), 0, 60);
-    next.startOfWeek = next.startOfWeek === "Sun" ? "Sun" : "Mon";
     next.showGst = !!(next as any).showGst;
     next.showTds = !!(next as any).showTds;
     next.lockStaffEdits = (next as any).lockStaffEdits !== false;
     setSettings(next);
-    pushAudit("SETTINGS_UPDATE", `Settings updated.`);
-    notify("Settings saved.");
+    pushAudit("SETTINGS_UPDATE", "Settings updated");
+    notify("Settings saved");
   }
 
-  /* ================= UI ================= */
-  const sideTabs: Array<{ t: Tab; label: string }> = [
-    { t: "Overview", label: "Overview" },
-    { t: "Transactions", label: "Transactions" },
-    { t: "Budgets", label: "Budgets" },
-    { t: "AR/AP", label: "AR/AP" },
-    { t: "Reports", label: "Reports" },
-    { t: "Import/Export", label: "Import/Export" },
-    { t: "Audit", label: "Audit" },
-    { t: "Settings", label: "Settings" },
+  /* =========================
+     NAV
+  ========================= */
+  const tabs: { key: Tab; label: string }[] = [
+    { key: "Dashboard", label: "Dashboard" },
+    { key: "Transactions", label: "Transactions" },
+    { key: "Budgets", label: "Budgets" },
+    { key: "AR/AP", label: "AR / AP" },
+    { key: "Reports", label: "Reports" },
+    { key: "Import/Export", label: "Import / Export" },
+    { key: "Audit", label: "Audit" },
+    { key: "Settings", label: "Settings" },
   ];
 
   return (
     <div className="min-h-screen bg-[#070707] text-white">
-      {/* Header */}
-      <div className="sticky top-0 z-40 border-b border-white/10 bg-black/60 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
+      {/* Top App Header */}
+      <div className="sticky top-0 z-40 border-b border-white/10 bg-black/70 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="rounded-xl border border-white/15 bg-white/5 px-3 py-2">
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2">
               <div className="text-xs text-white/60">Eventura OS</div>
-              <div className="text-sm font-semibold">Finance</div>
+              <div className="text-sm font-semibold tracking-tight">Finance</div>
             </div>
-            <Pill label={role} />
-            <Pill label={email ? email : "no-email"} />
-            <Pill label={`Tx ${txs.length}`} />
-            <Pill label={`Budgets ${budgets.length}`} />
+            <div className="flex flex-wrap gap-2">
+              <Pill>{role}</Pill>
+              <Pill>{email || "no-email"}</Pill>
+              <Pill>Tx {txs.length}</Pill>
+              <Pill>Budgets {budgets.length}</Pill>
+              {!canEdit ? <Pill tone="warn">Staff view-only</Pill> : <Pill tone="good">Edit enabled</Pill>}
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <Btn variant="outline" onClick={() => exportExcelXls("filtered")} title="Excel-compatible export (.xls)">
+            <Btn variant="outline" onClick={() => exportExcelXls("filtered")}>
               Export Excel
             </Btn>
             <Btn variant="outline" onClick={() => exportCSV("filtered")}>
@@ -1700,677 +1587,624 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#ff
           </div>
         </div>
 
-        {/* Toast */}
-        {toast ? (
-          <div className="mx-auto max-w-7xl px-4 pb-3">
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/85">
-              {toast}
+        {/* Top Tabs */}
+        <div className="mx-auto max-w-7xl px-4 pb-3">
+          <div className="flex flex-wrap gap-2">
+            {tabs.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={cls(
+                  "rounded-xl border px-3 py-2 text-sm transition",
+                  tab === t.key
+                    ? "border-white/25 bg-white/10 text-white"
+                    : "border-white/10 bg-black/30 text-white/75 hover:bg-black hover:text-white hover:border-white/20"
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+            <div className="flex-1" />
+            <Btn onClick={openNewTx} disabled={!canEdit}>
+              + New Transaction
+            </Btn>
+            <Btn variant="outline" onClick={seedDemoData} disabled={!canEdit}>
+              Seed Demo
+            </Btn>
+          </div>
+
+          {toast ? (
+            <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/85">{toast}</div>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Page */}
+      <div className="mx-auto max-w-7xl px-4 py-5">
+        {/* DASHBOARD */}
+        {tab === "Dashboard" ? (
+          <div className="grid gap-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              <Kpi label="This Month Income" value={money(kpis.mIncome, baseCurrency)} />
+              <Kpi label="This Month Expense" value={money(kpis.mExpense, baseCurrency)} />
+              <Kpi label="This Month Net" value={money(kpis.mNet, baseCurrency)} sub="Income - Expense (after GST/TDS)" />
+              <Kpi label="Overdue Items" value={String(kpis.overdueCount)} />
             </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-12">
+              {/* Cash + AR/AP */}
+              <div className="md:col-span-5">
+                <Card title="Cash & Runway" right={<Pill>{baseCurrency}</Pill>}>
+                  <div className="grid grid-cols-1 gap-3">
+                    <Kpi label="Estimated Cash Balance" value={money(kpis.cash, baseCurrency)} sub="Paid income - paid expenses (all time)" />
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <Kpi label="Fixed Cost (Budget)" value={money(kpis.fixed, baseCurrency)} sub="Current month fixed costs" />
+                      <Kpi label="Runway (months)" value={kpis.runwayMonths.toFixed(1)} sub="Cash / fixed cost" />
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+                        <div className="text-xs text-white/60">Receivables (AR)</div>
+                        <div className="mt-2 text-lg font-semibold">{money(kpis.ar, baseCurrency)}</div>
+                        <div className="mt-2 text-xs text-white/45">Planned/Pending/Overdue Income</div>
+                      </div>
+                      <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+                        <div className="text-xs text-white/60">Payables (AP)</div>
+                        <div className="mt-2 text-lg font-semibold">{money(kpis.ap, baseCurrency)}</div>
+                        <div className="mt-2 text-xs text-white/45">Planned/Pending/Overdue Expense</div>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+
+              {/* Trend */}
+              <div className="md:col-span-7">
+                <Card title="P&L Trend (Last 12 months)" right={<Pill>{monthNow}</Pill>}>
+                  <div className="grid gap-3">
+                    <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs text-white/60">Net per month (spark bars)</div>
+                        <div className="text-xs text-white/60">{monthSeries.length} months</div>
+                      </div>
+                      <div className="mt-3">
+                        <SparkBars values={monthSeries.map((m) => m.net)} />
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+                        {monthSeries.slice(-4).map((m) => (
+                          <div key={m.month} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                            <div className="text-[11px] text-white/60">{m.month}</div>
+                            <div className="mt-1 text-sm font-semibold">{money(m.net, baseCurrency)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <Card title="Top Spend (This Month)">
+                        {topSpendThisMonth.length === 0 ? (
+                          <div className="text-sm text-white/60">No expense data this month.</div>
+                        ) : (
+                          <div className="grid gap-2">
+                            {(() => {
+                              const max = Math.max(...topSpendThisMonth.map((x) => x.v), 1);
+                              return topSpendThisMonth.map((x) => (
+                                <ProgressRow
+                                  key={x.k}
+                                  label={x.k}
+                                  value={x.v}
+                                  max={max}
+                                  right={money(x.v, baseCurrency)}
+                                />
+                              ));
+                            })()}
+                          </div>
+                        )}
+                      </Card>
+
+                      <Card title="Quick Controls">
+                        <div className="grid gap-3">
+                          <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+                            <div className="text-xs text-white/60">New transaction</div>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <Btn onClick={openNewTx} disabled={!canEdit}>
+                                + Add
+                              </Btn>
+                              <Btn variant="outline" onClick={() => setTab("Transactions")}>
+                                Open Ledger
+                              </Btn>
+                              <Btn variant="outline" onClick={() => setTab("Budgets")}>
+                                Budgets
+                              </Btn>
+                            </div>
+                          </div>
+
+                          <div className="rounded-xl border border-white/10 bg-black/30 p-3">
+                            <div className="text-xs text-white/60">Exports</div>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <Btn variant="outline" onClick={() => exportExcelXls("all")}>
+                                Excel (All)
+                              </Btn>
+                              <Btn variant="outline" onClick={() => exportCSV("all")}>
+                                CSV (All)
+                              </Btn>
+                              <Btn variant="outline" onClick={exportJSONBackup}>
+                                JSON Backup
+                              </Btn>
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {/* TRANSACTIONS (REAL LEDGER TABLE) */}
+        {tab === "Transactions" ? (
+          <div className="grid gap-4">
+            <Card title="Ledger Filters" right={<span className="text-white/60">Showing {filtered.length} rows</span>}>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+                <div className="md:col-span-4">
+                  <div className="text-xs text-white/60">Search</div>
+                  <Input value={q} onChange={setQ} placeholder="client/vendor/event/invoice/notes..." />
+                </div>
+                <div className="md:col-span-2">
+                  <div className="text-xs text-white/60">Type</div>
+                  <Select value={fType} onChange={(v) => setFType(v as any)} options={[{ value: "All", label: "All" }, ...TX_TYPES.map((t) => ({ value: t, label: t }))]} />
+                </div>
+                <div className="md:col-span-2">
+                  <div className="text-xs text-white/60">Status</div>
+                  <Select value={fStatus} onChange={(v) => setFStatus(v as any)} options={[{ value: "All", label: "All" }, ...TX_STATUSES.map((s) => ({ value: s, label: s }))]} />
+                </div>
+                <div className="md:col-span-2">
+                  <div className="text-xs text-white/60">Category</div>
+                  <Select value={fCategory} onChange={(v) => setFCategory(v as any)} options={[{ value: "All", label: "All" }, ...TAGS.map((c) => ({ value: c, label: c }))]} />
+                </div>
+                <div className="md:col-span-2">
+                  <div className="text-xs text-white/60">Currency</div>
+                  <Select value={fCur} onChange={(v) => setFCur(v as any)} options={[{ value: "All", label: "All" }, ...CURRENCIES.map((c) => ({ value: c, label: c }))]} />
+                </div>
+
+                <div className="md:col-span-2">
+                  <div className="text-xs text-white/60">From</div>
+                  <Input value={from} onChange={setFrom} type="date" />
+                </div>
+                <div className="md:col-span-2">
+                  <div className="text-xs text-white/60">To</div>
+                  <Input value={to} onChange={setTo} type="date" />
+                </div>
+
+                <div className="md:col-span-8 flex flex-wrap items-end justify-between gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    <Btn variant="outline" onClick={selectAllFiltered}>
+                      Select all
+                    </Btn>
+                    <Btn variant="outline" onClick={clearSelection}>
+                      Clear
+                    </Btn>
+                    <Pill>Selected {selectedIds.length}</Pill>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Btn variant="outline" onClick={() => bulkUpdateStatus("Paid")} disabled={!canEdit}>
+                      Mark Paid
+                    </Btn>
+                    <Btn variant="outline" onClick={() => bulkUpdateStatus("Pending")} disabled={!canEdit}>
+                      Mark Pending
+                    </Btn>
+                    <Btn variant="outline" onClick={() => bulkUpdateStatus("Overdue")} disabled={!canEdit}>
+                      Mark Overdue
+                    </Btn>
+                    <Btn variant="outline" onClick={() => bulkUpdateStatus("Cancelled")} disabled={!canEdit}>
+                      Cancel
+                    </Btn>
+                    <Btn variant="danger" onClick={bulkDelete} disabled={!canEdit}>
+                      Delete
+                    </Btn>
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+              {/* Sticky header */}
+              <div className="grid grid-cols-12 gap-2 border-b border-white/10 bg-black/60 px-3 py-2 text-xs text-white/60">
+                <div className="col-span-1">Sel</div>
+                <div className="col-span-2">Date</div>
+                <div className="col-span-2">Type</div>
+                <div className="col-span-2">Status</div>
+                <div className="col-span-3">Description</div>
+                <div className="col-span-2 text-right">Net</div>
+              </div>
+
+              {filtered.length === 0 ? (
+                <div className="p-6 text-sm text-white/60">No transactions found.</div>
+              ) : (
+                <div className="divide-y divide-white/10">
+                  {filtered.map((t) => {
+                    const c = calcTotals(t);
+                    const party = t.type === "Income" ? t.clientName || "-" : t.vendorName || "-";
+                    const statusTone: "neutral" | "good" | "bad" | "warn" =
+                      t.status === "Paid" ? "good" : t.status === "Overdue" ? "bad" : t.status === "Pending" ? "warn" : "neutral";
+                    const netTone: "neutral" | "good" | "bad" = t.type === "Income" ? "good" : "bad";
+
+                    return (
+                      <div key={t.id} className="grid grid-cols-12 gap-2 px-3 py-3 hover:bg-black/50 transition">
+                        <div className="col-span-1 flex items-center">
+                          <input type="checkbox" checked={!!selected[t.id]} onChange={() => toggleSelect(t.id)} />
+                        </div>
+
+                        <div className="col-span-2">
+                          <div className="text-sm font-semibold">{t.date}</div>
+                          <div className="mt-1 text-xs text-white/50">{t.dueDate ? `Due: ${t.dueDate}` : "—"}</div>
+                        </div>
+
+                        <div className="col-span-2 flex flex-col gap-1">
+                          <Pill tone={t.type === "Income" ? "good" : "bad"}>{t.type}</Pill>
+                          <div className="text-xs text-white/50">{t.category}</div>
+                        </div>
+
+                        <div className="col-span-2 flex flex-col gap-1">
+                          <Pill tone={statusTone}>{t.status}</Pill>
+                          <div className="text-xs text-white/50">{t.currency}</div>
+                        </div>
+
+                        <div className="col-span-3">
+                          <div className="text-sm text-white/90">{t.description || "-"}</div>
+                          <div className="mt-1 text-xs text-white/50">
+                            {party}
+                            {t.eventTitle ? ` • ${t.eventTitle}` : ""}
+                            {t.invoiceNo ? ` • Inv ${t.invoiceNo}` : ""}
+                          </div>
+                        </div>
+
+                        <div className="col-span-2 text-right">
+                          <div className="flex justify-end">
+                            <Pill tone={netTone}>{money(c.net, t.currency)}</Pill>
+                          </div>
+                          <div className="mt-2 flex justify-end gap-2">
+                            <Btn variant="ghost" onClick={() => openInvoice(t)} disabled={t.type !== "Income"}>
+                              Invoice
+                            </Btn>
+                            <Btn variant="outline" onClick={() => openEditTx(t)} disabled={!canEdit}>
+                              Edit
+                            </Btn>
+                            <Btn variant="danger" onClick={() => deleteTx(t.id)} disabled={!canEdit}>
+                              Delete
+                            </Btn>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {/* BUDGETS */}
+        {tab === "Budgets" ? (
+          <div className="grid gap-4">
+            <Card
+              title="Budgets (Monthly)"
+              right={
+                <div className="flex gap-2">
+                  <Btn onClick={openNewBudget} disabled={!canEdit}>
+                    + New Budget
+                  </Btn>
+                </div>
+              }
+            >
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <Kpi label="Current Month" value={monthNow} />
+                <Kpi label="Fixed Cost (Current)" value={money(kpis.fixed, baseCurrency)} />
+                <Kpi label="Runway" value={`${kpis.runwayMonths.toFixed(1)} months`} />
+              </div>
+            </Card>
+
+            <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
+              <div className="grid grid-cols-12 border-b border-white/10 bg-black/60 px-3 py-2 text-xs text-white/60">
+                <div className="col-span-2">Month</div>
+                <div className="col-span-3">Targets</div>
+                <div className="col-span-3">Fixed Costs</div>
+                <div className="col-span-2">Actual (Month)</div>
+                <div className="col-span-2 text-right">Actions</div>
+              </div>
+
+              {budgets.length === 0 ? (
+                <div className="p-6 text-sm text-white/60">No budgets. Create one for {monthNow}.</div>
+              ) : (
+                <div className="divide-y divide-white/10">
+                  {budgets
+                    .slice()
+                    .sort((a, b) => b.month.localeCompare(a.month))
+                    .map((b) => {
+                      const monthTx = txs.filter((t) => t.date.slice(0, 7) === b.month && t.status !== "Cancelled");
+                      const actIncome = monthTx.filter((t) => t.type === "Income").reduce((s, t) => s + calcTotals(t).net, 0);
+                      const actExpense = monthTx.filter((t) => t.type === "Expense").reduce((s, t) => s + calcTotals(t).net, 0);
+                      const fixed =
+                        b.fixedCosts.officeRentUtilities +
+                        b.fixedCosts.salaries +
+                        b.fixedCosts.marketing +
+                        b.fixedCosts.internetMisc +
+                        b.fixedCosts.transportLogistics +
+                        b.fixedCosts.adminCompliance;
+
+                      return (
+                        <div key={b.id} className="grid grid-cols-12 items-center px-3 py-3 hover:bg-black/50 transition">
+                          <div className="col-span-2">
+                            <div className="text-sm font-semibold">{b.month}</div>
+                            <div className="mt-1 text-xs text-white/50">{b.currency}</div>
+                          </div>
+                          <div className="col-span-3 text-xs text-white/75">
+                            <div>Revenue: <b>{money(b.revenueTarget, b.currency)}</b></div>
+                            <div>Expense Cap: <b>{money(b.expenseCap, b.currency)}</b></div>
+                            <div>GM Target: <b>{b.grossMarginTargetPct}%</b></div>
+                          </div>
+                          <div className="col-span-3 text-xs text-white/75">
+                            <div>Fixed Total: <b>{money(fixed, b.currency)}</b></div>
+                            <div className="text-white/50">Salaries: {money(b.fixedCosts.salaries, b.currency)}</div>
+                          </div>
+                          <div className="col-span-2 text-xs text-white/75">
+                            <div>Income: <b>{money(actIncome, b.currency)}</b></div>
+                            <div>Expense: <b>{money(actExpense, b.currency)}</b></div>
+                          </div>
+                          <div className="col-span-2 flex justify-end gap-2">
+                            <Btn variant="outline" onClick={() => openEditBudget(b)} disabled={!canEdit}>
+                              Edit
+                            </Btn>
+                            <Btn variant="danger" onClick={() => deleteBudget(b.id)} disabled={!canEdit}>
+                              Delete
+                            </Btn>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {/* AR/AP */}
+        {tab === "AR/AP" ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card title="Receivables (AR) by Client" right={<Pill>{money(kpis.ar, baseCurrency)}</Pill>}>
+              <div className="grid gap-2">
+                {arap.byClient.length === 0 ? (
+                  <div className="text-sm text-white/60">No receivables.</div>
+                ) : (
+                  arap.byClient.slice(0, 20).map((x) => (
+                    <div key={x.name} className="rounded-xl border border-white/10 bg-black/30 p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm">{x.name}</div>
+                        <div className="text-sm font-semibold">{money(x.total, baseCurrency)}</div>
+                      </div>
+                      <div className="mt-1 text-xs text-white/55">
+                        Overdue: {money(x.overdue, baseCurrency)} • Next due: {x.nextDue || "—"}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Card>
+
+            <Card title="Payables (AP) by Vendor" right={<Pill>{money(kpis.ap, baseCurrency)}</Pill>}>
+              <div className="grid gap-2">
+                {arap.byVendor.length === 0 ? (
+                  <div className="text-sm text-white/60">No payables.</div>
+                ) : (
+                  arap.byVendor.slice(0, 20).map((x) => (
+                    <div key={x.name} className="rounded-xl border border-white/10 bg-black/30 p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm">{x.name}</div>
+                        <div className="text-sm font-semibold">{money(x.total, baseCurrency)}</div>
+                      </div>
+                      <div className="mt-1 text-xs text-white/55">
+                        Overdue: {money(x.overdue, baseCurrency)} • Next due: {x.nextDue || "—"}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Card>
+          </div>
+        ) : null}
+
+        {/* REPORTS */}
+        {tab === "Reports" ? (
+          <div className="grid gap-4">
+            <Card title="Monthly P&L (Last 12 months)" right={<Pill>{baseCurrency}</Pill>}>
+              <div className="grid gap-2">
+                {monthSeries.length === 0 ? (
+                  <div className="text-sm text-white/60">No data.</div>
+                ) : (
+                  monthSeries.map((m) => {
+                    const max = Math.max(...monthSeries.map((x) => Math.max(x.inc, x.exp, Math.abs(x.net))), 1);
+                    return (
+                      <div key={m.month} className="rounded-2xl border border-white/10 bg-black/30 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-sm font-semibold">{m.month}</div>
+                          <div className="flex gap-2">
+                            <Pill tone="good">Income {money(m.inc, baseCurrency)}</Pill>
+                            <Pill tone="bad">Expense {money(m.exp, baseCurrency)}</Pill>
+                            <Pill tone={m.net >= 0 ? "good" : "bad"}>Net {money(m.net, baseCurrency)}</Pill>
+                          </div>
+                        </div>
+                        <div className="mt-3 grid gap-2 md:grid-cols-3">
+                          <ProgressRow label="Income" value={m.inc} max={max} right={`${Math.round((m.inc / max) * 100)}%`} />
+                          <ProgressRow label="Expense" value={m.exp} max={max} right={`${Math.round((m.exp / max) * 100)}%`} />
+                          <ProgressRow label={m.net >= 0 ? "Profit" : "Loss"} value={Math.abs(m.net)} max={max} right={`${Math.round((Math.abs(m.net) / max) * 100)}%`} />
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </Card>
+          </div>
+        ) : null}
+
+        {/* IMPORT/EXPORT */}
+        {tab === "Import/Export" ? (
+          <div className="grid gap-4">
+            <Card title="Import / Export (CSV / JSON)" right={<Pill tone="warn">CEO / Editors only import</Pill>}>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <div className="text-xs text-white/60">Paste CSV or JSON</div>
+                  <TextArea value={importText} onChange={setImportText} rows={14} placeholder="Paste CSV/JSON..." />
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Btn onClick={importJSONBackup} disabled={!canEdit}>
+                      Import JSON
+                    </Btn>
+                    <Btn onClick={importCSVText} disabled={!canEdit}>
+                      Import CSV
+                    </Btn>
+                    <Btn variant="outline" onClick={() => setImportText("")}>
+                      Clear
+                    </Btn>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-xs text-white/60">Upload file</div>
+                  <div className="mt-2 rounded-2xl border border-white/10 bg-black/30 p-4">
+                    <input
+                      type="file"
+                      accept=".csv,.json,text/plain"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleFileUpload(f);
+                      }}
+                    />
+                    <div className="mt-3 text-xs text-white/55">
+                      Supported CSV headers:
+                      <div className="mt-2 rounded-xl border border-white/10 bg-black/40 p-3 font-mono text-[11px] text-white/70">
+                        {CSV_HEADERS.join(", ")}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Btn variant="outline" onClick={() => exportCSV("all")}>
+                      Export CSV (All)
+                    </Btn>
+                    <Btn variant="outline" onClick={() => exportExcelXls("all")}>
+                      Export Excel (All)
+                    </Btn>
+                    <Btn variant="outline" onClick={exportJSONBackup}>
+                      Export JSON
+                    </Btn>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </div>
+        ) : null}
+
+        {/* AUDIT */}
+        {tab === "Audit" ? (
+          <div className="grid gap-4">
+            <Card title="Audit Log" right={<Pill>Entries {audit.length}</Pill>}>
+              <div className="grid gap-2">
+                {audit.length === 0 ? (
+                  <div className="text-sm text-white/60">No audit entries yet.</div>
+                ) : (
+                  audit.slice(0, 150).map((a) => (
+                    <div key={a.id} className="rounded-xl border border-white/10 bg-black/30 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-sm">
+                          <b>{a.action}</b> • {a.actorRole} {a.actorEmail ? `(${a.actorEmail})` : ""}
+                        </div>
+                        <div className="text-xs text-white/55">{new Date(a.at).toLocaleString()}</div>
+                      </div>
+                      <div className="mt-1 text-sm text-white/85">{a.details}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Card>
+          </div>
+        ) : null}
+
+        {/* SETTINGS */}
+        {tab === "Settings" ? (
+          <div className="grid gap-4">
+            <Card title="Finance Settings" right={<Pill>{isCEO ? "CEO" : "Staff"}</Pill>}>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <div className="text-xs text-white/60">Default Currency</div>
+                  <Select
+                    value={settings.defaultCurrency}
+                    disabled={!isCEO}
+                    onChange={(v) => updateSettings({ defaultCurrency: v as Currency })}
+                    options={CURRENCIES.map((c) => ({ value: c, label: c }))}
+                  />
+                </div>
+
+                <div>
+                  <div className="text-xs text-white/60">Overdue rule (days after due date)</div>
+                  <Input
+                    value={String(settings.overdueRuleDays)}
+                    disabled={!isCEO}
+                    onChange={(v) => updateSettings({ overdueRuleDays: clamp(parseNum(v, 0), 0, 60) })}
+                    type="number"
+                  />
+                </div>
+
+                <div>
+                  <div className="text-xs text-white/60">Show GST</div>
+                  <Select
+                    value={settings.showGst ? "true" : "false"}
+                    disabled={!isCEO}
+                    onChange={(v) => updateSettings({ showGst: v === "true" })}
+                    options={[
+                      { value: "true", label: "Enabled" },
+                      { value: "false", label: "Disabled" },
+                    ]}
+                  />
+                </div>
+
+                <div>
+                  <div className="text-xs text-white/60">Show TDS</div>
+                  <Select
+                    value={settings.showTds ? "true" : "false"}
+                    disabled={!isCEO}
+                    onChange={(v) => updateSettings({ showTds: v === "true" })}
+                    options={[
+                      { value: "true", label: "Enabled" },
+                      { value: "false", label: "Disabled" },
+                    ]}
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <div className="text-xs text-white/60">Lock Staff edits</div>
+                  <Select
+                    value={settings.lockStaffEdits ? "true" : "false"}
+                    disabled={!isCEO}
+                    onChange={(v) => updateSettings({ lockStaffEdits: v === "true" })}
+                    options={[
+                      { value: "true", label: "Locked (Staff view-only)" },
+                      { value: "false", label: "Unlocked (Staff can edit)" },
+                    ]}
+                  />
+                  <div className="mt-2 text-xs text-white/50">When locked, Staff can view/export but cannot add/edit/delete/import.</div>
+                </div>
+              </div>
+            </Card>
           </div>
         ) : null}
       </div>
 
-      <div className="mx-auto max-w-7xl px-4 py-5">
-        <div className="grid grid-cols-12 gap-4">
-          {/* Sidebar */}
-          <div className="col-span-12 md:col-span-3">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-              <div className="text-xs text-white/60">Navigation</div>
-              <div className="mt-2 grid gap-2">
-                {sideTabs.map((x) => (
-                  <button
-                    key={x.t}
-                    onClick={() => setTab(x.t)}
-                    className={cls(
-                      "w-full rounded-xl border px-3 py-2 text-left text-sm transition",
-                      tab === x.t
-                        ? "border-white/25 bg-black text-white"
-                        : "border-white/10 bg-white/5 text-white/85 hover:bg-black hover:border-white/20"
-                    )}
-                  >
-                    {x.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="mt-4 border-t border-white/10 pt-4">
-                <div className="text-xs text-white/60">Quick Actions</div>
-                <div className="mt-2 grid gap-2">
-                  <Btn onClick={openNewTx} disabled={!canEdit}>
-                    + New Transaction
-                  </Btn>
-                  <Btn variant="outline" onClick={seedDemoData} disabled={!canEdit}>
-                    Seed Demo Data
-                  </Btn>
-                  <Btn variant="outline" onClick={generateBudgetsNext12} disabled={!canEdit}>
-                    Generate Next 12 Budgets
-                  </Btn>
-                </div>
-                {!canEdit ? (
-                  <div className="mt-2 text-xs text-white/45">
-                    Staff edits locked (Settings → lockStaffEdits).
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </div>
-
-          {/* Main */}
-          <div className="col-span-12 md:col-span-9">
-            {/* OVERVIEW */}
-            {tab === "Overview" ? (
-              <div className="grid gap-4">
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <StatCard title="This Month Income" value={money(kpis.mIncome, baseCurrency)} />
-                  <StatCard title="This Month Expense" value={money(kpis.mExpense, baseCurrency)} />
-                  <StatCard title="This Month Net" value={money(kpis.mNet, baseCurrency)} hint="Net = income - expense (after GST/TDS logic)" />
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <StatCard title="Outstanding Receivables (AR)" value={money(kpis.ar, baseCurrency)} />
-                  <StatCard title="Outstanding Payables (AP)" value={money(kpis.ap, baseCurrency)} />
-                  <StatCard title="Overdue Count" value={String(kpis.overdueCount)} />
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                  <StatCard title="Estimated Cash Balance" value={money(kpis.cash, baseCurrency)} />
-                  <StatCard title="Fixed Cost (Budget)" value={money(kpis.fixed, baseCurrency)} hint="Used for runway estimation" />
-                  <StatCard title="Runway" value={`${kpis.runwayMonths.toFixed(1)} months`} hint="Cash / fixed monthly cost" />
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 hover:bg-black transition">
-                    <div className="text-sm font-semibold">AI Insights (Heuristic)</div>
-                    <div className="mt-2 space-y-2">
-                      {insights.map((s, i) => (
-                        <div key={i} className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white/85">
-                          {s}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 hover:bg-black transition">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm font-semibold">This Month Drivers</div>
-                      <Pill label={monthNow} />
-                    </div>
-                    <div className="mt-3 grid gap-2">
-                      {categorySpendThisMonth.length === 0 ? (
-                        <div className="text-sm text-white/60">No data for this month.</div>
-                      ) : (
-                        categorySpendThisMonth.map((x) => {
-                          const max = Math.max(...categorySpendThisMonth.map((z) => Math.abs(z.v)));
-                          return (
-                            <MiniBar
-                              key={x.k}
-                              label={`${x.k.replace("Income:", "Income • ").replace("Expense:", "Expense • ")}`}
-                              value={Math.abs(x.v)}
-                              max={max}
-                            />
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {/* TRANSACTIONS */}
-            {tab === "Transactions" ? (
-              <div className="grid gap-4">
-                {/* Filters */}
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-                    <div className="grid w-full grid-cols-1 gap-2 md:grid-cols-6">
-                      <div className="md:col-span-2">
-                        <div className="text-xs text-white/60">Search</div>
-                        <Input value={q} onChange={setQ} placeholder="client, vendor, event, invoice, notes..." />
-                      </div>
-                      <div>
-                        <div className="text-xs text-white/60">Type</div>
-                        <Select
-                          value={fType}
-                          onChange={(v) => setFType(v as any)}
-                          options={[{ value: "All", label: "All" }, ...TX_TYPES.map((t) => ({ value: t, label: t }))]}
-                        />
-                      </div>
-                      <div>
-                        <div className="text-xs text-white/60">Status</div>
-                        <Select
-                          value={fStatus}
-                          onChange={(v) => setFStatus(v as any)}
-                          options={[{ value: "All", label: "All" }, ...TX_STATUSES.map((s) => ({ value: s, label: s }))]}
-                        />
-                      </div>
-                      <div>
-                        <div className="text-xs text-white/60">Category</div>
-                        <Select
-                          value={fCategory}
-                          onChange={(v) => setFCategory(v as any)}
-                          options={[{ value: "All", label: "All" }, ...TAGS.map((c) => ({ value: c, label: c }))]}
-                        />
-                      </div>
-                      <div>
-                        <div className="text-xs text-white/60">Currency</div>
-                        <Select
-                          value={fCur}
-                          onChange={(v) => setFCur(v as any)}
-                          options={[{ value: "All", label: "All" }, ...CURRENCIES.map((c) => ({ value: c, label: c }))]}
-                        />
-                      </div>
-                      <div>
-                        <div className="text-xs text-white/60">From</div>
-                        <Input value={from} onChange={setFrom} type="date" />
-                      </div>
-                      <div>
-                        <div className="text-xs text-white/60">To</div>
-                        <Input value={to} onChange={setTo} type="date" />
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <Btn variant="outline" onClick={selectAllFiltered}>
-                        Select All
-                      </Btn>
-                      <Btn variant="outline" onClick={clearSelection}>
-                        Clear
-                      </Btn>
-                      <Btn onClick={openNewTx} disabled={!canEdit}>
-                        + Add
-                      </Btn>
-                    </div>
-                  </div>
-
-                  {/* Bulk */}
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3">
-                    <div className="text-xs text-white/60">
-                      Showing <b>{filtered.length}</b> • Selected <b>{selectedIds.length}</b>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Btn variant="outline" onClick={() => bulkUpdateStatus("Paid")} disabled={!canEdit}>
-                        Mark Paid
-                      </Btn>
-                      <Btn variant="outline" onClick={() => bulkUpdateStatus("Pending")} disabled={!canEdit}>
-                        Mark Pending
-                      </Btn>
-                      <Btn variant="outline" onClick={() => bulkUpdateStatus("Overdue")} disabled={!canEdit}>
-                        Mark Overdue
-                      </Btn>
-                      <Btn variant="outline" onClick={() => bulkUpdateStatus("Cancelled")} disabled={!canEdit}>
-                        Cancel
-                      </Btn>
-                      <Btn variant="danger" onClick={bulkDelete} disabled={!canEdit}>
-                        Bulk Delete
-                      </Btn>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Table */}
-                <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
-                  <div className="grid grid-cols-12 border-b border-white/10 bg-black/30 px-3 py-2 text-xs text-white/60">
-                    <div className="col-span-1">Sel</div>
-                    <div className="col-span-2">Date</div>
-                    <div className="col-span-2">Type / Status</div>
-                    <div className="col-span-3">Description</div>
-                    <div className="col-span-2">Party</div>
-                    <div className="col-span-2 text-right">Net</div>
-                  </div>
-
-                  {filtered.length === 0 ? (
-                    <div className="p-4 text-sm text-white/60">No transactions found.</div>
-                  ) : (
-                    <div className="divide-y divide-white/10">
-                      {filtered.map((t) => {
-                        const c = calcTotals(t);
-                        const party = t.type === "Income" ? (t.clientName || "-") : (t.vendorName || "-");
-                        return (
-                          <div
-                            key={t.id}
-                            className="grid grid-cols-12 items-center px-3 py-2 text-sm hover:bg-black/60 transition"
-                          >
-                            <div className="col-span-1">
-                              <input
-                                type="checkbox"
-                                checked={!!selected[t.id]}
-                                onChange={() => toggleSelect(t.id)}
-                              />
-                            </div>
-                            <div className="col-span-2">
-                              <div className="text-white">{t.date}</div>
-                              <div className="text-xs text-white/50">{t.dueDate ? `Due ${t.dueDate}` : ""}</div>
-                            </div>
-                            <div className="col-span-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Pill label={t.type} />
-                                <Pill label={t.status} />
-                              </div>
-                              <div className="mt-1 text-xs text-white/50">{t.category}</div>
-                            </div>
-                            <div className="col-span-3">
-                              <div className="text-white/90">{t.description || "-"}</div>
-                              <div className="text-xs text-white/50">
-                                {t.eventTitle ? `Event: ${t.eventTitle}` : ""}
-                                {t.invoiceNo ? ` • Inv: ${t.invoiceNo}` : ""}
-                              </div>
-                            </div>
-                            <div className="col-span-2">
-                              <div className="text-white/85">{party}</div>
-                              <div className="text-xs text-white/50">{t.paymentMethod}</div>
-                            </div>
-                            <div className="col-span-2 text-right">
-                              <div className="font-semibold">{money(c.net, t.currency)}</div>
-                              <div className="mt-2 flex justify-end gap-2">
-                                <Btn variant="ghost" onClick={() => openInvoice(t)} disabled={t.type !== "Income"}>
-                                  Invoice
-                                </Btn>
-                                <Btn variant="outline" onClick={() => openEditTx(t)} disabled={!canEdit}>
-                                  Edit
-                                </Btn>
-                                <Btn variant="danger" onClick={() => deleteTx(t.id)} disabled={!canEdit}>
-                                  Delete
-                                </Btn>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : null}
-
-            {/* BUDGETS */}
-            {tab === "Budgets" ? (
-              <div className="grid gap-4">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <div className="text-sm font-semibold">Budgets</div>
-                      <div className="text-xs text-white/55">Monthly targets + fixed costs + variance tracking.</div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Btn onClick={openNewBudget} disabled={!canEdit}>
-                        + New Budget
-                      </Btn>
-                      <Btn variant="outline" onClick={generateBudgetsNext12} disabled={!canEdit}>
-                        Generate Next 12
-                      </Btn>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
-                  <div className="grid grid-cols-12 border-b border-white/10 bg-black/30 px-3 py-2 text-xs text-white/60">
-                    <div className="col-span-2">Month</div>
-                    <div className="col-span-3">Targets</div>
-                    <div className="col-span-3">Fixed Costs</div>
-                    <div className="col-span-2">Actual (Month)</div>
-                    <div className="col-span-2 text-right">Actions</div>
-                  </div>
-
-                  {budgets.length === 0 ? (
-                    <div className="p-4 text-sm text-white/60">No budgets. Create one for {monthNow}.</div>
-                  ) : (
-                    <div className="divide-y divide-white/10">
-                      {budgets
-                        .slice()
-                        .sort((a, b) => b.month.localeCompare(a.month))
-                        .map((b) => {
-                          const monthTx = txs.filter((t) => t.date.slice(0, 7) === b.month && t.status !== "Cancelled");
-                          const actIncome = monthTx
-                            .filter((t) => t.type === "Income")
-                            .reduce((s, t) => s + calcTotals(t).net, 0);
-                          const actExpense = monthTx
-                            .filter((t) => t.type === "Expense")
-                            .reduce((s, t) => s + calcTotals(t).net, 0);
-                          const fixed =
-                            b.fixedCosts.officeRentUtilities +
-                            b.fixedCosts.salaries +
-                            b.fixedCosts.marketing +
-                            b.fixedCosts.internetMisc +
-                            b.fixedCosts.transportLogistics +
-                            b.fixedCosts.adminCompliance;
-
-                          return (
-                            <div key={b.id} className="grid grid-cols-12 items-center px-3 py-3 text-sm hover:bg-black/60 transition">
-                              <div className="col-span-2">
-                                <div className="font-semibold">{b.month}</div>
-                                <div className="text-xs text-white/50">{b.currency}</div>
-                              </div>
-                              <div className="col-span-3 text-xs text-white/75">
-                                <div>Revenue: <b>{money(b.revenueTarget, b.currency)}</b></div>
-                                <div>Expense Cap: <b>{money(b.expenseCap, b.currency)}</b></div>
-                                <div>GM Target: <b>{b.grossMarginTargetPct}%</b></div>
-                              </div>
-                              <div className="col-span-3 text-xs text-white/75">
-                                <div>Fixed Total: <b>{money(fixed, b.currency)}</b></div>
-                                <div className="text-white/50">Salaries: {money(b.fixedCosts.salaries, b.currency)}</div>
-                              </div>
-                              <div className="col-span-2 text-xs text-white/75">
-                                <div>Income: <b>{money(actIncome, b.currency)}</b></div>
-                                <div>Expense: <b>{money(actExpense, b.currency)}</b></div>
-                              </div>
-                              <div className="col-span-2 flex justify-end gap-2">
-                                <Btn variant="outline" onClick={() => openEditBudget(b)} disabled={!canEdit}>
-                                  Edit
-                                </Btn>
-                                <Btn variant="danger" onClick={() => deleteBudget(b.id)} disabled={!canEdit}>
-                                  Delete
-                                </Btn>
-                              </div>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : null}
-
-            {/* AR/AP */}
-            {tab === "AR/AP" ? (
-              <div className="grid gap-4">
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 hover:bg-black transition">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm font-semibold">Receivables by Client</div>
-                      <Pill label={money(arap.receivables.reduce((s, t) => s + calcTotals(t).net, 0), baseCurrency)} />
-                    </div>
-                    <div className="mt-3 space-y-2">
-                      {arap.byClient.length === 0 ? (
-                        <div className="text-sm text-white/60">No receivables.</div>
-                      ) : (
-                        arap.byClient.slice(0, 20).map((x) => (
-                          <div key={x.name} className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
-                            <div className="flex items-center justify-between">
-                              <div className="text-sm">{x.name}</div>
-                              <div className="text-sm font-semibold">{money(x.total, baseCurrency)}</div>
-                            </div>
-                            <div className="mt-1 text-xs text-white/55">
-                              Overdue: {money(x.overdue, baseCurrency)} • Next due: {x.nextDue || "-"}
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 hover:bg-black transition">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm font-semibold">Payables by Vendor</div>
-                      <Pill label={money(arap.payables.reduce((s, t) => s + calcTotals(t).net, 0), baseCurrency)} />
-                    </div>
-                    <div className="mt-3 space-y-2">
-                      {arap.byVendor.length === 0 ? (
-                        <div className="text-sm text-white/60">No payables.</div>
-                      ) : (
-                        arap.byVendor.slice(0, 20).map((x) => (
-                          <div key={x.name} className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
-                            <div className="flex items-center justify-between">
-                              <div className="text-sm">{x.name}</div>
-                              <div className="text-sm font-semibold">{money(x.total, baseCurrency)}</div>
-                            </div>
-                            <div className="mt-1 text-xs text-white/55">
-                              Overdue: {money(x.overdue, baseCurrency)} • Next due: {x.nextDue || "-"}
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {/* REPORTS */}
-            {tab === "Reports" ? (
-              <div className="grid gap-4">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 hover:bg-black transition">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <div className="text-sm font-semibold">P&L Trend (Last 12 Months)</div>
-                      <div className="text-xs text-white/55">Simple bar view (no chart libraries).</div>
-                    </div>
-                    <Pill label={`YTD Net ${money(kpis.ytdNet, baseCurrency)}`} />
-                  </div>
-
-                  <div className="mt-4 grid grid-cols-1 gap-2">
-                    {pnlByMonth.length === 0 ? (
-                      <div className="text-sm text-white/60">No data.</div>
-                    ) : (
-                      pnlByMonth.map((m) => {
-                        const max = Math.max(...pnlByMonth.map((x) => Math.max(x.income, x.expense, Math.abs(x.net))));
-                        const incomePct = max ? (m.income / max) * 100 : 0;
-                        const expensePct = max ? (m.expense / max) * 100 : 0;
-                        const netPct = max ? (Math.abs(m.net) / max) * 100 : 0;
-                        return (
-                          <div key={m.month} className="rounded-2xl border border-white/10 bg-black/30 p-3">
-                            <div className="flex items-center justify-between text-xs text-white/70">
-                              <span>{m.month}</span>
-                              <span>Net: <b>{money(m.net, baseCurrency)}</b></span>
-                            </div>
-                            <div className="mt-2 grid gap-2 md:grid-cols-3">
-                              <div>
-                                <div className="text-[11px] text-white/60">Income {money(m.income, baseCurrency)}</div>
-                                <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
-                                  <div className="h-2 rounded-full bg-white/35" style={{ width: `${clamp(incomePct, 0, 100)}%` }} />
-                                </div>
-                              </div>
-                              <div>
-                                <div className="text-[11px] text-white/60">Expense {money(m.expense, baseCurrency)}</div>
-                                <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
-                                  <div className="h-2 rounded-full bg-white/25" style={{ width: `${clamp(expensePct, 0, 100)}%` }} />
-                                </div>
-                              </div>
-                              <div>
-                                <div className="text-[11px] text-white/60">{m.net >= 0 ? "Profit" : "Loss"} {money(Math.abs(m.net), baseCurrency)}</div>
-                                <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
-                                  <div className="h-2 rounded-full bg-white/45" style={{ width: `${clamp(netPct, 0, 100)}%` }} />
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 hover:bg-black transition">
-                  <div className="text-sm font-semibold">Top Categories (YTD)</div>
-                  <div className="mt-3 grid gap-2">
-                    {topCategoriesYTD.length === 0 ? (
-                      <div className="text-sm text-white/60">No data.</div>
-                    ) : (
-                      topCategoriesYTD.map((x) => (
-                        <div key={x.k} className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
-                          <div className="flex items-center justify-between">
-                            <div className="text-sm">{x.k.replace("Income:", "Income • ").replace("Expense:", "Expense • ")}</div>
-                            <div className="text-sm font-semibold">{money(x.v, baseCurrency)}</div>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {/* IMPORT/EXPORT */}
-            {tab === "Import/Export" ? (
-              <div className="grid gap-4">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <div className="text-sm font-semibold">Import / Export</div>
-                      <div className="text-xs text-white/55">Paste CSV/JSON or upload a file. Import is CEO/allowed editors only.</div>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Btn variant="outline" onClick={() => exportCSV("all")}>Export CSV (All)</Btn>
-                      <Btn variant="outline" onClick={() => exportExcelXls("all")}>Export Excel (All)</Btn>
-                      <Btn variant="outline" onClick={exportJSONBackup}>Export JSON Backup</Btn>
-                    </div>
-                  </div>
-
-                  <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <div>
-                      <div className="text-xs text-white/60">Paste CSV or JSON here</div>
-                      <TextArea value={importText} onChange={setImportText} rows={14} placeholder="Paste CSV/JSON..." />
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <Btn onClick={importJSONBackup} disabled={!canEdit}>Import JSON</Btn>
-                        <Btn onClick={importCSVText} disabled={!canEdit}>Import CSV</Btn>
-                        <Btn variant="outline" onClick={() => setImportText("")}>Clear</Btn>
-                      </div>
-                    </div>
-
-                    <div>
-                      <div className="text-xs text-white/60">Upload file</div>
-                      <div className="mt-2 rounded-2xl border border-white/10 bg-black/30 p-4">
-                        <input
-                          type="file"
-                          accept=".csv,.json,text/plain"
-                          onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if (f) handleFileUpload(f);
-                          }}
-                        />
-                        <div className="mt-3 text-xs text-white/55">
-                          CSV headers supported: <span className="text-white/75">{CSV_HEADERS.join(", ")}</span>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 rounded-2xl border border-white/10 bg-black/30 p-4">
-                        <div className="text-xs text-white/60">Pro Tip</div>
-                        <div className="mt-1 text-sm text-white/80">
-                          Export Excel (.xls) is generated as an HTML table so Excel opens it perfectly without extra libraries.
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {/* AUDIT */}
-            {tab === "Audit" ? (
-              <div className="grid gap-4">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 hover:bg-black transition">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-sm font-semibold">Audit Log</div>
-                      <div className="text-xs text-white/55">Tracks critical finance actions for accountability.</div>
-                    </div>
-                    <Pill label={`Entries ${audit.length}`} />
-                  </div>
-
-                  <div className="mt-3 space-y-2">
-                    {audit.length === 0 ? (
-                      <div className="text-sm text-white/60">No audit entries yet.</div>
-                    ) : (
-                      audit.slice(0, 120).map((a) => (
-                        <div key={a.id} className="rounded-xl border border-white/10 bg-black/30 px-3 py-2">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="text-sm">
-                              <b>{a.action}</b> • {a.actorRole} {a.actorEmail ? `(${a.actorEmail})` : ""}
-                            </div>
-                            <div className="text-xs text-white/55">{new Date(a.at).toLocaleString()}</div>
-                          </div>
-                          <div className="mt-1 text-sm text-white/85">{a.details}</div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {/* SETTINGS */}
-            {tab === "Settings" ? (
-              <div className="grid gap-4">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-sm font-semibold">Finance Settings</div>
-                      <div className="text-xs text-white/55">CEO-only settings that control behavior and permissions.</div>
-                    </div>
-                    <Pill label={isCEO ? "CEO can edit" : "Staff view"} />
-                  </div>
-
-                  <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    <div>
-                      <div className="text-xs text-white/60">Default Currency</div>
-                      <Select
-                        value={settings.defaultCurrency}
-                        disabled={!isCEO}
-                        onChange={(v) => updateSettings({ defaultCurrency: v as Currency })}
-                        options={CURRENCIES.map((c) => ({ value: c, label: c }))}
-                      />
-                    </div>
-
-                    <div>
-                      <div className="text-xs text-white/60">Overdue rule (days after due date)</div>
-                      <Input
-                        value={String(settings.overdueRuleDays)}
-                        disabled={!isCEO}
-                        onChange={(v) => updateSettings({ overdueRuleDays: clamp(parseNum(v, 0), 0, 60) })}
-                        type="number"
-                      />
-                    </div>
-
-                    <div>
-                      <div className="text-xs text-white/60">Show GST fields</div>
-                      <Select
-                        value={settings.showGst ? "true" : "false"}
-                        disabled={!isCEO}
-                        onChange={(v) => updateSettings({ showGst: v === "true" })}
-                        options={[
-                          { value: "true", label: "Enabled" },
-                          { value: "false", label: "Disabled" },
-                        ]}
-                      />
-                    </div>
-
-                    <div>
-                      <div className="text-xs text-white/60">Show TDS fields</div>
-                      <Select
-                        value={settings.showTds ? "true" : "false"}
-                        disabled={!isCEO}
-                        onChange={(v) => updateSettings({ showTds: v === "true" })}
-                        options={[
-                          { value: "true", label: "Enabled" },
-                          { value: "false", label: "Disabled" },
-                        ]}
-                      />
-                    </div>
-
-                    <div className="md:col-span-2">
-                      <div className="text-xs text-white/60">Lock Staff edits (recommended)</div>
-                      <Select
-                        value={settings.lockStaffEdits ? "true" : "false"}
-                        disabled={!isCEO}
-                        onChange={(v) => updateSettings({ lockStaffEdits: v === "true" })}
-                        options={[
-                          { value: "true", label: "Locked (view-only for Staff)" },
-                          { value: "false", label: "Unlocked (Staff can edit)" },
-                        ]}
-                      />
-                      <div className="mt-2 text-xs text-white/50">
-                        When locked, Staff can view/export but cannot add/edit/delete/import.
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
-
-      {/* TX MODAL */}
+      {/* =========================
+         TX MODAL
+      ========================= */}
       <Modal
         open={openTxModal}
         title={editingTx ? (txs.some((x) => x.id === editingTx.id) ? "Edit Transaction" : "New Transaction") : "Transaction"}
@@ -2379,28 +2213,13 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#ff
           setEditingTx(null);
         }}
         footer={
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-xs text-white/55">
-              {canEdit ? "Editing enabled." : "Editing locked (Staff)."}
-            </div>
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-white/55">{canEdit ? "Editing enabled" : "Editing locked (Staff)"}</div>
             <div className="flex gap-2">
-              <Btn
-                variant="outline"
-                onClick={() => {
-                  setOpenTxModal(false);
-                  setEditingTx(null);
-                }}
-              >
+              <Btn variant="outline" onClick={() => { setOpenTxModal(false); setEditingTx(null); }}>
                 Cancel
               </Btn>
-              <Btn
-                onClick={() => {
-                  if (!editingTx) return;
-                  if (!editingTx.description.trim()) return notify("Description is required.");
-                  saveTx(editingTx);
-                }}
-                disabled={!canEdit}
-              >
+              <Btn onClick={() => editingTx && saveTx(editingTx)} disabled={!canEdit}>
                 Save
               </Btn>
             </div>
@@ -2409,57 +2228,65 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#ff
       >
         {editingTx ? (
           <div className="grid gap-4">
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-4">
               <div>
                 <div className="text-xs text-white/60">Date</div>
-                <Input value={editingTx.date} disabled={!canEdit} onChange={(v) => setEditingTx({ ...editingTx, date: v })} type="date" />
+                <Input value={editingTx.date} onChange={(v) => setEditingTx({ ...editingTx, date: v })} type="date" disabled={!canEdit} />
               </div>
               <div>
                 <div className="text-xs text-white/60">Type</div>
                 <Select
                   value={editingTx.type}
-                  disabled={!canEdit}
                   onChange={(v) => setEditingTx({ ...editingTx, type: asTxType(v) })}
                   options={TX_TYPES.map((t) => ({ value: t, label: t }))}
+                  disabled={!canEdit}
                 />
               </div>
               <div>
                 <div className="text-xs text-white/60">Status</div>
                 <Select
                   value={editingTx.status}
-                  disabled={!canEdit}
                   onChange={(v) => setEditingTx({ ...editingTx, status: asTxStatus(v) })}
                   options={TX_STATUSES.map((s) => ({ value: s, label: s }))}
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-3">
-              <div>
-                <div className="text-xs text-white/60">Amount</div>
-                <Input
-                  value={String(editingTx.amount)}
                   disabled={!canEdit}
-                  onChange={(v) => setEditingTx({ ...editingTx, amount: parseNum(v, 0) })}
-                  type="number"
                 />
               </div>
               <div>
                 <div className="text-xs text-white/60">Currency</div>
                 <Select
                   value={editingTx.currency}
-                  disabled={!canEdit}
                   onChange={(v) => setEditingTx({ ...editingTx, currency: asCurrency(v, baseCurrency) })}
                   options={CURRENCIES.map((c) => ({ value: c, label: c }))}
+                  disabled={!canEdit}
                 />
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-4">
+              <div>
+                <div className="text-xs text-white/60">Amount</div>
+                <Input value={String(editingTx.amount)} onChange={(v) => setEditingTx({ ...editingTx, amount: parseNum(v, 0) })} type="number" disabled={!canEdit} />
               </div>
               <div>
                 <div className="text-xs text-white/60">Category</div>
                 <Select
                   value={editingTx.category}
-                  disabled={!canEdit}
                   onChange={(v) => setEditingTx({ ...editingTx, category: asTag(v) })}
                   options={TAGS.map((c) => ({ value: c, label: c }))}
+                  disabled={!canEdit}
+                />
+              </div>
+              <div>
+                <div className="text-xs text-white/60">Subcategory</div>
+                <Input value={editingTx.subcategory || ""} onChange={(v) => setEditingTx({ ...editingTx, subcategory: v })} disabled={!canEdit} />
+              </div>
+              <div>
+                <div className="text-xs text-white/60">Payment Method</div>
+                <Select
+                  value={editingTx.paymentMethod}
+                  onChange={(v) => setEditingTx({ ...editingTx, paymentMethod: asMethod(v) })}
+                  options={METHODS.map((m) => ({ value: m, label: m }))}
+                  disabled={!canEdit}
                 />
               </div>
             </div>
@@ -2467,107 +2294,60 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#ff
             <div className="grid gap-3 md:grid-cols-2">
               <div>
                 <div className="text-xs text-white/60">Description</div>
-                <Input
-                  value={editingTx.description}
-                  disabled={!canEdit}
-                  onChange={(v) => setEditingTx({ ...editingTx, description: v })}
-                  placeholder="What is this transaction for?"
-                />
+                <Input value={editingTx.description} onChange={(v) => setEditingTx({ ...editingTx, description: v })} disabled={!canEdit} placeholder="What is this for?" />
               </div>
-              <div>
-                <div className="text-xs text-white/60">Subcategory</div>
-                <Input
-                  value={editingTx.subcategory || ""}
-                  disabled={!canEdit}
-                  onChange={(v) => setEditingTx({ ...editingTx, subcategory: v })}
-                  placeholder="Optional"
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
               <div>
                 <div className="text-xs text-white/60">{editingTx.type === "Income" ? "Client Name" : "Vendor Name"}</div>
                 <Input
                   value={editingTx.type === "Income" ? editingTx.clientName || "" : editingTx.vendorName || ""}
-                  disabled={!canEdit}
                   onChange={(v) =>
-                    setEditingTx(
-                      editingTx.type === "Income" ? { ...editingTx, clientName: v } : { ...editingTx, vendorName: v }
-                    )
+                    setEditingTx(editingTx.type === "Income" ? { ...editingTx, clientName: v } : { ...editingTx, vendorName: v })
                   }
-                  placeholder={editingTx.type === "Income" ? "Client" : "Vendor"}
-                />
-              </div>
-              <div>
-                <div className="text-xs text-white/60">Event Title</div>
-                <Input
-                  value={editingTx.eventTitle || ""}
                   disabled={!canEdit}
-                  onChange={(v) => setEditingTx({ ...editingTx, eventTitle: v })}
-                  placeholder="Optional"
                 />
               </div>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-4">
               <div>
-                <div className="text-xs text-white/60">Payment Method</div>
-                <Select
-                  value={editingTx.paymentMethod}
-                  disabled={!canEdit}
-                  onChange={(v) => setEditingTx({ ...editingTx, paymentMethod: asMethod(v) })}
-                  options={METHODS.map((m) => ({ value: m, label: m }))}
-                />
-              </div>
-              <div>
-                <div className="text-xs text-white/60">Reference ID</div>
-                <Input
-                  value={editingTx.referenceId || ""}
-                  disabled={!canEdit}
-                  onChange={(v) => setEditingTx({ ...editingTx, referenceId: v })}
-                  placeholder="UTR / txn id"
-                />
+                <div className="text-xs text-white/60">Event Title</div>
+                <Input value={editingTx.eventTitle || ""} onChange={(v) => setEditingTx({ ...editingTx, eventTitle: v })} disabled={!canEdit} />
               </div>
               <div>
                 <div className="text-xs text-white/60">Invoice No</div>
-                <Input
-                  value={editingTx.invoiceNo || ""}
-                  disabled={!canEdit}
-                  onChange={(v) => setEditingTx({ ...editingTx, invoiceNo: v })}
-                  placeholder="Optional"
-                />
+                <Input value={editingTx.invoiceNo || ""} onChange={(v) => setEditingTx({ ...editingTx, invoiceNo: v })} disabled={!canEdit} />
+              </div>
+              <div>
+                <div className="text-xs text-white/60">Reference ID</div>
+                <Input value={editingTx.referenceId || ""} onChange={(v) => setEditingTx({ ...editingTx, referenceId: v })} disabled={!canEdit} />
+              </div>
+              <div>
+                <div className="text-xs text-white/60">Due Date</div>
+                <Input value={editingTx.dueDate || ""} onChange={(v) => setEditingTx({ ...editingTx, dueDate: v })} type="date" disabled={!canEdit} />
               </div>
             </div>
 
             <div className="grid gap-3 md:grid-cols-3">
-              <div>
-                <div className="text-xs text-white/60">Due Date</div>
-                <Input
-                  value={editingTx.dueDate || ""}
-                  disabled={!canEdit}
-                  onChange={(v) => setEditingTx({ ...editingTx, dueDate: v })}
-                  type="date"
-                />
-              </div>
-
               {settings.showGst ? (
-                <div>
-                  <div className="text-xs text-white/60">GST Rate %</div>
-                  <Input
-                    value={String(editingTx.gstRate ?? 0)}
-                    disabled={!canEdit}
-                    onChange={(v) => setEditingTx({ ...editingTx, gstRate: clamp(parseNum(v, 0), 0, 28) })}
-                    type="number"
-                  />
-                  <div className="mt-2 flex items-center gap-2 text-xs text-white/60">
-                    <input
-                      type="checkbox"
+                <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
+                  <div className="text-xs text-white/60">GST</div>
+                  <div className="mt-2 grid gap-2">
+                    <Input
+                      value={String(editingTx.gstRate ?? 0)}
+                      onChange={(v) => setEditingTx({ ...editingTx, gstRate: clamp(parseNum(v, 0), 0, 28) })}
+                      type="number"
                       disabled={!canEdit}
-                      checked={!!editingTx.gstIncluded}
-                      onChange={(e) => setEditingTx({ ...editingTx, gstIncluded: e.target.checked })}
+                      placeholder="GST rate %"
                     />
-                    GST included in amount
+                    <label className="flex items-center gap-2 text-xs text-white/65">
+                      <input
+                        type="checkbox"
+                        checked={!!editingTx.gstIncluded}
+                        onChange={(e) => setEditingTx({ ...editingTx, gstIncluded: e.target.checked })}
+                        disabled={!canEdit}
+                      />
+                      GST included in amount
+                    </label>
                   </div>
                 </div>
               ) : (
@@ -2575,42 +2355,39 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#ff
               )}
 
               {settings.showTds ? (
-                <div>
-                  <div className="text-xs text-white/60">TDS Rate %</div>
-                  <Input
-                    value={String(editingTx.tdsRate ?? 0)}
-                    disabled={!canEdit}
-                    onChange={(v) => setEditingTx({ ...editingTx, tdsRate: clamp(parseNum(v, 0), 0, 20) })}
-                    type="number"
-                  />
+                <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
+                  <div className="text-xs text-white/60">TDS</div>
+                  <div className="mt-2">
+                    <Input
+                      value={String(editingTx.tdsRate ?? 0)}
+                      onChange={(v) => setEditingTx({ ...editingTx, tdsRate: clamp(parseNum(v, 0), 0, 20) })}
+                      type="number"
+                      disabled={!canEdit}
+                      placeholder="TDS rate %"
+                    />
+                  </div>
                 </div>
               ) : (
                 <div />
               )}
-            </div>
 
-            <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-sm font-semibold">Recurring</div>
-                <Pill label={editingTx.recurring?.enabled ? `Enabled • ${editingTx.recurring.freq}` : "Disabled"} />
-              </div>
-              <div className="mt-3 grid gap-3 md:grid-cols-3">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    disabled={!canEdit}
-                    checked={!!editingTx.recurring?.enabled}
-                    onChange={(e) => {
-                      const enabled = e.target.checked;
-                      if (!enabled) setEditingTx({ ...editingTx, recurring: undefined });
-                      else setEditingTx({ ...editingTx, recurring: { enabled: true, freq: "Monthly", nextRun: addMonths(todayYMD, 1) } });
-                    }}
-                  />
-                  <div className="text-sm text-white/80">Enable</div>
-                </div>
+              <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
+                <div className="text-xs text-white/60">Recurring</div>
+                <div className="mt-2 grid gap-2">
+                  <label className="flex items-center gap-2 text-xs text-white/65">
+                    <input
+                      type="checkbox"
+                      disabled={!canEdit}
+                      checked={!!editingTx.recurring?.enabled}
+                      onChange={(e) => {
+                        const enabled = e.target.checked;
+                        if (!enabled) setEditingTx({ ...editingTx, recurring: undefined });
+                        else setEditingTx({ ...editingTx, recurring: { enabled: true, freq: "Monthly", nextRun: addMonths(todayYMD, 1) } });
+                      }}
+                    />
+                    Enable recurring
+                  </label>
 
-                <div>
-                  <div className="text-xs text-white/60">Frequency</div>
                   <Select
                     value={editingTx.recurring?.freq || "Monthly"}
                     disabled={!canEdit || !editingTx.recurring?.enabled}
@@ -2620,10 +2397,6 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#ff
                     }}
                     options={RECUR_FREQS.map((f) => ({ value: f, label: f }))}
                   />
-                </div>
-
-                <div>
-                  <div className="text-xs text-white/60">Next Run</div>
                   <Input
                     value={editingTx.recurring?.nextRun || ""}
                     disabled={!canEdit || !editingTx.recurring?.enabled}
@@ -2636,20 +2409,23 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#ff
 
             <div>
               <div className="text-xs text-white/60">Notes</div>
-              <TextArea value={editingTx.notes || ""} disabled={!canEdit} onChange={(v) => setEditingTx({ ...editingTx, notes: v })} rows={4} />
+              <TextArea value={editingTx.notes || ""} onChange={(v) => setEditingTx({ ...editingTx, notes: v })} rows={4} disabled={!canEdit} />
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-black/30 p-3 text-sm">
-              <div className="font-semibold">Computed Total</div>
-              <div className="mt-1 text-white/75">
+            <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-semibold">Computed</div>
+                <Pill>
+                  {(() => {
+                    const c = calcTotals(editingTx);
+                    return `Net: ${money(c.net, editingTx.currency)}`;
+                  })()}
+                </Pill>
+              </div>
+              <div className="mt-2 text-xs text-white/60">
                 {(() => {
                   const c = calcTotals(editingTx);
-                  return (
-                    <>
-                      Base: <b>{money(c.base, editingTx.currency)}</b> • GST add: <b>{money(c.gstAdd, editingTx.currency)}</b> • TDS:{" "}
-                      <b>-{money(c.tds, editingTx.currency)}</b> • Net: <b>{money(c.net, editingTx.currency)}</b>
-                    </>
-                  );
+                  return `Base ${money(c.base, editingTx.currency)} • GST ${money(c.gstAdd, editingTx.currency)} • TDS -${money(c.tds, editingTx.currency)}`;
                 })()}
               </div>
             </div>
@@ -2657,7 +2433,9 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#ff
         ) : null}
       </Modal>
 
-      {/* BUDGET MODAL */}
+      {/* =========================
+         BUDGET MODAL
+      ========================= */}
       <Modal
         open={openBudgetModal}
         title={editingBudget ? `Budget • ${editingBudget.month}` : "Budget"}
@@ -2667,7 +2445,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#ff
         }}
         footer={
           <div className="flex items-center justify-between">
-            <div className="text-xs text-white/55">{canEdit ? "Editing enabled." : "Editing locked (Staff)."}</div>
+            <div className="text-xs text-white/55">{canEdit ? "Editing enabled" : "Editing locked (Staff)"}</div>
             <div className="flex gap-2">
               <Btn variant="outline" onClick={() => { setOpenBudgetModal(false); setEditingBudget(null); }}>
                 Cancel
@@ -2684,51 +2462,26 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#ff
             <div className="grid gap-3 md:grid-cols-3">
               <div>
                 <div className="text-xs text-white/60">Month</div>
-                <Input
-                  value={editingBudget.month}
-                  disabled={!canEdit}
-                  onChange={(v) => setEditingBudget({ ...editingBudget, month: v })}
-                  placeholder="YYYY-MM"
-                />
+                <Input value={editingBudget.month} onChange={(v) => setEditingBudget({ ...editingBudget, month: v })} disabled={!canEdit} placeholder="YYYY-MM" />
               </div>
               <div>
                 <div className="text-xs text-white/60">Currency</div>
-                <Select
-                  value={editingBudget.currency}
-                  disabled={!canEdit}
-                  onChange={(v) => setEditingBudget({ ...editingBudget, currency: asCurrency(v, baseCurrency) })}
-                  options={CURRENCIES.map((c) => ({ value: c, label: c }))}
-                />
+                <Select value={editingBudget.currency} onChange={(v) => setEditingBudget({ ...editingBudget, currency: asCurrency(v, baseCurrency) })} options={CURRENCIES.map((c) => ({ value: c, label: c }))} disabled={!canEdit} />
               </div>
               <div>
-                <div className="text-xs text-white/60">Gross Margin Target %</div>
-                <Input
-                  value={String(editingBudget.grossMarginTargetPct)}
-                  disabled={!canEdit}
-                  onChange={(v) => setEditingBudget({ ...editingBudget, grossMarginTargetPct: clamp(parseNum(v, 25), 0, 80) })}
-                  type="number"
-                />
+                <div className="text-xs text-white/60">GM Target %</div>
+                <Input value={String(editingBudget.grossMarginTargetPct)} onChange={(v) => setEditingBudget({ ...editingBudget, grossMarginTargetPct: clamp(parseNum(v, 25), 0, 80) })} type="number" disabled={!canEdit} />
               </div>
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
               <div>
                 <div className="text-xs text-white/60">Revenue Target</div>
-                <Input
-                  value={String(editingBudget.revenueTarget)}
-                  disabled={!canEdit}
-                  onChange={(v) => setEditingBudget({ ...editingBudget, revenueTarget: parseNum(v, 0) })}
-                  type="number"
-                />
+                <Input value={String(editingBudget.revenueTarget)} onChange={(v) => setEditingBudget({ ...editingBudget, revenueTarget: parseNum(v, 0) })} type="number" disabled={!canEdit} />
               </div>
               <div>
                 <div className="text-xs text-white/60">Expense Cap</div>
-                <Input
-                  value={String(editingBudget.expenseCap)}
-                  disabled={!canEdit}
-                  onChange={(v) => setEditingBudget({ ...editingBudget, expenseCap: parseNum(v, 0) })}
-                  type="number"
-                />
+                <Input value={String(editingBudget.expenseCap)} onChange={(v) => setEditingBudget({ ...editingBudget, expenseCap: parseNum(v, 0) })} type="number" disabled={!canEdit} />
               </div>
             </div>
 
@@ -2749,48 +2502,26 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#ff
                     <div className="text-xs text-white/60">{label}</div>
                     <Input
                       value={String(editingBudget.fixedCosts[k])}
-                      disabled={!canEdit}
-                      onChange={(v) =>
-                        setEditingBudget({
-                          ...editingBudget,
-                          fixedCosts: { ...editingBudget.fixedCosts, [k]: parseNum(v, 0) },
-                        })
-                      }
+                      onChange={(v) => setEditingBudget({ ...editingBudget, fixedCosts: { ...editingBudget.fixedCosts, [k]: parseNum(v, 0) } })}
                       type="number"
+                      disabled={!canEdit}
                     />
                   </div>
                 ))}
-              </div>
-              <div className="mt-3 text-sm text-white/80">
-                Fixed Total:{" "}
-                <b>
-                  {money(
-                    editingBudget.fixedCosts.officeRentUtilities +
-                      editingBudget.fixedCosts.salaries +
-                      editingBudget.fixedCosts.marketing +
-                      editingBudget.fixedCosts.internetMisc +
-                      editingBudget.fixedCosts.transportLogistics +
-                      editingBudget.fixedCosts.adminCompliance,
-                    editingBudget.currency
-                  )}
-                </b>
               </div>
             </div>
 
             <div>
               <div className="text-xs text-white/60">Notes</div>
-              <TextArea
-                value={editingBudget.notes || ""}
-                disabled={!canEdit}
-                onChange={(v) => setEditingBudget({ ...editingBudget, notes: v })}
-                rows={4}
-              />
+              <TextArea value={editingBudget.notes || ""} onChange={(v) => setEditingBudget({ ...editingBudget, notes: v })} rows={4} disabled={!canEdit} />
             </div>
           </div>
         ) : null}
       </Modal>
 
-      {/* INVOICE MODAL */}
+      {/* =========================
+         INVOICE MODAL
+      ========================= */}
       <Modal
         open={openInvoiceModal}
         title="Invoice Preview"
@@ -2800,7 +2531,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#ff
         }}
         footer={
           <div className="flex items-center justify-between">
-            <div className="text-xs text-white/55">Printable invoice for Income transactions.</div>
+            <div className="text-xs text-white/55">Printable invoice for Income transactions</div>
             <div className="flex gap-2">
               <Btn variant="outline" onClick={() => setOpenInvoiceModal(false)}>
                 Close
@@ -2820,8 +2551,8 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#ff
                 <div className="text-xs text-white/60">Date: {invoiceTx.date}</div>
               </div>
               <div className="flex gap-2">
-                <Pill label={invoiceTx.status} />
-                <Pill label={invoiceTx.currency} />
+                <Pill>{invoiceTx.status}</Pill>
+                <Pill>{invoiceTx.currency}</Pill>
               </div>
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -2839,6 +2570,7 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#ff
                 </div>
               </div>
             </div>
+
             <div className="mt-3 rounded-xl border border-white/10 bg-black/30 p-3 text-sm">
               {(() => {
                 const c = calcTotals(invoiceTx);
@@ -2852,8 +2584,9 @@ body{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;background:#ff
                 );
               })()}
             </div>
+
             <div className="mt-2 text-xs text-white/55">
-              Invoice No: {invoiceTx.invoiceNo || "-"} • Reference: {invoiceTx.referenceId || "-"}
+              Invoice No: {invoiceTx.invoiceNo || "—"} • Reference: {invoiceTx.referenceId || "—"}
             </div>
           </div>
         ) : null}
