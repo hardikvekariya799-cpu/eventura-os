@@ -5,8 +5,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 /* =========================================================
-   Eventura Finance — Airtable-style LAYOUT (Sidebar + Toolbar)
-   Deploy-safe: no external libs, strict typing, localStorage.
+   Eventura Finance — HR-style LAYOUT (Top Nav + Control Center)
+   ✅ Deploy-safe: no external libs, strict typing, localStorage only
+   ✅ Black hover everywhere
+   ✅ No unused locals (safe for strict tsconfig)
 ========================================================= */
 
 /* =========================
@@ -285,6 +287,7 @@ function toneForCategory(c: TxTag) {
   if (c === "Tax") return "bad";
   return "neutral";
 }
+
 function Pill({
   children,
   tone = "neutral",
@@ -302,8 +305,13 @@ function Pill({
       : tone === "muted"
       ? "border-white/10 bg-white/5 text-white/55"
       : "border-white/15 bg-white/5 text-white/80";
-  return <span className={cls("inline-flex items-center rounded-full border px-2.5 py-1 text-[11px]", m)}>{children}</span>;
+  return (
+    <span className={cls("inline-flex items-center rounded-full border px-2.5 py-1 text-[11px]", m)}>
+      {children}
+    </span>
+  );
 }
+
 function Btn({
   children,
   onClick,
@@ -319,7 +327,8 @@ function Btn({
   type?: "button" | "submit";
   className?: string;
 }) {
-  const base = "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm transition border select-none";
+  const base =
+    "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm transition border select-none";
   const v =
     variant === "primary"
       ? "border-white/15 bg-white/10 text-white hover:bg-black hover:border-white/25"
@@ -339,6 +348,7 @@ function Btn({
     </button>
   );
 }
+
 function Input({
   value,
   onChange,
@@ -366,6 +376,7 @@ function Input({
     />
   );
 }
+
 function Select({
   value,
   onChange,
@@ -395,6 +406,7 @@ function Select({
     </select>
   );
 }
+
 function TextArea({
   value,
   onChange,
@@ -422,6 +434,7 @@ function TextArea({
     />
   );
 }
+
 function Modal({
   open,
   title,
@@ -473,8 +486,10 @@ function defaultView(): ViewDef {
     eventType: "All",
     from: "",
     to: "",
+
     sortKey: "date",
     sortDir: "desc",
+
     visibleFields: ["date", "amount", "status", "category", "eventType", "clientVendor"],
     colorBy: "Status",
   };
@@ -491,7 +506,8 @@ function normalizeTx(raw: any): FinanceTx | null {
   const id = parseNum((raw as any).id, 0);
   if (!id) return null;
 
-  const date = typeof (raw as any).date === "string" && (raw as any).date ? (raw as any).date : toYMD(new Date());
+  const date =
+    typeof (raw as any).date === "string" && (raw as any).date ? (raw as any).date : toYMD(new Date());
   const createdAt = typeof (raw as any).createdAt === "string" ? (raw as any).createdAt : nowISO();
   const updatedAt = typeof (raw as any).updatedAt === "string" ? (raw as any).updatedAt : nowISO();
 
@@ -537,7 +553,7 @@ function normalizeTx(raw: any): FinanceTx | null {
 }
 
 /* =========================
-   CARD COVER (SVG)
+   CARD COVER (SVG) — UNIQUE gradient IDs (fixes collisions)
 ========================= */
 function hash(s: string) {
   let h = 0;
@@ -549,17 +565,22 @@ function Cover({ seed, tone }: { seed: string; tone: string }) {
   const h2 = (h + 40) % 360;
   const bg1 = `hsl(${h} 70% 45%)`;
   const bg2 = `hsl(${h2} 70% 55%)`;
+  const gid = `g_${h}_${Math.abs(hash(seed))}`; // ✅ unique per card
   return (
     <div className="relative h-24 overflow-hidden rounded-2xl border border-white/10 bg-black/40">
       <svg className="absolute inset-0 h-full w-full" viewBox="0 0 600 240" preserveAspectRatio="none">
         <defs>
-          <linearGradient id={`g_${h}`} x1="0" y1="0" x2="1" y2="1">
+          <linearGradient id={gid} x1="0" y1="0" x2="1" y2="1">
             <stop offset="0" stopColor={bg1} stopOpacity="0.95" />
             <stop offset="1" stopColor={bg2} stopOpacity="0.95" />
           </linearGradient>
         </defs>
-        <rect width="600" height="240" fill={`url(#g_${h})`} />
-        <path d="M0,170 C120,120 220,220 360,160 C480,100 520,120 600,80 L600,240 L0,240 Z" fill="black" opacity="0.20" />
+        <rect width="600" height="240" fill={`url(#${gid})`} />
+        <path
+          d="M0,170 C120,120 220,220 360,160 C480,100 520,120 600,80 L600,240 L0,240 Z"
+          fill="black"
+          opacity="0.20"
+        />
       </svg>
       <div className="absolute left-3 top-3">
         <Pill tone="neutral">{tone}</Pill>
@@ -599,6 +620,69 @@ const CSV_HEADERS = [
   "createdAt",
   "updatedAt",
 ] as const;
+
+/* =========================
+   TOP NAV (matches HR style)
+========================= */
+function TopNav({
+  active,
+  role,
+  email,
+}: {
+  active: "Dashboard" | "Events" | "Finance" | "Vendors" | "AI" | "HR" | "Reports" | "Settings";
+  role: Role;
+  email: string;
+}) {
+  const nav = [
+    { k: "Dashboard", href: "/dashboard", label: "Dashboard" },
+    { k: "Events", href: "/events", label: "Events" },
+    { k: "Finance", href: "/finance", label: "Finance" },
+    { k: "Vendors", href: "/vendors", label: "Vendors" },
+    { k: "AI", href: "/ai", label: "AI" },
+    { k: "HR", href: "/hr", label: "HR" },
+    { k: "Reports", href: "/reports", label: "Reports" },
+    { k: "Settings", href: "/settings", label: "Settings" },
+  ] as const;
+
+  return (
+    <div className="border-b border-white/10 bg-black/70 backdrop-blur">
+      <div className="mx-auto flex max-w-[1400px] flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2">
+            <div className="text-xs text-white/60">Eventura OS</div>
+            <div className="text-sm font-semibold tracking-tight">Finance</div>
+          </div>
+
+          <div className="hidden lg:flex items-center gap-2">
+            <Pill>Signed in</Pill>
+            <Pill>{email || "Unknown"}</Pill>
+            <Pill tone={role === "CEO" ? "good" : "warn"}>{role}</Pill>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {nav.map((n) => {
+            const isOn = n.k === active;
+            return (
+              <Link
+                key={n.k}
+                href={n.href}
+                className={cls(
+                  "rounded-xl border px-3 py-2 text-sm transition",
+                  isOn
+                    ? "border-white/25 bg-white/10 text-white"
+                    : "border-white/15 bg-white/5 text-white/85 hover:bg-black hover:text-white hover:border-white/25"
+                )}
+              >
+                {n.label}
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /* =========================
    PAGE
@@ -648,7 +732,9 @@ export default function FinancePage() {
     setEmail(loadedEmail);
 
     const rawTx = safeJsonParse<any[]>(localStorage.getItem(LS_TX), []);
-    const norm: FinanceTx[] = Array.isArray(rawTx) ? rawTx.map((t) => normalizeTx(t)).filter((x): x is FinanceTx => !!x) : [];
+    const norm: FinanceTx[] = Array.isArray(rawTx)
+      ? rawTx.map((t) => normalizeTx(t)).filter((x): x is FinanceTx => !!x)
+      : [];
     setTxs(norm);
 
     const rawViews = safeJsonParse<any[]>(localStorage.getItem(LS_VIEWS), []);
@@ -658,15 +744,30 @@ export default function FinancePage() {
         .map((v) => {
           const base = defaultView();
           const vv: any = v;
-          const layout: Layout = ["Gallery", "Table", "Calendar", "Reports"].includes(vv.layout) ? vv.layout : "Gallery";
-          const sortKey: SortKey = ["date", "amount", "status", "category", "title"].includes(vv.sortKey) ? vv.sortKey : "date";
+          const layout: Layout = ["Gallery", "Table", "Calendar", "Reports"].includes(vv.layout)
+            ? vv.layout
+            : "Gallery";
+          const sortKey: SortKey = ["date", "amount", "status", "category", "title"].includes(vv.sortKey)
+            ? vv.sortKey
+            : "date";
           const sortDir: SortDir = vv.sortDir === "asc" ? "asc" : "desc";
-          const colorBy: ColorBy = ["None", "Status", "Category", "Type"].includes(vv.colorBy) ? vv.colorBy : "Status";
+          const colorBy: ColorBy = ["None", "Status", "Category", "Type"].includes(vv.colorBy)
+            ? vv.colorBy
+            : "Status";
           const visibleFields = Array.isArray(vv.visibleFields)
             ? (vv.visibleFields.filter((x: any) =>
-                ["date", "amount", "status", "type", "category", "eventType", "clientVendor", "eventTitle", "invoice", "dueDate"].includes(
-                  x
-                )
+                [
+                  "date",
+                  "amount",
+                  "status",
+                  "type",
+                  "category",
+                  "eventType",
+                  "clientVendor",
+                  "eventTitle",
+                  "invoice",
+                  "dueDate",
+                ].includes(x)
               ) as ViewDef["visibleFields"])
             : base.visibleFields;
 
@@ -693,7 +794,10 @@ export default function FinancePage() {
       setViews(safeViews);
 
       const pref = safeJsonParse<{ activeViewId?: string }>(localStorage.getItem(LS_PREF), {});
-      const av = pref.activeViewId && safeViews.some((x) => x.id === pref.activeViewId) ? pref.activeViewId : safeViews[0].id;
+      const av =
+        pref.activeViewId && safeViews.some((x) => x.id === pref.activeViewId)
+          ? pref.activeViewId
+          : safeViews[0].id;
       setActiveViewId(av);
     } else {
       setViews([defaultView()]);
@@ -718,7 +822,10 @@ export default function FinancePage() {
   }, [views, activeViewId, mounted]);
 
   /* ===== ACTIVE VIEW ===== */
-  const activeView = useMemo(() => views.find((v) => v.id === activeViewId) || views[0] || defaultView(), [views, activeViewId]);
+  const activeView = useMemo(
+    () => views.find((v) => v.id === activeViewId) || views[0] || defaultView(),
+    [views, activeViewId]
+  );
 
   /* ===== FILTERED / SORTED ===== */
   const filtered = useMemo(() => {
@@ -950,7 +1057,11 @@ export default function FinancePage() {
       lines.push(vals.join(","));
     }
 
-    downloadText(`eventura_finance_${activeView.name.replace(/\s+/g, "_")}_${toYMD(new Date())}.csv`, lines.join("\n"), "text/csv;charset=utf-8");
+    downloadText(
+      `eventura_finance_${activeView.name.replace(/\s+/g, "_")}_${toYMD(new Date())}.csv`,
+      lines.join("\n"),
+      "text/csv;charset=utf-8"
+    );
     notify("CSV exported");
   }
 
@@ -993,7 +1104,11 @@ export default function FinancePage() {
     const html = `<!doctype html><html><head><meta charset="utf-8" /></head><body>
       <table border="1"><thead><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
       <tbody>${body}</tbody></table></body></html>`;
-    downloadText(`eventura_finance_${activeView.name.replace(/\s+/g, "_")}_${toYMD(new Date())}.xls`, html, "application/vnd.ms-excel;charset=utf-8");
+    downloadText(
+      `eventura_finance_${activeView.name.replace(/\s+/g, "_")}_${toYMD(new Date())}.xls`,
+      html,
+      "application/vnd.ms-excel;charset=utf-8"
+    );
     notify("Excel exported");
   }
 
@@ -1210,16 +1325,6 @@ export default function FinancePage() {
   }
 
   /* =========================
-     COLOR BY
-  ========================= */
-  function cardTone(t: FinanceTx): string {
-    if (activeView.colorBy === "None") return "Eventura";
-    if (activeView.colorBy === "Type") return t.type;
-    if (activeView.colorBy === "Category") return t.category;
-    return t.status;
-  }
-
-  /* =========================
      CALENDAR DATA
   ========================= */
   const calendar = useMemo(() => {
@@ -1285,76 +1390,59 @@ export default function FinancePage() {
   ========================= */
   return (
     <div className="min-h-screen bg-[#070707] text-white">
-      {/* Top app bar */}
-      <div className="sticky top-0 z-40 border-b border-white/10 bg-black/70 backdrop-blur">
-        <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-3 px-4 py-3">
-          <div className="flex items-center gap-3">
-            <button
-              className="md:hidden rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm hover:bg-black"
-              onClick={() => setSidebarOpen((s) => !s)}
-            >
-              ☰
-            </button>
+      {/* HR-style top nav */}
+      <div className="sticky top-0 z-40">
+        <TopNav active="Finance" role={role} email={email} />
+      </div>
 
-            <div className="flex items-center gap-3">
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2">
-                <div className="text-xs text-white/60">Eventura</div>
-                <div className="text-sm font-semibold tracking-tight">Finance</div>
+      {/* Control Center header + actions (HR-style) */}
+      <div className="mx-auto max-w-[1400px] px-4 pt-6">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold">Finance Control Center</div>
+              <div className="mt-1 text-xs text-white/55">
+                Transactions • Views • Import/Export • Reports • Calendar • Black Hover • Deploy Safe
               </div>
-
-              <div className="hidden lg:flex items-center gap-2">
-                <Pill>{role}</Pill>
-                <Pill>{email || "no-email"}</Pill>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Pill>Month {monthNow}</Pill>
+                <Pill tone="good">Income {money(kpi.inc, "INR")}</Pill>
+                <Pill tone="bad">Expense {money(kpi.exp, "INR")}</Pill>
+                <Pill tone={kpi.net >= 0 ? "good" : "bad"}>Net {money(kpi.net, "INR")}</Pill>
+                <Pill tone="warn">AR {money(kpi.ar, "INR")}</Pill>
+                <Pill tone="warn">AP {money(kpi.ap, "INR")}</Pill>
+                <Pill tone={kpi.overdue ? "bad" : "neutral"}>Overdue {kpi.overdue}</Pill>
                 {!canEdit ? <Pill tone="warn">View-only</Pill> : <Pill tone="good">CEO edit</Pill>}
+                {toast ? <span className="ml-auto text-xs text-white/70">{toast}</span> : null}
               </div>
             </div>
-          </div>
 
-          <div className="flex items-center gap-2">
-            <Btn variant="outline" onClick={exportExcelXls}>
-              Excel
-            </Btn>
-            <Btn variant="outline" onClick={exportCSV}>
-              CSV
-            </Btn>
-            <Btn variant="outline" onClick={() => setOpenImport(true)} disabled={!canEdit}>
-              Import
-            </Btn>
-            <Btn variant="outline" onClick={seedDemo} disabled={!canEdit}>
-              Demo
-            </Btn>
-            <Btn onClick={openNewTx} disabled={!canEdit}>
-              + Add
-            </Btn>
-            <Link
-              href="/dashboard"
-              className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white/85 hover:bg-black hover:text-white"
-            >
-              Back
-            </Link>
-          </div>
-        </div>
-
-        {/* KPI strip */}
-        <div className="mx-auto max-w-[1400px] px-4 pb-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Pill>Month {monthNow}</Pill>
-            <Pill tone="good">Income {money(kpi.inc, "INR")}</Pill>
-            <Pill tone="bad">Expense {money(kpi.exp, "INR")}</Pill>
-            <Pill tone={kpi.net >= 0 ? "good" : "bad"}>Net {money(kpi.net, "INR")}</Pill>
-            <Pill tone="warn">AR {money(kpi.ar, "INR")}</Pill>
-            <Pill tone="warn">AP {money(kpi.ap, "INR")}</Pill>
-            <Pill tone={kpi.overdue ? "bad" : "neutral"}>Overdue {kpi.overdue}</Pill>
-            {toast ? <span className="ml-auto text-xs text-white/70">{toast}</span> : null}
+            <div className="flex flex-wrap items-center gap-2">
+              <Btn variant="outline" onClick={exportExcelXls}>
+                Export Excel
+              </Btn>
+              <Btn variant="outline" onClick={exportCSV}>
+                Export CSV
+              </Btn>
+              <Btn variant="outline" onClick={() => setOpenImport(true)} disabled={!canEdit}>
+                Import
+              </Btn>
+              <Btn variant="outline" onClick={seedDemo} disabled={!canEdit}>
+                Demo
+              </Btn>
+              <Btn onClick={openNewTx} disabled={!canEdit}>
+                + Add
+              </Btn>
+            </div>
           </div>
         </div>
       </div>
 
       {/* App shell: sidebar + content */}
-      <div className="mx-auto grid max-w-[1400px] grid-cols-1 md:grid-cols-[320px_1fr] gap-4 px-4 py-4">
+      <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-4 px-4 py-4 md:grid-cols-[320px_1fr]">
         {/* Sidebar (desktop) */}
         <aside className="hidden md:block">
-          <div className="sticky top-[110px] grid gap-3">
+          <div className="sticky top-[148px] grid gap-3">
             <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
               <div className="flex items-center justify-between">
                 <div className="text-sm font-semibold">Views</div>
@@ -1391,7 +1479,10 @@ export default function FinancePage() {
                   <Select
                     value={activeView.status}
                     onChange={(v) => updateActiveView({ status: v as any })}
-                    options={[{ value: "All", label: "Status: All" }, ...TX_STATUSES.map((s) => ({ value: s, label: s }))]}
+                    options={[
+                      { value: "All", label: "Status: All" },
+                      ...TX_STATUSES.map((s) => ({ value: s, label: s })),
+                    ]}
                   />
                 </div>
                 <Select
@@ -1402,7 +1493,10 @@ export default function FinancePage() {
                 <Select
                   value={activeView.eventType}
                   onChange={(v) => updateActiveView({ eventType: v as any })}
-                  options={[{ value: "All", label: "Event: All" }, ...EVENT_TYPES.map((c) => ({ value: c, label: c }))]}
+                  options={[
+                    { value: "All", label: "Event: All" },
+                    ...EVENT_TYPES.map((c) => ({ value: c, label: c })),
+                  ]}
                 />
                 <div className="grid grid-cols-2 gap-2">
                   <Input value={activeView.from} onChange={(v) => updateActiveView({ from: v })} type="date" />
@@ -1463,9 +1557,15 @@ export default function FinancePage() {
         </aside>
 
         {/* Sidebar (mobile drawer) */}
+        <div className="md:hidden">
+          <Btn variant="outline" onClick={() => setSidebarOpen((s) => !s)} className="w-full">
+            {sidebarOpen ? "Close menu" : "Open menu"}
+          </Btn>
+        </div>
+
         {sidebarOpen ? (
           <div className="md:hidden fixed inset-0 z-40 bg-black/70">
-            <div className="absolute left-0 top-0 h-full w-[88%] max-w-[360px] border-r border-white/10 bg-[#0b0b0b] p-3">
+            <div className="absolute left-0 top-0 h-full w-[88%] max-w-[360px] border-r border-white/10 bg-[#0b0b0b] p-3 overflow-auto">
               <div className="flex items-center justify-between">
                 <div className="text-sm font-semibold">Finance Menu</div>
                 <button
@@ -1511,7 +1611,10 @@ export default function FinancePage() {
                     <Select
                       value={activeView.status}
                       onChange={(v) => updateActiveView({ status: v as any })}
-                      options={[{ value: "All", label: "Status: All" }, ...TX_STATUSES.map((s) => ({ value: s, label: s }))]}
+                      options={[
+                        { value: "All", label: "Status: All" },
+                        ...TX_STATUSES.map((s) => ({ value: s, label: s })),
+                      ]}
                     />
                   </div>
                   <Select
@@ -1522,7 +1625,10 @@ export default function FinancePage() {
                   <Select
                     value={activeView.eventType}
                     onChange={(v) => updateActiveView({ eventType: v as any })}
-                    options={[{ value: "All", label: "Event: All" }, ...EVENT_TYPES.map((c) => ({ value: c, label: c }))]}
+                    options={[
+                      { value: "All", label: "Event: All" },
+                      ...EVENT_TYPES.map((c) => ({ value: c, label: c })),
+                    ]}
                   />
                   <div className="grid grid-cols-2 gap-2">
                     <Input value={activeView.from} onChange={(v) => updateActiveView({ from: v })} type="date" />
@@ -1532,12 +1638,34 @@ export default function FinancePage() {
               </div>
 
               <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
-                <div className="text-sm font-semibold">Layout</div>
+                <div className="text-sm font-semibold">Sort & Style</div>
                 <div className="mt-3 grid gap-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Select
+                      value={activeView.sortKey}
+                      onChange={(v) => updateActiveView({ sortKey: v as SortKey })}
+                      options={[
+                        { value: "date", label: "Date" },
+                        { value: "amount", label: "Amount" },
+                        { value: "status", label: "Status" },
+                        { value: "category", label: "Category" },
+                        { value: "title", label: "Title" },
+                      ]}
+                    />
+                    <Select
+                      value={activeView.sortDir}
+                      onChange={(v) => updateActiveView({ sortDir: v as SortDir })}
+                      options={[
+                        { value: "desc", label: "Desc" },
+                        { value: "asc", label: "Asc" },
+                      ]}
+                    />
+                  </div>
+
                   <Select
                     value={activeView.layout}
                     onChange={(v) => updateActiveView({ layout: v as Layout })}
-                    options={["Gallery", "Table", "Calendar", "Reports"].map((x) => ({ value: x, label: x }))}
+                    options={["Gallery", "Table", "Calendar", "Reports"].map((x) => ({ value: x, label: `Layout: ${x}` }))}
                   />
                   <Select
                     value={activeView.colorBy}
@@ -1557,7 +1685,7 @@ export default function FinancePage() {
 
         {/* Main content */}
         <main className="min-w-0">
-          {/* Content header (Airtable-like toolbar row) */}
+          {/* Toolbar row (Airtable-like) */}
           <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="min-w-0">
@@ -1623,7 +1751,12 @@ export default function FinancePage() {
                               </div>
                             </div>
                             <div className="text-right">
-                              <div className={cls("text-sm font-semibold", t.type === "Income" ? "text-emerald-200" : "text-rose-200")}>
+                              <div
+                                className={cls(
+                                  "text-sm font-semibold",
+                                  t.type === "Income" ? "text-emerald-200" : "text-rose-200"
+                                )}
+                              >
                                 {money(t.amount, t.currency)}
                               </div>
                               <div className="mt-1 text-xs text-white/55">{t.date}</div>
@@ -1677,7 +1810,9 @@ export default function FinancePage() {
                           </div>
 
                           <div className="mt-3 flex items-center justify-between gap-2">
-                            <div className="text-xs text-white/45">Updated {new Date(t.updatedAt).toLocaleString()}</div>
+                            <div className="text-xs text-white/45">
+                              Updated {new Date(t.updatedAt).toLocaleString()}
+                            </div>
                             <div className="flex gap-2">
                               <Btn variant="outline" onClick={() => openEditTx(t)} disabled={!canEdit}>
                                 Edit
@@ -1955,7 +2090,9 @@ export default function FinancePage() {
                   onClick={() => setActiveViewId(v.id)}
                   className={cls(
                     "w-full rounded-2xl border px-4 py-3 text-left transition",
-                    v.id === activeViewId ? "border-white/25 bg-white/10" : "border-white/10 bg-black/30 hover:bg-black/50 hover:border-white/20"
+                    v.id === activeViewId
+                      ? "border-white/25 bg-white/10"
+                      : "border-white/10 bg-black/30 hover:bg-black/50 hover:border-white/20"
                   )}
                 >
                   <div className="flex items-center justify-between">
@@ -2033,7 +2170,13 @@ export default function FinancePage() {
           <div className="flex items-center justify-between">
             <div className="text-xs text-white/55">{canEdit ? "CEO can edit" : "View-only"}</div>
             <div className="flex gap-2">
-              <Btn variant="outline" onClick={() => { setOpenTx(false); setEditing(null); }}>
+              <Btn
+                variant="outline"
+                onClick={() => {
+                  setOpenTx(false);
+                  setEditing(null);
+                }}
+              >
                 Cancel
               </Btn>
               <Btn onClick={() => editing && saveTx(editing)} disabled={!canEdit}>
@@ -2057,7 +2200,12 @@ export default function FinancePage() {
               </div>
               <div>
                 <div className="text-xs text-white/60">Event Title</div>
-                <Input value={editing.eventTitle || ""} onChange={(v) => setEditing({ ...editing, eventTitle: v })} disabled={!canEdit} placeholder="Wedding — Surat" />
+                <Input
+                  value={editing.eventTitle || ""}
+                  onChange={(v) => setEditing({ ...editing, eventTitle: v })}
+                  disabled={!canEdit}
+                  placeholder="Wedding — Surat"
+                />
               </div>
             </div>
 
@@ -2109,7 +2257,9 @@ export default function FinancePage() {
                 <div className="text-xs text-white/60">{editing.type === "Income" ? "Client Name" : "Vendor Name"}</div>
                 <Input
                   value={editing.type === "Income" ? (editing.clientName || "") : (editing.vendorName || "")}
-                  onChange={(v) => setEditing(editing.type === "Income" ? { ...editing, clientName: v } : { ...editing, vendorName: v })}
+                  onChange={(v) =>
+                    setEditing(editing.type === "Income" ? { ...editing, clientName: v } : { ...editing, vendorName: v })
+                  }
                   disabled={!canEdit}
                 />
               </div>
@@ -2138,9 +2288,20 @@ export default function FinancePage() {
               <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
                 <div className="text-xs text-white/60">GST</div>
                 <div className="mt-2 grid gap-2">
-                  <Input value={String(editing.gstRate ?? 0)} onChange={(v) => setEditing({ ...editing, gstRate: clamp(parseNum(v, 0), 0, 28) })} type="number" disabled={!canEdit} placeholder="GST rate %" />
+                  <Input
+                    value={String(editing.gstRate ?? 0)}
+                    onChange={(v) => setEditing({ ...editing, gstRate: clamp(parseNum(v, 0), 0, 28) })}
+                    type="number"
+                    disabled={!canEdit}
+                    placeholder="GST rate %"
+                  />
                   <label className="flex items-center gap-2 text-xs text-white/65">
-                    <input type="checkbox" checked={!!editing.gstIncluded} onChange={(e) => setEditing({ ...editing, gstIncluded: e.target.checked })} disabled={!canEdit} />
+                    <input
+                      type="checkbox"
+                      checked={!!editing.gstIncluded}
+                      onChange={(e) => setEditing({ ...editing, gstIncluded: e.target.checked })}
+                      disabled={!canEdit}
+                    />
                     GST included in amount
                   </label>
                 </div>
@@ -2149,7 +2310,13 @@ export default function FinancePage() {
               <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
                 <div className="text-xs text-white/60">TDS</div>
                 <div className="mt-2">
-                  <Input value={String(editing.tdsRate ?? 0)} onChange={(v) => setEditing({ ...editing, tdsRate: clamp(parseNum(v, 0), 0, 20) })} type="number" disabled={!canEdit} placeholder="TDS rate %" />
+                  <Input
+                    value={String(editing.tdsRate ?? 0)}
+                    onChange={(v) => setEditing({ ...editing, tdsRate: clamp(parseNum(v, 0), 0, 20) })}
+                    type="number"
+                    disabled={!canEdit}
+                    placeholder="TDS rate %"
+                  />
                 </div>
               </div>
 
