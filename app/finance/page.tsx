@@ -2,13 +2,11 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 
 /* =========================================================
-   Eventura Finance — HR-style LAYOUT (Top Nav + Control Center)
+   Eventura Finance — HR-style LAYOUT (Control Center + Cards)
+   ✅ Matches /hr structure (Header + Actions + KPI Cards + Sections)
    ✅ Deploy-safe: no external libs, strict typing, localStorage only
-   ✅ Black hover everywhere
-   ✅ No unused locals (safe for strict tsconfig)
 ========================================================= */
 
 /* =========================
@@ -132,6 +130,8 @@ type ViewDef = {
   >;
   colorBy: ColorBy;
 };
+
+type TabKey = "Transactions" | "Views" | "Reports" | "Calendar";
 
 /* =========================
    ENUMS
@@ -287,7 +287,6 @@ function toneForCategory(c: TxTag) {
   if (c === "Tax") return "bad";
   return "neutral";
 }
-
 function Pill({
   children,
   tone = "neutral",
@@ -305,13 +304,8 @@ function Pill({
       : tone === "muted"
       ? "border-white/10 bg-white/5 text-white/55"
       : "border-white/15 bg-white/5 text-white/80";
-  return (
-    <span className={cls("inline-flex items-center rounded-full border px-2.5 py-1 text-[11px]", m)}>
-      {children}
-    </span>
-  );
+  return <span className={cls("inline-flex items-center rounded-full border px-2.5 py-1 text-[11px]", m)}>{children}</span>;
 }
-
 function Btn({
   children,
   onClick,
@@ -327,8 +321,7 @@ function Btn({
   type?: "button" | "submit";
   className?: string;
 }) {
-  const base =
-    "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm transition border select-none";
+  const base = "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm transition border select-none";
   const v =
     variant === "primary"
       ? "border-white/15 bg-white/10 text-white hover:bg-black hover:border-white/25"
@@ -348,7 +341,6 @@ function Btn({
     </button>
   );
 }
-
 function Input({
   value,
   onChange,
@@ -376,7 +368,6 @@ function Input({
     />
   );
 }
-
 function Select({
   value,
   onChange,
@@ -406,7 +397,6 @@ function Select({
     </select>
   );
 }
-
 function TextArea({
   value,
   onChange,
@@ -434,7 +424,32 @@ function TextArea({
     />
   );
 }
-
+function Card({
+  title,
+  subtitle,
+  right,
+  children,
+}: {
+  title?: string;
+  subtitle?: string;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+      {title || subtitle || right ? (
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            {title ? <div className="text-sm font-semibold">{title}</div> : null}
+            {subtitle ? <div className="mt-1 text-xs text-white/55">{subtitle}</div> : null}
+          </div>
+          {right ? <div className="shrink-0">{right}</div> : null}
+        </div>
+      ) : null}
+      <div className={cls(title || subtitle || right ? "mt-4" : "")}>{children}</div>
+    </div>
+  );
+}
 function Modal({
   open,
   title,
@@ -477,7 +492,7 @@ function defaultView(): ViewDef {
   return {
     id: "main",
     name: "Finance board",
-    layout: "Gallery",
+    layout: "Table",
     q: "",
     type: "All",
     status: "All",
@@ -486,10 +501,8 @@ function defaultView(): ViewDef {
     eventType: "All",
     from: "",
     to: "",
-
     sortKey: "date",
     sortDir: "desc",
-
     visibleFields: ["date", "amount", "status", "category", "eventType", "clientVendor"],
     colorBy: "Status",
   };
@@ -506,8 +519,7 @@ function normalizeTx(raw: any): FinanceTx | null {
   const id = parseNum((raw as any).id, 0);
   if (!id) return null;
 
-  const date =
-    typeof (raw as any).date === "string" && (raw as any).date ? (raw as any).date : toYMD(new Date());
+  const date = typeof (raw as any).date === "string" && (raw as any).date ? (raw as any).date : toYMD(new Date());
   const createdAt = typeof (raw as any).createdAt === "string" ? (raw as any).createdAt : nowISO();
   const updatedAt = typeof (raw as any).updatedAt === "string" ? (raw as any).updatedAt : nowISO();
 
@@ -553,43 +565,6 @@ function normalizeTx(raw: any): FinanceTx | null {
 }
 
 /* =========================
-   CARD COVER (SVG) — UNIQUE gradient IDs (fixes collisions)
-========================= */
-function hash(s: string) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
-  return h;
-}
-function Cover({ seed, tone }: { seed: string; tone: string }) {
-  const h = Math.abs(hash(seed + tone)) % 360;
-  const h2 = (h + 40) % 360;
-  const bg1 = `hsl(${h} 70% 45%)`;
-  const bg2 = `hsl(${h2} 70% 55%)`;
-  const gid = `g_${h}_${Math.abs(hash(seed))}`; // ✅ unique per card
-  return (
-    <div className="relative h-24 overflow-hidden rounded-2xl border border-white/10 bg-black/40">
-      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 600 240" preserveAspectRatio="none">
-        <defs>
-          <linearGradient id={gid} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor={bg1} stopOpacity="0.95" />
-            <stop offset="1" stopColor={bg2} stopOpacity="0.95" />
-          </linearGradient>
-        </defs>
-        <rect width="600" height="240" fill={`url(#${gid})`} />
-        <path
-          d="M0,170 C120,120 220,220 360,160 C480,100 520,120 600,80 L600,240 L0,240 Z"
-          fill="black"
-          opacity="0.20"
-        />
-      </svg>
-      <div className="absolute left-3 top-3">
-        <Pill tone="neutral">{tone}</Pill>
-      </div>
-    </div>
-  );
-}
-
-/* =========================
    CSV EXPORT
 ========================= */
 const CSV_HEADERS = [
@@ -622,69 +597,6 @@ const CSV_HEADERS = [
 ] as const;
 
 /* =========================
-   TOP NAV (matches HR style)
-========================= */
-function TopNav({
-  active,
-  role,
-  email,
-}: {
-  active: "Dashboard" | "Events" | "Finance" | "Vendors" | "AI" | "HR" | "Reports" | "Settings";
-  role: Role;
-  email: string;
-}) {
-  const nav = [
-    { k: "Dashboard", href: "/dashboard", label: "Dashboard" },
-    { k: "Events", href: "/events", label: "Events" },
-    { k: "Finance", href: "/finance", label: "Finance" },
-    { k: "Vendors", href: "/vendors", label: "Vendors" },
-    { k: "AI", href: "/ai", label: "AI" },
-    { k: "HR", href: "/hr", label: "HR" },
-    { k: "Reports", href: "/reports", label: "Reports" },
-    { k: "Settings", href: "/settings", label: "Settings" },
-  ] as const;
-
-  return (
-    <div className="border-b border-white/10 bg-black/70 backdrop-blur">
-      <div className="mx-auto flex max-w-[1400px] flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2">
-            <div className="text-xs text-white/60">Eventura OS</div>
-            <div className="text-sm font-semibold tracking-tight">Finance</div>
-          </div>
-
-          <div className="hidden lg:flex items-center gap-2">
-            <Pill>Signed in</Pill>
-            <Pill>{email || "Unknown"}</Pill>
-            <Pill tone={role === "CEO" ? "good" : "warn"}>{role}</Pill>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {nav.map((n) => {
-            const isOn = n.k === active;
-            return (
-              <Link
-                key={n.k}
-                href={n.href}
-                className={cls(
-                  "rounded-xl border px-3 py-2 text-sm transition",
-                  isOn
-                    ? "border-white/25 bg-white/10 text-white"
-                    : "border-white/15 bg-white/5 text-white/85 hover:bg-black hover:text-white hover:border-white/25"
-                )}
-              >
-                {n.label}
-              </Link>
-            );
-          })}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* =========================
    PAGE
 ========================= */
 export default function FinancePage() {
@@ -700,18 +612,15 @@ export default function FinancePage() {
   const [toast, setToast] = useState("");
   const toastRef = useRef<number | null>(null);
 
+  const [tab, setTab] = useState<TabKey>("Transactions");
+
   // modals
   const [openTx, setOpenTx] = useState(false);
   const [editing, setEditing] = useState<FinanceTx | null>(null);
 
-  const [openViewsModal, setOpenViewsModal] = useState(false);
   const [openCardFields, setOpenCardFields] = useState(false);
-
   const [openImport, setOpenImport] = useState(false);
   const [importText, setImportText] = useState("");
-
-  // sidebar on mobile
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const isCEO = role === "CEO";
   const canEdit = isCEO;
@@ -732,9 +641,7 @@ export default function FinancePage() {
     setEmail(loadedEmail);
 
     const rawTx = safeJsonParse<any[]>(localStorage.getItem(LS_TX), []);
-    const norm: FinanceTx[] = Array.isArray(rawTx)
-      ? rawTx.map((t) => normalizeTx(t)).filter((x): x is FinanceTx => !!x)
-      : [];
+    const norm: FinanceTx[] = Array.isArray(rawTx) ? rawTx.map((t) => normalizeTx(t)).filter((x): x is FinanceTx => !!x) : [];
     setTxs(norm);
 
     const rawViews = safeJsonParse<any[]>(localStorage.getItem(LS_VIEWS), []);
@@ -744,30 +651,15 @@ export default function FinancePage() {
         .map((v) => {
           const base = defaultView();
           const vv: any = v;
-          const layout: Layout = ["Gallery", "Table", "Calendar", "Reports"].includes(vv.layout)
-            ? vv.layout
-            : "Gallery";
-          const sortKey: SortKey = ["date", "amount", "status", "category", "title"].includes(vv.sortKey)
-            ? vv.sortKey
-            : "date";
+          const layout: Layout = ["Gallery", "Table", "Calendar", "Reports"].includes(vv.layout) ? vv.layout : "Table";
+          const sortKey: SortKey = ["date", "amount", "status", "category", "title"].includes(vv.sortKey) ? vv.sortKey : "date";
           const sortDir: SortDir = vv.sortDir === "asc" ? "asc" : "desc";
-          const colorBy: ColorBy = ["None", "Status", "Category", "Type"].includes(vv.colorBy)
-            ? vv.colorBy
-            : "Status";
+          const colorBy: ColorBy = ["None", "Status", "Category", "Type"].includes(vv.colorBy) ? vv.colorBy : "Status";
           const visibleFields = Array.isArray(vv.visibleFields)
             ? (vv.visibleFields.filter((x: any) =>
-                [
-                  "date",
-                  "amount",
-                  "status",
-                  "type",
-                  "category",
-                  "eventType",
-                  "clientVendor",
-                  "eventTitle",
-                  "invoice",
-                  "dueDate",
-                ].includes(x)
+                ["date", "amount", "status", "type", "category", "eventType", "clientVendor", "eventTitle", "invoice", "dueDate"].includes(
+                  x
+                )
               ) as ViewDef["visibleFields"])
             : base.visibleFields;
 
@@ -794,10 +686,7 @@ export default function FinancePage() {
       setViews(safeViews);
 
       const pref = safeJsonParse<{ activeViewId?: string }>(localStorage.getItem(LS_PREF), {});
-      const av =
-        pref.activeViewId && safeViews.some((x) => x.id === pref.activeViewId)
-          ? pref.activeViewId
-          : safeViews[0].id;
+      const av = pref.activeViewId && safeViews.some((x) => x.id === pref.activeViewId) ? pref.activeViewId : safeViews[0].id;
       setActiveViewId(av);
     } else {
       setViews([defaultView()]);
@@ -822,10 +711,7 @@ export default function FinancePage() {
   }, [views, activeViewId, mounted]);
 
   /* ===== ACTIVE VIEW ===== */
-  const activeView = useMemo(
-    () => views.find((v) => v.id === activeViewId) || views[0] || defaultView(),
-    [views, activeViewId]
-  );
+  const activeView = useMemo(() => views.find((v) => v.id === activeViewId) || views[0] || defaultView(), [views, activeViewId]);
 
   /* ===== FILTERED / SORTED ===== */
   const filtered = useMemo(() => {
@@ -1057,11 +943,7 @@ export default function FinancePage() {
       lines.push(vals.join(","));
     }
 
-    downloadText(
-      `eventura_finance_${activeView.name.replace(/\s+/g, "_")}_${toYMD(new Date())}.csv`,
-      lines.join("\n"),
-      "text/csv;charset=utf-8"
-    );
+    downloadText(`eventura_finance_${activeView.name.replace(/\s+/g, "_")}_${toYMD(new Date())}.csv`, lines.join("\n"), "text/csv;charset=utf-8");
     notify("CSV exported");
   }
 
@@ -1104,11 +986,7 @@ export default function FinancePage() {
     const html = `<!doctype html><html><head><meta charset="utf-8" /></head><body>
       <table border="1"><thead><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
       <tbody>${body}</tbody></table></body></html>`;
-    downloadText(
-      `eventura_finance_${activeView.name.replace(/\s+/g, "_")}_${toYMD(new Date())}.xls`,
-      html,
-      "application/vnd.ms-excel;charset=utf-8"
-    );
+    downloadText(`eventura_finance_${activeView.name.replace(/\s+/g, "_")}_${toYMD(new Date())}.xls`, html, "application/vnd.ms-excel;charset=utf-8");
     notify("Excel exported");
   }
 
@@ -1359,61 +1237,45 @@ export default function FinancePage() {
   }, [filtered]);
 
   /* =========================
-     SIDEBAR ITEM
+     HELPERS
   ========================= */
-  function ViewItem({ v }: { v: ViewDef }) {
-    const active = v.id === activeViewId;
+  function tabBtn(key: TabKey) {
+    const active = tab === key;
     return (
       <button
-        onClick={() => {
-          setActiveViewId(v.id);
-          setSidebarOpen(false);
-        }}
+        key={key}
+        onClick={() => setTab(key)}
         className={cls(
-          "w-full rounded-xl border px-3 py-2 text-left transition",
-          active ? "border-white/25 bg-white/10" : "border-white/10 bg-white/5 hover:bg-black hover:border-white/20"
+          "rounded-xl border px-3 py-2 text-sm transition",
+          active ? "border-white/25 bg-white/10 text-white" : "border-white/10 bg-white/5 text-white/80 hover:bg-black hover:border-white/20"
         )}
       >
-        <div className="flex items-center justify-between gap-2">
-          <div className="truncate text-sm font-semibold text-white">{v.name}</div>
-          <Pill>{v.layout}</Pill>
-        </div>
-        <div className="mt-1 text-[11px] text-white/55 truncate">
-          {v.type}/{v.status}/{v.category} • {v.sortKey} {v.sortDir}
-        </div>
+        {key}
       </button>
     );
   }
 
   /* =========================
-     MAIN RENDER
+     RENDER
   ========================= */
   return (
     <div className="min-h-screen bg-[#070707] text-white">
-      {/* HR-style top nav */}
-      <div className="sticky top-0 z-40">
-        <TopNav active="Finance" role={role} email={email} />
-      </div>
-
-      {/* Control Center header + actions (HR-style) */}
-      <div className="mx-auto max-w-[1400px] px-4 pt-6">
+      <div className="mx-auto max-w-[1400px] px-4 py-6">
+        {/* HEADER (HR-style) */}
         <div className="rounded-2xl border border-white/10 bg-white/5 p-5">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-sm font-semibold">Finance Control Center</div>
-              <div className="mt-1 text-xs text-white/55">
+              <div className="text-xs text-white/60">Eventura OS</div>
+              <div className="mt-1 text-2xl font-semibold tracking-tight">Finance Control Center</div>
+              <div className="mt-2 text-sm text-white/60">
                 Transactions • Views • Import/Export • Reports • Calendar • Black Hover • Deploy Safe
               </div>
+
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Pill>Month {monthNow}</Pill>
-                <Pill tone="good">Income {money(kpi.inc, "INR")}</Pill>
-                <Pill tone="bad">Expense {money(kpi.exp, "INR")}</Pill>
-                <Pill tone={kpi.net >= 0 ? "good" : "bad"}>Net {money(kpi.net, "INR")}</Pill>
-                <Pill tone="warn">AR {money(kpi.ar, "INR")}</Pill>
-                <Pill tone="warn">AP {money(kpi.ap, "INR")}</Pill>
-                <Pill tone={kpi.overdue ? "bad" : "neutral"}>Overdue {kpi.overdue}</Pill>
-                {!canEdit ? <Pill tone="warn">View-only</Pill> : <Pill tone="good">CEO edit</Pill>}
-                {toast ? <span className="ml-auto text-xs text-white/70">{toast}</span> : null}
+                <Pill>{role}</Pill>
+                <Pill>{email || "Unknown"}</Pill>
+                {canEdit ? <Pill tone="good">CEO edit</Pill> : <Pill tone="warn">View-only</Pill>}
+                {toast ? <Pill tone="muted">{toast}</Pill> : null}
               </div>
             </div>
 
@@ -1436,79 +1298,116 @@ export default function FinancePage() {
             </div>
           </div>
         </div>
-      </div>
 
-      {/* App shell: sidebar + content */}
-      <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-4 px-4 py-4 md:grid-cols-[320px_1fr]">
-        {/* Sidebar (desktop) */}
-        <aside className="hidden md:block">
-          <div className="sticky top-[148px] grid gap-3">
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+        {/* KPI CARDS (HR-style) */}
+        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3 lg:grid-cols-6">
+          <Card title="Month" subtitle={monthNow}>
+            <div className="text-2xl font-semibold">{monthNow}</div>
+          </Card>
+
+          <Card title="Income" subtitle="This month">
+            <div className="text-2xl font-semibold text-emerald-200">{money(kpi.inc, "INR")}</div>
+          </Card>
+
+          <Card title="Expense" subtitle="This month">
+            <div className="text-2xl font-semibold text-rose-200">{money(kpi.exp, "INR")}</div>
+          </Card>
+
+          <Card title="Net" subtitle="This month">
+            <div className={cls("text-2xl font-semibold", kpi.net >= 0 ? "text-emerald-200" : "text-rose-200")}>
+              {money(kpi.net, "INR")}
+            </div>
+          </Card>
+
+          <Card title="AR / AP" subtitle="Open amounts">
+            <div className="grid gap-1 text-sm">
               <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold">Views</div>
-                <Btn variant="ghost" onClick={() => setOpenViewsModal(true)}>
-                  Manage
-                </Btn>
+                <span className="text-white/60">AR</span>
+                <span className="font-semibold">{money(kpi.ar, "INR")}</span>
               </div>
-              <div className="mt-3 grid gap-2">
-                {views.map((v) => (
-                  <ViewItem key={v.id} v={v} />
-                ))}
-              </div>
-
-              <div className="mt-3 flex gap-2">
-                <Btn variant="outline" onClick={createViewFromActive}>
-                  Duplicate
-                </Btn>
-                <Btn variant="outline" onClick={() => setOpenCardFields(true)}>
-                  Cards
-                </Btn>
+              <div className="flex items-center justify-between">
+                <span className="text-white/60">AP</span>
+                <span className="font-semibold">{money(kpi.ap, "INR")}</span>
               </div>
             </div>
+          </Card>
 
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-              <div className="text-sm font-semibold">Filters</div>
-              <div className="mt-3 grid gap-2">
-                <Input value={activeView.q} onChange={(v) => updateActiveView({ q: v })} placeholder="Search..." />
-                <div className="grid grid-cols-2 gap-2">
+          <Card title="Overdue" subtitle="Count">
+            <div className={cls("text-2xl font-semibold", kpi.overdue ? "text-rose-200" : "text-white/80")}>
+              {kpi.overdue}
+            </div>
+          </Card>
+        </div>
+
+        {/* TABS */}
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {tabBtn("Transactions")}
+          {tabBtn("Views")}
+          {tabBtn("Reports")}
+          {tabBtn("Calendar")}
+        </div>
+
+        {/* TRANSACTIONS */}
+        {tab === "Transactions" ? (
+          <div className="mt-4 grid gap-4">
+            <Card
+              title="Filters"
+              subtitle="Saved in current view"
+              right={
+                <div className="flex flex-wrap items-center gap-2">
+                  <Btn variant="outline" onClick={() => updateActiveView({ status: "Overdue" })}>
+                    Show overdue
+                  </Btn>
+                  <Btn variant="outline" onClick={() => updateActiveView({ status: "All" })}>
+                    Clear status
+                  </Btn>
+                  <Btn variant="outline" onClick={() => setOpenCardFields(true)}>
+                    Customize cards
+                  </Btn>
+                </div>
+              }
+            >
+              <div className="grid gap-3 md:grid-cols-12">
+                <div className="md:col-span-4">
+                  <Input value={activeView.q} onChange={(v) => updateActiveView({ q: v })} placeholder="Search..." />
+                </div>
+                <div className="md:col-span-2">
                   <Select
                     value={activeView.type}
                     onChange={(v) => updateActiveView({ type: v as any })}
                     options={[{ value: "All", label: "Type: All" }, ...TX_TYPES.map((t) => ({ value: t, label: t }))]}
                   />
+                </div>
+                <div className="md:col-span-2">
                   <Select
                     value={activeView.status}
                     onChange={(v) => updateActiveView({ status: v as any })}
-                    options={[
-                      { value: "All", label: "Status: All" },
-                      ...TX_STATUSES.map((s) => ({ value: s, label: s })),
-                    ]}
+                    options={[{ value: "All", label: "Status: All" }, ...TX_STATUSES.map((s) => ({ value: s, label: s }))]}
                   />
                 </div>
-                <Select
-                  value={activeView.category}
-                  onChange={(v) => updateActiveView({ category: v as any })}
-                  options={[{ value: "All", label: "Category: All" }, ...TAGS.map((c) => ({ value: c, label: c }))]}
-                />
-                <Select
-                  value={activeView.eventType}
-                  onChange={(v) => updateActiveView({ eventType: v as any })}
-                  options={[
-                    { value: "All", label: "Event: All" },
-                    ...EVENT_TYPES.map((c) => ({ value: c, label: c })),
-                  ]}
-                />
-                <div className="grid grid-cols-2 gap-2">
+                <div className="md:col-span-2">
+                  <Select
+                    value={activeView.category}
+                    onChange={(v) => updateActiveView({ category: v as any })}
+                    options={[{ value: "All", label: "Category: All" }, ...TAGS.map((c) => ({ value: c, label: c }))]}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <Select
+                    value={activeView.eventType}
+                    onChange={(v) => updateActiveView({ eventType: v as any })}
+                    options={[{ value: "All", label: "Event: All" }, ...EVENT_TYPES.map((c) => ({ value: c, label: c }))]}
+                  />
+                </div>
+
+                <div className="md:col-span-3">
                   <Input value={activeView.from} onChange={(v) => updateActiveView({ from: v })} type="date" />
+                </div>
+                <div className="md:col-span-3">
                   <Input value={activeView.to} onChange={(v) => updateActiveView({ to: v })} type="date" />
                 </div>
-              </div>
-            </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-              <div className="text-sm font-semibold">Sort & Style</div>
-              <div className="mt-3 grid gap-2">
-                <div className="grid grid-cols-2 gap-2">
+                <div className="md:col-span-3">
                   <Select
                     value={activeView.sortKey}
                     onChange={(v) => updateActiveView({ sortKey: v as SortKey })}
@@ -1520,6 +1419,8 @@ export default function FinancePage() {
                       { value: "title", label: "Sort: Title" },
                     ]}
                   />
+                </div>
+                <div className="md:col-span-3">
                   <Select
                     value={activeView.sortDir}
                     onChange={(v) => updateActiveView({ sortDir: v as SortDir })}
@@ -1529,291 +1430,69 @@ export default function FinancePage() {
                     ]}
                   />
                 </div>
+              </div>
 
-                <div className="grid grid-cols-2 gap-2">
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <Pill>View: {activeView.name}</Pill>
+                <Pill>Layout: {activeView.layout}</Pill>
+                <Pill>Rows: {filtered.length}</Pill>
+              </div>
+            </Card>
+
+            <Card
+              title="Transactions"
+              subtitle="Black hover • CEO edit • Click Edit to update"
+              right={
+                <div className="flex items-center gap-2">
                   <Select
                     value={activeView.layout}
                     onChange={(v) => updateActiveView({ layout: v as Layout })}
-                    options={["Gallery", "Table", "Calendar", "Reports"].map((x) => ({ value: x, label: `Layout: ${x}` }))}
-                  />
-                  <Select
-                    value={activeView.colorBy}
-                    onChange={(v) => updateActiveView({ colorBy: v as ColorBy })}
-                    options={[
-                      { value: "None", label: "Color: None" },
-                      { value: "Status", label: "Color: Status" },
-                      { value: "Category", label: "Color: Category" },
-                      { value: "Type", label: "Color: Type" },
-                    ]}
+                    options={["Table", "Gallery", "Calendar", "Reports"].map((x) => ({ value: x, label: `Layout: ${x}` }))}
                   />
                 </div>
-
-                <div className="text-xs text-white/55">
-                  Rows: <b className="text-white/80">{filtered.length}</b>
-                </div>
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        {/* Sidebar (mobile drawer) */}
-        <div className="md:hidden">
-          <Btn variant="outline" onClick={() => setSidebarOpen((s) => !s)} className="w-full">
-            {sidebarOpen ? "Close menu" : "Open menu"}
-          </Btn>
-        </div>
-
-        {sidebarOpen ? (
-          <div className="md:hidden fixed inset-0 z-40 bg-black/70">
-            <div className="absolute left-0 top-0 h-full w-[88%] max-w-[360px] border-r border-white/10 bg-[#0b0b0b] p-3 overflow-auto">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold">Finance Menu</div>
-                <button
-                  onClick={() => setSidebarOpen(false)}
-                  className="rounded-lg border border-white/15 bg-white/5 px-2 py-1 text-xs text-white/80 hover:bg-black"
-                >
-                  Close
-                </button>
-              </div>
-
-              <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold">Views</div>
-                  <Btn variant="ghost" onClick={() => setOpenViewsModal(true)}>
-                    Manage
-                  </Btn>
-                </div>
-                <div className="mt-3 grid gap-2">
-                  {views.map((v) => (
-                    <ViewItem key={v.id} v={v} />
-                  ))}
-                </div>
-                <div className="mt-3 flex gap-2">
-                  <Btn variant="outline" onClick={createViewFromActive}>
-                    Duplicate
-                  </Btn>
-                  <Btn variant="outline" onClick={() => setOpenCardFields(true)}>
-                    Cards
-                  </Btn>
-                </div>
-              </div>
-
-              <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
-                <div className="text-sm font-semibold">Filters</div>
-                <div className="mt-3 grid gap-2">
-                  <Input value={activeView.q} onChange={(v) => updateActiveView({ q: v })} placeholder="Search..." />
-                  <div className="grid grid-cols-2 gap-2">
-                    <Select
-                      value={activeView.type}
-                      onChange={(v) => updateActiveView({ type: v as any })}
-                      options={[{ value: "All", label: "Type: All" }, ...TX_TYPES.map((t) => ({ value: t, label: t }))]}
-                    />
-                    <Select
-                      value={activeView.status}
-                      onChange={(v) => updateActiveView({ status: v as any })}
-                      options={[
-                        { value: "All", label: "Status: All" },
-                        ...TX_STATUSES.map((s) => ({ value: s, label: s })),
-                      ]}
-                    />
-                  </div>
-                  <Select
-                    value={activeView.category}
-                    onChange={(v) => updateActiveView({ category: v as any })}
-                    options={[{ value: "All", label: "Category: All" }, ...TAGS.map((c) => ({ value: c, label: c }))]}
-                  />
-                  <Select
-                    value={activeView.eventType}
-                    onChange={(v) => updateActiveView({ eventType: v as any })}
-                    options={[
-                      { value: "All", label: "Event: All" },
-                      ...EVENT_TYPES.map((c) => ({ value: c, label: c })),
-                    ]}
-                  />
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input value={activeView.from} onChange={(v) => updateActiveView({ from: v })} type="date" />
-                    <Input value={activeView.to} onChange={(v) => updateActiveView({ to: v })} type="date" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
-                <div className="text-sm font-semibold">Sort & Style</div>
-                <div className="mt-3 grid gap-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    <Select
-                      value={activeView.sortKey}
-                      onChange={(v) => updateActiveView({ sortKey: v as SortKey })}
-                      options={[
-                        { value: "date", label: "Date" },
-                        { value: "amount", label: "Amount" },
-                        { value: "status", label: "Status" },
-                        { value: "category", label: "Category" },
-                        { value: "title", label: "Title" },
-                      ]}
-                    />
-                    <Select
-                      value={activeView.sortDir}
-                      onChange={(v) => updateActiveView({ sortDir: v as SortDir })}
-                      options={[
-                        { value: "desc", label: "Desc" },
-                        { value: "asc", label: "Asc" },
-                      ]}
-                    />
+              }
+            >
+              {/* TABLE */}
+              {activeView.layout === "Table" ? (
+                <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/30">
+                  <div className="grid grid-cols-12 gap-2 border-b border-white/10 bg-black/60 px-3 py-2 text-xs text-white/60">
+                    <div className="col-span-4">Title</div>
+                    <div className="col-span-2">Date</div>
+                    <div className="col-span-2">Status</div>
+                    <div className="col-span-2">Category</div>
+                    <div className="col-span-2 text-right">Amount</div>
                   </div>
 
-                  <Select
-                    value={activeView.layout}
-                    onChange={(v) => updateActiveView({ layout: v as Layout })}
-                    options={["Gallery", "Table", "Calendar", "Reports"].map((x) => ({ value: x, label: `Layout: ${x}` }))}
-                  />
-                  <Select
-                    value={activeView.colorBy}
-                    onChange={(v) => updateActiveView({ colorBy: v as ColorBy })}
-                    options={[
-                      { value: "None", label: "Color: None" },
-                      { value: "Status", label: "Color: Status" },
-                      { value: "Category", label: "Color: Category" },
-                      { value: "Type", label: "Color: Type" },
-                    ]}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {/* Main content */}
-        <main className="min-w-0">
-          {/* Toolbar row (Airtable-like) */}
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="text-xs text-white/60">Current view</div>
-                <div className="truncate text-base font-semibold">{activeView.name}</div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <Btn variant="outline" onClick={() => setOpenViewsModal(true)}>
-                  Views
-                </Btn>
-                <Btn variant="outline" onClick={() => setOpenCardFields(true)}>
-                  Customize cards
-                </Btn>
-                <Btn variant="outline" onClick={() => updateActiveView({ status: "Overdue" })}>
-                  Show overdue
-                </Btn>
-                <Btn variant="outline" onClick={() => updateActiveView({ status: "All" })}>
-                  Clear status
-                </Btn>
-              </div>
-            </div>
-          </div>
-
-          {/* View content */}
-          <div className="mt-4">
-            {/* GALLERY */}
-            {activeView.layout === "Gallery" ? (
-              filtered.length === 0 ? (
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-10 text-sm text-white/60">
-                  No rows found. Click <b className="text-white/80">+ Add</b> to create a transaction.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {filtered.map((t) => {
-                    const tone =
-                      activeView.colorBy === "Type"
-                        ? t.type
-                        : activeView.colorBy === "Category"
-                        ? t.category
-                        : activeView.colorBy === "Status"
-                        ? t.status
-                        : "Eventura";
-
-                    const statusTone = toneForStatus(t.status);
-                    const typeTone = toneForType(t.type);
-                    const catTone = toneForCategory(t.category);
-                    const clientVendor = t.type === "Income" ? t.clientName : t.vendorName;
-
-                    return (
-                      <div
-                        key={t.id}
-                        className="group overflow-hidden rounded-2xl border border-white/10 bg-white/5 hover:bg-black/40 transition"
-                      >
-                        <div className="p-3">
-                          <Cover seed={String(t.id)} tone={tone} />
-                          <div className="mt-3 flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="truncate text-base font-semibold text-white">{t.title}</div>
-                              <div className="mt-1 flex flex-wrap gap-2">
-                                <Pill tone={typeTone}>{t.type}</Pill>
-                                <Pill tone={statusTone}>{t.status}</Pill>
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <div
-                                className={cls(
-                                  "text-sm font-semibold",
-                                  t.type === "Income" ? "text-emerald-200" : "text-rose-200"
-                                )}
-                              >
-                                {money(t.amount, t.currency)}
-                              </div>
-                              <div className="mt-1 text-xs text-white/55">{t.date}</div>
+                  {filtered.length === 0 ? (
+                    <div className="p-6 text-sm text-white/60">No rows found. Click + Add to create a transaction.</div>
+                  ) : (
+                    <div className="divide-y divide-white/10">
+                      {filtered.map((t) => (
+                        <div key={t.id} className="grid grid-cols-12 gap-2 px-3 py-3 hover:bg-black/50 transition">
+                          <div className="col-span-4">
+                            <div className="text-sm font-semibold">{t.title}</div>
+                            <div className="mt-1 text-xs text-white/50">
+                              {t.eventTitle || t.clientName || t.vendorName || "—"}
                             </div>
                           </div>
-
-                          <div className="mt-3 grid gap-2 rounded-2xl border border-white/10 bg-black/30 p-3 text-xs text-white/70">
-                            {activeView.visibleFields.includes("category") ? (
-                              <div className="flex items-center justify-between gap-3">
-                                <span className="text-white/55">Category</span>
-                                <Pill tone={catTone}>{t.category}</Pill>
-                              </div>
-                            ) : null}
-
-                            {activeView.visibleFields.includes("eventType") ? (
-                              <div className="flex items-center justify-between gap-3">
-                                <span className="text-white/55">Event</span>
-                                <span className="text-white/85">{t.eventType}</span>
-                              </div>
-                            ) : null}
-
-                            {activeView.visibleFields.includes("clientVendor") ? (
-                              <div className="flex items-center justify-between gap-3">
-                                <span className="text-white/55">{t.type === "Income" ? "Client" : "Vendor"}</span>
-                                <span className="truncate text-white/85">{clientVendor || "—"}</span>
-                              </div>
-                            ) : null}
-
-                            {activeView.visibleFields.includes("eventTitle") ? (
-                              <div className="flex items-center justify-between gap-3">
-                                <span className="text-white/55">Event title</span>
-                                <span className="truncate text-white/85">{t.eventTitle || "—"}</span>
-                              </div>
-                            ) : null}
-
-                            {activeView.visibleFields.includes("invoice") ? (
-                              <div className="flex items-center justify-between gap-3">
-                                <span className="text-white/55">Invoice</span>
-                                <span className="text-white/85">{t.invoiceNo || "—"}</span>
-                              </div>
-                            ) : null}
-
-                            {activeView.visibleFields.includes("dueDate") ? (
-                              <div className="flex items-center justify-between gap-3">
-                                <span className="text-white/55">Due</span>
-                                <span className={cls("text-white/85", t.status === "Overdue" ? "text-rose-200" : "")}>
-                                  {t.dueDate || "—"}
-                                </span>
-                              </div>
-                            ) : null}
+                          <div className="col-span-2">
+                            <div className="text-sm">{t.date}</div>
+                            <div className="mt-1 text-xs text-white/50">{t.dueDate ? `Due ${t.dueDate}` : "—"}</div>
                           </div>
-
-                          <div className="mt-3 flex items-center justify-between gap-2">
-                            <div className="text-xs text-white/45">
-                              Updated {new Date(t.updatedAt).toLocaleString()}
+                          <div className="col-span-2">
+                            <div className="flex flex-wrap gap-2">
+                              <Pill tone={toneForType(t.type)}>{t.type}</Pill>
+                              <Pill tone={toneForStatus(t.status)}>{t.status}</Pill>
                             </div>
-                            <div className="flex gap-2">
+                          </div>
+                          <div className="col-span-2">
+                            <Pill tone={toneForCategory(t.category)}>{t.category}</Pill>
+                          </div>
+                          <div className="col-span-2 text-right">
+                            <div className={cls("text-sm font-semibold", t.type === "Income" ? "text-emerald-200" : "text-rose-200")}>
+                              {money(t.amount, t.currency)}
+                            </div>
+                            <div className="mt-2 flex justify-end gap-2">
                               <Btn variant="outline" onClick={() => openEditTx(t)} disabled={!canEdit}>
                                 Edit
                               </Btn>
@@ -1823,54 +1502,56 @@ export default function FinancePage() {
                             </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )
-            ) : null}
+              ) : null}
 
-            {/* TABLE */}
-            {activeView.layout === "Table" ? (
-              <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
-                <div className="grid grid-cols-12 gap-2 border-b border-white/10 bg-black/60 px-3 py-2 text-xs text-white/60">
-                  <div className="col-span-4">Title</div>
-                  <div className="col-span-2">Date</div>
-                  <div className="col-span-2">Status</div>
-                  <div className="col-span-2">Category</div>
-                  <div className="col-span-2 text-right">Amount</div>
-                </div>
-
-                {filtered.length === 0 ? (
-                  <div className="p-6 text-sm text-white/60">No rows found.</div>
+              {/* GALLERY */}
+              {activeView.layout === "Gallery" ? (
+                filtered.length === 0 ? (
+                  <div className="rounded-2xl border border-white/10 bg-black/30 p-8 text-sm text-white/60">
+                    No rows found. Click + Add to create a transaction.
+                  </div>
                 ) : (
-                  <div className="divide-y divide-white/10">
-                    {filtered.map((t) => (
-                      <div key={t.id} className="grid grid-cols-12 gap-2 px-3 py-3 hover:bg-black/50 transition">
-                        <div className="col-span-4">
-                          <div className="text-sm font-semibold">{t.title}</div>
-                          <div className="mt-1 text-xs text-white/50">
-                            {t.eventTitle || t.clientName || t.vendorName || "—"}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {filtered.map((t) => {
+                      const clientVendor = t.type === "Income" ? t.clientName : t.vendorName;
+                      return (
+                        <div key={t.id} className="rounded-2xl border border-white/10 bg-black/30 p-4 hover:bg-black/50 transition">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="truncate text-base font-semibold">{t.title}</div>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                <Pill tone={toneForType(t.type)}>{t.type}</Pill>
+                                <Pill tone={toneForStatus(t.status)}>{t.status}</Pill>
+                                <Pill tone={toneForCategory(t.category)}>{t.category}</Pill>
+                              </div>
+                              <div className="mt-3 grid gap-1 text-xs text-white/65">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-white/50">Date</span>
+                                  <span>{t.date}</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-white/50">Event</span>
+                                  <span>{t.eventType}</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-white/50">{t.type === "Income" ? "Client" : "Vendor"}</span>
+                                  <span className="truncate max-w-[180px]">{clientVendor || "—"}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className={cls("text-sm font-semibold", t.type === "Income" ? "text-emerald-200" : "text-rose-200")}>
+                                {money(t.amount, t.currency)}
+                              </div>
+                              <div className="mt-1 text-xs text-white/55">{t.dueDate ? `Due ${t.dueDate}` : ""}</div>
+                            </div>
                           </div>
-                        </div>
-                        <div className="col-span-2">
-                          <div className="text-sm">{t.date}</div>
-                          <div className="mt-1 text-xs text-white/50">{t.dueDate ? `Due ${t.dueDate}` : "—"}</div>
-                        </div>
-                        <div className="col-span-2">
-                          <div className="flex flex-wrap gap-2">
-                            <Pill tone={toneForType(t.type)}>{t.type}</Pill>
-                            <Pill tone={toneForStatus(t.status)}>{t.status}</Pill>
-                          </div>
-                        </div>
-                        <div className="col-span-2">
-                          <Pill tone={toneForCategory(t.category)}>{t.category}</Pill>
-                        </div>
-                        <div className="col-span-2 text-right">
-                          <div className={cls("text-sm font-semibold", t.type === "Income" ? "text-emerald-200" : "text-rose-200")}>
-                            {money(t.amount, t.currency)}
-                          </div>
-                          <div className="mt-2 flex justify-end gap-2">
+
+                          <div className="mt-3 flex justify-end gap-2">
                             <Btn variant="outline" onClick={() => openEditTx(t)} disabled={!canEdit}>
                               Edit
                             </Btn>
@@ -1879,17 +1560,243 @@ export default function FinancePage() {
                             </Btn>
                           </div>
                         </div>
+                      );
+                    })}
+                  </div>
+                )
+              ) : null}
+
+              {/* REPORTS + CALENDAR switch tabs automatically */}
+              {activeView.layout === "Reports" ? (
+                <div className="mt-0">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-semibold">By Category</div>
+                        <Pill>Top 12</Pill>
+                      </div>
+                      <div className="mt-3 grid gap-2">
+                        {reports.cats.slice(0, 12).map((c) => (
+                          <div key={c.k} className="rounded-xl border border-white/10 bg-black/40 p-3">
+                            <div className="flex items-center justify-between">
+                              <div className="text-sm">{c.k}</div>
+                              <Pill tone={c.net >= 0 ? "good" : "bad"}>{money(c.net, "INR")}</Pill>
+                            </div>
+                            <div className="mt-1 text-xs text-white/55">
+                              Income {money(c.inc, "INR")} • Expense {money(c.exp, "INR")}
+                            </div>
+                          </div>
+                        ))}
+                        {reports.cats.length === 0 ? <div className="text-sm text-white/60">No data.</div> : null}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-semibold">Status Count</div>
+                        <Pill>All rows</Pill>
+                      </div>
+                      <div className="mt-3 grid gap-2">
+                        {TX_STATUSES.map((s) => (
+                          <div key={s} className="rounded-xl border border-white/10 bg-black/40 p-3 flex items-center justify-between">
+                            <Pill tone={toneForStatus(s)}>{s}</Pill>
+                            <div className="text-sm font-semibold">{reports.byStatus.get(s) || 0}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {activeView.layout === "Calendar" ? (
+                calendar.size === 0 ? (
+                  <div className="rounded-2xl border border-white/10 bg-black/30 p-8 text-sm text-white/60">
+                    No rows in this date range.
+                  </div>
+                ) : (
+                  <div className="grid gap-3">
+                    {Array.from(calendar.entries())
+                      .sort((a, b) => a[0].localeCompare(b[0]))
+                      .map(([date, items]) => (
+                        <div key={date} className="rounded-2xl border border-white/10 bg-black/30 p-4">
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm font-semibold">{date}</div>
+                            <Pill>{items.length} item(s)</Pill>
+                          </div>
+                          <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                            {items.map((t) => (
+                              <div key={t.id} className="rounded-2xl border border-white/10 bg-black/40 p-3 hover:bg-black/60 transition">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <div className="truncate text-sm font-semibold">{t.title}</div>
+                                    <div className="mt-1 flex flex-wrap gap-2">
+                                      <Pill tone={toneForType(t.type)}>{t.type}</Pill>
+                                      <Pill tone={toneForStatus(t.status)}>{t.status}</Pill>
+                                      <Pill tone={toneForCategory(t.category)}>{t.category}</Pill>
+                                    </div>
+                                  </div>
+                                  <div className={cls("text-sm font-semibold", t.type === "Income" ? "text-emerald-200" : "text-rose-200")}>
+                                    {money(t.amount, t.currency)}
+                                  </div>
+                                </div>
+                                <div className="mt-2 flex justify-end gap-2">
+                                  <Btn variant="outline" onClick={() => openEditTx(t)} disabled={!canEdit}>
+                                    Edit
+                                  </Btn>
+                                  <Btn variant="danger" onClick={() => deleteTx(t.id)} disabled={!canEdit}>
+                                    Delete
+                                  </Btn>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )
+              ) : null}
+            </Card>
+          </div>
+        ) : null}
+
+        {/* VIEWS (HR-style section) */}
+        {tab === "Views" ? (
+          <div className="mt-4 grid gap-4">
+            <Card
+              title="Views"
+              subtitle="Your filters + layout presets (auto-saved)"
+              right={
+                <div className="flex items-center gap-2">
+                  <Btn variant="outline" onClick={createViewFromActive}>
+                    Duplicate view
+                  </Btn>
+                  <Btn variant="danger" onClick={deleteActiveView}>
+                    Delete view
+                  </Btn>
+                </div>
+              }
+            >
+              <div className="grid gap-3 md:grid-cols-12">
+                <div className="md:col-span-4">
+                  <div className="text-xs text-white/60">Active View Name</div>
+                  <div className="mt-2">
+                    <Input value={activeView.name} onChange={renameActiveView} />
+                  </div>
+                </div>
+
+                <div className="md:col-span-4">
+                  <div className="text-xs text-white/60">Layout</div>
+                  <div className="mt-2">
+                    <Select
+                      value={activeView.layout}
+                      onChange={(v) => updateActiveView({ layout: v as Layout })}
+                      options={["Table", "Gallery", "Calendar", "Reports"].map((x) => ({ value: x, label: x }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="md:col-span-4">
+                  <div className="text-xs text-white/60">Color By</div>
+                  <div className="mt-2">
+                    <Select
+                      value={activeView.colorBy}
+                      onChange={(v) => updateActiveView({ colorBy: v as ColorBy })}
+                      options={[
+                        { value: "None", label: "None" },
+                        { value: "Status", label: "Status" },
+                        { value: "Category", label: "Category" },
+                        { value: "Type", label: "Type" },
+                      ]}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-2">
+                {views.map((v) => {
+                  const isActive = v.id === activeViewId;
+                  return (
+                    <button
+                      key={v.id}
+                      onClick={() => setActiveViewId(v.id)}
+                      className={cls(
+                        "w-full rounded-2xl border px-4 py-3 text-left transition",
+                        isActive ? "border-white/25 bg-white/10" : "border-white/10 bg-black/30 hover:bg-black/50 hover:border-white/20"
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-semibold">{v.name}</div>
+                        <Pill>{v.layout}</Pill>
+                      </div>
+                      <div className="mt-1 text-xs text-white/55">
+                        Filter: {v.type}/{v.status}/{v.category} • Sort: {v.sortKey} {v.sortDir} • Color: {v.colorBy}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-4 flex justify-end">
+                <Btn variant="outline" onClick={() => setOpenCardFields(true)}>
+                  Customize Gallery fields
+                </Btn>
+              </div>
+            </Card>
+          </div>
+        ) : null}
+
+        {/* REPORTS (HR-style) */}
+        {tab === "Reports" ? (
+          <div className="mt-4 grid gap-4">
+            <Card title="Reports" subtitle="Based on current view filters. (Deploy safe: local only)">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold">By Category</div>
+                    <Pill>Top 12</Pill>
+                  </div>
+                  <div className="mt-3 grid gap-2">
+                    {reports.cats.slice(0, 12).map((c) => (
+                      <div key={c.k} className="rounded-xl border border-white/10 bg-black/40 p-3">
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm">{c.k}</div>
+                          <Pill tone={c.net >= 0 ? "good" : "bad"}>{money(c.net, "INR")}</Pill>
+                        </div>
+                        <div className="mt-1 text-xs text-white/55">
+                          Income {money(c.inc, "INR")} • Expense {money(c.exp, "INR")}
+                        </div>
+                      </div>
+                    ))}
+                    {reports.cats.length === 0 ? <div className="text-sm text-white/60">No data.</div> : null}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold">Status Count</div>
+                    <Pill>All rows</Pill>
+                  </div>
+                  <div className="mt-3 grid gap-2">
+                    {TX_STATUSES.map((s) => (
+                      <div key={s} className="rounded-xl border border-white/10 bg-black/40 p-3 flex items-center justify-between">
+                        <Pill tone={toneForStatus(s)}>{s}</Pill>
+                        <div className="text-sm font-semibold">{reports.byStatus.get(s) || 0}</div>
                       </div>
                     ))}
                   </div>
-                )}
+                </div>
               </div>
-            ) : null}
+            </Card>
+          </div>
+        ) : null}
 
-            {/* CALENDAR */}
-            {activeView.layout === "Calendar" ? (
-              calendar.size === 0 ? (
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-10 text-sm text-white/60">
+        {/* CALENDAR (HR-style) */}
+        {tab === "Calendar" ? (
+          <div className="mt-4 grid gap-4">
+            <Card title="Calendar" subtitle="Grouped by date (based on filters)">
+              {calendar.size === 0 ? (
+                <div className="rounded-2xl border border-white/10 bg-black/30 p-8 text-sm text-white/60">
                   No rows in this date range.
                 </div>
               ) : (
@@ -1897,14 +1804,14 @@ export default function FinancePage() {
                   {Array.from(calendar.entries())
                     .sort((a, b) => a[0].localeCompare(b[0]))
                     .map(([date, items]) => (
-                      <div key={date} className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                      <div key={date} className="rounded-2xl border border-white/10 bg-black/30 p-4">
                         <div className="flex items-center justify-between">
                           <div className="text-sm font-semibold">{date}</div>
                           <Pill>{items.length} item(s)</Pill>
                         </div>
                         <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
                           {items.map((t) => (
-                            <div key={t.id} className="rounded-2xl border border-white/10 bg-black/30 p-3 hover:bg-black/50 transition">
+                            <div key={t.id} className="rounded-2xl border border-white/10 bg-black/40 p-3 hover:bg-black/60 transition">
                               <div className="flex items-start justify-between gap-2">
                                 <div className="min-w-0">
                                   <div className="truncate text-sm font-semibold">{t.title}</div>
@@ -1932,76 +1839,16 @@ export default function FinancePage() {
                       </div>
                     ))}
                 </div>
-              )
-            ) : null}
-
-            {/* REPORTS */}
-            {activeView.layout === "Reports" ? (
-              <div className="grid gap-4">
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                  <div className="text-sm font-semibold">Reports</div>
-                  <div className="mt-1 text-xs text-white/55">Based on current view filters.</div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm font-semibold">By Category</div>
-                      <Pill>Top 12</Pill>
-                    </div>
-                    <div className="mt-3 grid gap-2">
-                      {reports.cats.slice(0, 12).map((c) => (
-                        <div key={c.k} className="rounded-xl border border-white/10 bg-black/30 p-3">
-                          <div className="flex items-center justify-between">
-                            <div className="text-sm">{c.k}</div>
-                            <Pill tone={c.net >= 0 ? "good" : "bad"}>{money(c.net, "INR")}</Pill>
-                          </div>
-                          <div className="mt-1 text-xs text-white/55">
-                            Income {money(c.inc, "INR")} • Expense {money(c.exp, "INR")}
-                          </div>
-                        </div>
-                      ))}
-                      {reports.cats.length === 0 ? <div className="text-sm text-white/60">No data.</div> : null}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm font-semibold">Status Count</div>
-                      <Pill>All rows</Pill>
-                    </div>
-                    <div className="mt-3 grid gap-2">
-                      {TX_STATUSES.map((s) => (
-                        <div key={s} className="rounded-xl border border-white/10 bg-black/30 p-3 flex items-center justify-between">
-                          <Pill tone={toneForStatus(s)}>{s}</Pill>
-                          <div className="text-sm font-semibold">{reports.byStatus.get(s) || 0}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : null}
+              )}
+            </Card>
           </div>
-        </main>
+        ) : null}
       </div>
-
-      {/* Floating add button */}
-      <button
-        onClick={openNewTx}
-        disabled={!canEdit}
-        className={cls(
-          "fixed bottom-6 right-6 z-40 rounded-full border border-white/15 bg-white/10 px-5 py-4 text-sm font-semibold text-white shadow-2xl hover:bg-black hover:border-white/25 transition",
-          !canEdit && "opacity-50 pointer-events-none"
-        )}
-      >
-        +
-      </button>
 
       {/* ===== Cards fields modal ===== */}
       <Modal
         open={openCardFields}
-        title="Customize cards"
+        title="Customize Gallery fields"
         onClose={() => setOpenCardFields(false)}
         maxW="max-w-2xl"
         footer={
@@ -2048,63 +1895,6 @@ export default function FinancePage() {
                 </label>
               );
             })}
-          </div>
-        </div>
-      </Modal>
-
-      {/* ===== Views modal ===== */}
-      <Modal
-        open={openViewsModal}
-        title="Manage Views"
-        onClose={() => setOpenViewsModal(false)}
-        maxW="max-w-3xl"
-        footer={
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-white/55">Views are saved automatically.</div>
-            <div className="flex gap-2">
-              <Btn variant="outline" onClick={createViewFromActive}>
-                Duplicate view
-              </Btn>
-              <Btn variant="danger" onClick={deleteActiveView}>
-                Delete view
-              </Btn>
-              <Btn onClick={() => setOpenViewsModal(false)}>Done</Btn>
-            </div>
-          </div>
-        }
-      >
-        <div className="grid gap-3">
-          <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-            <div className="text-xs text-white/60">Active View Name</div>
-            <div className="mt-2">
-              <Input value={activeView.name} onChange={renameActiveView} />
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-            <div className="text-sm font-semibold">All Views</div>
-            <div className="mt-3 grid gap-2">
-              {views.map((v) => (
-                <button
-                  key={v.id}
-                  onClick={() => setActiveViewId(v.id)}
-                  className={cls(
-                    "w-full rounded-2xl border px-4 py-3 text-left transition",
-                    v.id === activeViewId
-                      ? "border-white/25 bg-white/10"
-                      : "border-white/10 bg-black/30 hover:bg-black/50 hover:border-white/20"
-                  )}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-semibold">{v.name}</div>
-                    <Pill>{v.layout}</Pill>
-                  </div>
-                  <div className="mt-1 text-xs text-white/55">
-                    Filter: {v.type}/{v.status}/{v.category} • Sort: {v.sortKey} {v.sortDir} • Color: {v.colorBy}
-                  </div>
-                </button>
-              ))}
-            </div>
           </div>
         </div>
       </Modal>
@@ -2225,11 +2015,21 @@ export default function FinancePage() {
               </div>
               <div>
                 <div className="text-xs text-white/60">Type</div>
-                <Select value={editing.type} onChange={(v) => setEditing({ ...editing, type: asTxType(v) })} options={TX_TYPES.map((x) => ({ value: x, label: x }))} disabled={!canEdit} />
+                <Select
+                  value={editing.type}
+                  onChange={(v) => setEditing({ ...editing, type: asTxType(v) })}
+                  options={TX_TYPES.map((x) => ({ value: x, label: x }))}
+                  disabled={!canEdit}
+                />
               </div>
               <div>
                 <div className="text-xs text-white/60">Status</div>
-                <Select value={editing.status} onChange={(v) => setEditing({ ...editing, status: asTxStatus(v) })} options={TX_STATUSES.map((x) => ({ value: x, label: x }))} disabled={!canEdit} />
+                <Select
+                  value={editing.status}
+                  onChange={(v) => setEditing({ ...editing, status: asTxStatus(v) })}
+                  options={TX_STATUSES.map((x) => ({ value: x, label: x }))}
+                  disabled={!canEdit}
+                />
               </div>
             </div>
 
@@ -2240,15 +2040,30 @@ export default function FinancePage() {
               </div>
               <div>
                 <div className="text-xs text-white/60">Currency</div>
-                <Select value={editing.currency} onChange={(v) => setEditing({ ...editing, currency: asCurrency(v) })} options={CURRENCIES.map((x) => ({ value: x, label: x }))} disabled={!canEdit} />
+                <Select
+                  value={editing.currency}
+                  onChange={(v) => setEditing({ ...editing, currency: asCurrency(v) })}
+                  options={CURRENCIES.map((x) => ({ value: x, label: x }))}
+                  disabled={!canEdit}
+                />
               </div>
               <div>
                 <div className="text-xs text-white/60">Category</div>
-                <Select value={editing.category} onChange={(v) => setEditing({ ...editing, category: asTag(v) })} options={TAGS.map((x) => ({ value: x, label: x }))} disabled={!canEdit} />
+                <Select
+                  value={editing.category}
+                  onChange={(v) => setEditing({ ...editing, category: asTag(v) })}
+                  options={TAGS.map((x) => ({ value: x, label: x }))}
+                  disabled={!canEdit}
+                />
               </div>
               <div>
                 <div className="text-xs text-white/60">Payment Method</div>
-                <Select value={editing.paymentMethod} onChange={(v) => setEditing({ ...editing, paymentMethod: asMethod(v) })} options={METHODS.map((x) => ({ value: x, label: x }))} disabled={!canEdit} />
+                <Select
+                  value={editing.paymentMethod}
+                  onChange={(v) => setEditing({ ...editing, paymentMethod: asMethod(v) })}
+                  options={METHODS.map((x) => ({ value: x, label: x }))}
+                  disabled={!canEdit}
+                />
               </div>
             </div>
 
@@ -2257,9 +2072,7 @@ export default function FinancePage() {
                 <div className="text-xs text-white/60">{editing.type === "Income" ? "Client Name" : "Vendor Name"}</div>
                 <Input
                   value={editing.type === "Income" ? (editing.clientName || "") : (editing.vendorName || "")}
-                  onChange={(v) =>
-                    setEditing(editing.type === "Income" ? { ...editing, clientName: v } : { ...editing, vendorName: v })
-                  }
+                  onChange={(v) => setEditing(editing.type === "Income" ? { ...editing, clientName: v } : { ...editing, vendorName: v })}
                   disabled={!canEdit}
                 />
               </div>
@@ -2288,20 +2101,9 @@ export default function FinancePage() {
               <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
                 <div className="text-xs text-white/60">GST</div>
                 <div className="mt-2 grid gap-2">
-                  <Input
-                    value={String(editing.gstRate ?? 0)}
-                    onChange={(v) => setEditing({ ...editing, gstRate: clamp(parseNum(v, 0), 0, 28) })}
-                    type="number"
-                    disabled={!canEdit}
-                    placeholder="GST rate %"
-                  />
+                  <Input value={String(editing.gstRate ?? 0)} onChange={(v) => setEditing({ ...editing, gstRate: clamp(parseNum(v, 0), 0, 28) })} type="number" disabled={!canEdit} placeholder="GST rate %" />
                   <label className="flex items-center gap-2 text-xs text-white/65">
-                    <input
-                      type="checkbox"
-                      checked={!!editing.gstIncluded}
-                      onChange={(e) => setEditing({ ...editing, gstIncluded: e.target.checked })}
-                      disabled={!canEdit}
-                    />
+                    <input type="checkbox" checked={!!editing.gstIncluded} onChange={(e) => setEditing({ ...editing, gstIncluded: e.target.checked })} disabled={!canEdit} />
                     GST included in amount
                   </label>
                 </div>
@@ -2310,13 +2112,7 @@ export default function FinancePage() {
               <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
                 <div className="text-xs text-white/60">TDS</div>
                 <div className="mt-2">
-                  <Input
-                    value={String(editing.tdsRate ?? 0)}
-                    onChange={(v) => setEditing({ ...editing, tdsRate: clamp(parseNum(v, 0), 0, 20) })}
-                    type="number"
-                    disabled={!canEdit}
-                    placeholder="TDS rate %"
-                  />
+                  <Input value={String(editing.tdsRate ?? 0)} onChange={(v) => setEditing({ ...editing, tdsRate: clamp(parseNum(v, 0), 0, 20) })} type="number" disabled={!canEdit} placeholder="TDS rate %" />
                 </div>
               </div>
 
