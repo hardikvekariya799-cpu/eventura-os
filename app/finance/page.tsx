@@ -5,13 +5,12 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 /* =========================================================
-  EVENTURA OS — FINANCE (deploy-safe, no external libs)
-  - Full OS layout: top bar + left nav + signed-in panel
-  - Finance Control Center: KPIs, Views, Filters, Search
-  - Layouts: Gallery / Table / Calendar / Reports
-  - Import CSV, Export CSV, Export Excel (.xls)
-  - Add/Edit/Delete transactions
-  - Persist: localStorage
+  EVENTURA OS — FINANCE (Clean Pro Layout, deploy-safe)
+  - OS top bar + compact icon sidebar
+  - Tabs: Overview / Transactions / Calendar / Reports
+  - Sticky quick actions: Add / Import / Export
+  - Black hover + clean spacing + fast access
+  - localStorage persistence
 ========================================================= */
 
 type Role = "CEO" | "Staff";
@@ -32,10 +31,7 @@ type TxCategory =
   | "Refund"
   | "Other";
 
-type Layout = "Gallery" | "Table" | "Calendar" | "Reports";
-type SortKey = "date" | "amount" | "status" | "category" | "title";
-type SortDir = "asc" | "desc";
-type ColorBy = "None" | "Status" | "Category" | "Type";
+type Tab = "Overview" | "Transactions" | "Calendar" | "Reports";
 
 type FinanceTx = {
   id: string;
@@ -63,30 +59,8 @@ type FinanceTx = {
   notes?: string;
 };
 
-type ViewDef = {
-  id: string;
-  name: string;
-  layout: Layout;
-
-  q: string;
-  type: TxType | "All";
-  status: TxStatus | "All";
-  category: TxCategory | "All";
-  currency: Currency | "All";
-
-  from: string; // YYYY-MM-DD or ""
-  to: string; // YYYY-MM-DD or ""
-
-  sortKey: SortKey;
-  sortDir: SortDir;
-
-  colorBy: ColorBy;
-};
-
-const LS_TX = "eventura_fin_tx_v6";
-const LS_VIEWS = "eventura_fin_views_v6";
-const LS_ACTIVE_VIEW = "eventura_fin_active_view_v6";
-const LS_ROLE = "eventura-role"; // "CEO" | "Staff"
+const LS_TX = "eventura_fin_tx_v7";
+const LS_ROLE = "eventura-role";
 const LS_EMAIL = "eventura-email";
 
 const TX_TYPES: TxType[] = ["Income", "Expense"];
@@ -130,6 +104,13 @@ function safeParse<T>(raw: string | null, fallback: T): T {
     return fallback;
   }
 }
+function money(n: number, cur: Currency) {
+  const sign = n < 0 ? "-" : "";
+  const abs = Math.abs(n);
+  const parts = abs.toFixed(2).split(".");
+  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${sign}${cur} ${parts.join(".")}`;
+}
 function escCSV(v: any) {
   const s = String(v ?? "");
   if (/[,"\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
@@ -144,18 +125,8 @@ function downloadText(filename: string, content: string, mime: string) {
   a.click();
   URL.revokeObjectURL(url);
 }
-function money(n: number, cur: Currency) {
-  const sign = n < 0 ? "-" : "";
-  const abs = Math.abs(n);
-  const parts = abs.toFixed(2).split(".");
-  parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  return `${sign}${cur} ${parts.join(".")}`;
-}
-function inRange(ymd: string, from: string, to: string) {
-  if (!from && !to) return true;
-  if (from && ymd < from) return false;
-  if (to && ymd > to) return false;
-  return true;
+function uid(prefix = "tx") {
+  return `${prefix}_${Math.random().toString(36).slice(2, 9)}_${Date.now().toString(36)}`;
 }
 
 function toneForStatus(s: TxStatus) {
@@ -194,12 +165,7 @@ function Pill({
   tone?: "neutral" | "good" | "bad" | "warn" | "muted";
 }) {
   return (
-    <span
-      className={cls(
-        "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px]",
-        pillClass(tone)
-      )}
-    >
+    <span className={cls("inline-flex items-center rounded-full border px-2.5 py-1 text-[11px]", pillClass(tone))}>
       {children}
     </span>
   );
@@ -210,18 +176,15 @@ function Btn({
   onClick,
   variant = "primary",
   disabled,
-  type = "button",
   className,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
   variant?: "primary" | "outline" | "ghost" | "danger";
   disabled?: boolean;
-  type?: "button" | "submit";
   className?: string;
 }) {
-  const base =
-    "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm transition border select-none";
+  const base = "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm transition border select-none";
   const v =
     variant === "primary"
       ? "border-white/15 bg-white/10 text-white hover:bg-black hover:border-white/25"
@@ -232,7 +195,6 @@ function Btn({
           : "border-transparent bg-transparent text-white/80 hover:bg-black hover:text-white";
   return (
     <button
-      type={type}
       onClick={onClick}
       disabled={disabled}
       className={cls(base, v, disabled && "opacity-50 pointer-events-none", className)}
@@ -294,24 +256,17 @@ function Modal({
   children,
   onClose,
   footer,
-  maxW = "max-w-5xl",
 }: {
   open: boolean;
   title: string;
   children: React.ReactNode;
   onClose: () => void;
   footer?: React.ReactNode;
-  maxW?: string;
 }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div
-        className={cls(
-          "w-full overflow-hidden rounded-2xl border border-white/15 bg-[#0b0b0b] shadow-2xl",
-          maxW
-        )}
-      >
+      <div className="w-full max-w-4xl overflow-hidden rounded-2xl border border-white/15 bg-[#0b0b0b] shadow-2xl">
         <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
           <div className="text-base font-semibold text-white">{title}</div>
           <button
@@ -328,124 +283,12 @@ function Modal({
   );
 }
 
-function defaultView(): ViewDef {
-  return {
-    id: "main",
-    name: "Finance board",
-    layout: "Gallery",
-    q: "",
-    type: "All",
-    status: "All",
-    category: "All",
-    currency: "All",
-    from: "",
-    to: "",
-    sortKey: "date",
-    sortDir: "desc",
-    colorBy: "Status",
-  };
-}
-
-function uid(prefix = "tx") {
-  return `${prefix}_${Math.random().toString(36).slice(2, 9)}_${Date.now().toString(36)}`;
-}
-
-function demoData(today = new Date()): FinanceTx[] {
-  const base = toYMD(today);
-  const ym = toYM(today);
-  return [
-    {
-      id: uid(),
-      createdAt: nowISO(),
-      updatedAt: nowISO(),
-      title: "Client advance — Wedding",
-      date: `${ym}-05`,
-      type: "Income",
-      status: "Paid",
-      amount: 50000,
-      currency: "INR",
-      category: "ClientAdvance",
-      paymentMethod: "UPI",
-      clientName: "Patel Family",
-      eventTitle: "Wedding @ Surat",
-      invoiceNo: "INV-1001",
-      referenceId: "UPI-REF-7781",
-      notes: "Advance received",
-    },
-    {
-      id: uid(),
-      createdAt: nowISO(),
-      updatedAt: nowISO(),
-      title: "Vendor payment — Decor",
-      date: `${ym}-08`,
-      type: "Expense",
-      status: "Pending",
-      amount: 30000,
-      currency: "INR",
-      category: "VendorPayment",
-      paymentMethod: "Bank",
-      vendorName: "Decor House",
-      eventTitle: "Wedding @ Surat",
-      dueDate: `${ym}-12`,
-      notes: "Pay after setup confirmation",
-    },
-    {
-      id: uid(),
-      createdAt: nowISO(),
-      updatedAt: nowISO(),
-      title: "Marketing — Instagram ads",
-      date: `${ym}-10`,
-      type: "Expense",
-      status: "Paid",
-      amount: 8000,
-      currency: "INR",
-      category: "Marketing",
-      paymentMethod: "Card",
-      referenceId: "META-AD-112",
-    },
-    {
-      id: uid(),
-      createdAt: nowISO(),
-      updatedAt: nowISO(),
-      title: "Corporate event booking",
-      date: base,
-      type: "Income",
-      status: "Pending",
-      amount: 75000,
-      currency: "INR",
-      category: "Sales",
-      paymentMethod: "Bank",
-      clientName: "ABC Pvt Ltd",
-      eventTitle: "Corporate Meetup",
-      dueDate: `${ym}-28`,
-      invoiceNo: "INV-1002",
-    },
-  ];
-}
-
-function buildExcelXls(filename: string, rows: Array<Record<string, any>>) {
-  const cols = Object.keys(rows[0] ?? { id: "" });
-  const head = `<tr>${cols.map((c) => `<th>${String(c)}</th>`).join("")}</tr>`;
-  const body = rows
-    .map(
-      (r) =>
-        `<tr>${cols
-          .map((c) => `<td>${String(r[c] ?? "").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</td>`)
-          .join("")}</tr>`
-    )
-    .join("");
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8" /></head><body>
-<table border="1">${head}${body}</table>
-</body></html>`;
-  downloadText(filename, html, "application/vnd.ms-excel;charset=utf-8");
-}
-
 function parseCSV(text: string): Array<Record<string, string>> {
-  // Simple CSV parser: handles quotes and commas
   const rows: string[][] = [];
   let cur = "";
   let inQuotes = false;
   let row: string[] = [];
+
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     const next = text[i + 1];
@@ -488,7 +331,6 @@ function parseCSV(text: string): Array<Record<string, string>> {
 }
 
 function normalizeImported(row: Record<string, string>): FinanceTx | null {
-  // Accept flexible column names
   const get = (...keys: string[]) => {
     for (const k of keys) {
       const v = row[k];
@@ -499,16 +341,16 @@ function normalizeImported(row: Record<string, string>): FinanceTx | null {
 
   const title = get("title", "Title", "description", "Description");
   const date = get("date", "Date", "txn_date") || toYMD(new Date());
-  const typeRaw = get("type", "Type") as any;
-  const statusRaw = get("status", "Status") as any;
   const amountRaw = get("amount", "Amount", "value");
-  const currencyRaw = get("currency", "Currency") as any;
-  const categoryRaw = get("category", "Category") as any;
-  const methodRaw = get("paymentMethod", "PaymentMethod", "method", "Method") as any;
-
   const amount = Number(String(amountRaw).replace(/,/g, ""));
   if (!title) return null;
   if (!Number.isFinite(amount)) return null;
+
+  const typeRaw = get("type", "Type") as any;
+  const statusRaw = get("status", "Status") as any;
+  const currencyRaw = get("currency", "Currency") as any;
+  const categoryRaw = get("category", "Category") as any;
+  const methodRaw = get("paymentMethod", "PaymentMethod", "method", "Method") as any;
 
   const type: TxType = TX_TYPES.includes(typeRaw) ? typeRaw : "Expense";
   const status: TxStatus = TX_STATUSES.includes(statusRaw) ? statusRaw : "Planned";
@@ -516,7 +358,7 @@ function normalizeImported(row: Record<string, string>): FinanceTx | null {
   const category: TxCategory = CATEGORIES.includes(categoryRaw) ? categoryRaw : "Other";
   const paymentMethod: PayMethod = METHODS.includes(methodRaw) ? methodRaw : "Bank";
 
-  const tx: FinanceTx = {
+  return {
     id: uid(),
     createdAt: nowISO(),
     updatedAt: nowISO(),
@@ -536,300 +378,30 @@ function normalizeImported(row: Record<string, string>): FinanceTx | null {
     invoiceNo: get("invoiceNo", "Invoice", "InvoiceNo") || undefined,
     notes: get("notes", "Notes") || undefined,
   };
-  return tx;
 }
 
 export default function FinancePage() {
-  // Signed-in display (same style as HR)
   const [role, setRole] = useState<Role>("CEO");
   const [email, setEmail] = useState<string>("Unknown");
 
-  // Data
+  const [tab, setTab] = useState<Tab>("Overview");
   const [txs, setTxs] = useState<FinanceTx[]>([]);
-  const [views, setViews] = useState<ViewDef[]>([]);
-  const [activeViewId, setActiveViewId] = useState<string>("main");
-
-  // Month + modal
   const [month, setMonth] = useState<string>(toYM(new Date())); // YYYY-MM
-  const [openAdd, setOpenAdd] = useState(false);
+
+  // filters (kept simple + fast)
+  const [q, setQ] = useState("");
+  const [typeF, setTypeF] = useState<TxType | "All">("All");
+  const [statusF, setStatusF] = useState<TxStatus | "All">("All");
+  const [catF, setCatF] = useState<TxCategory | "All">("All");
+  const [sortKey, setSortKey] = useState<"date" | "amount">("date");
+  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
+
+  // modal
+  const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<FinanceTx | null>(null);
 
-  // Import file input ref
   const fileRef = useRef<HTMLInputElement | null>(null);
 
-  // Load
-  useEffect(() => {
-    setRole((String(localStorage.getItem(LS_ROLE) || "CEO").toUpperCase() === "STAFF" ? "Staff" : "CEO") as Role);
-    setEmail(localStorage.getItem(LS_EMAIL) || "Unknown");
-
-    const loadedTx = safeParse<FinanceTx[]>(localStorage.getItem(LS_TX), []);
-    const loadedViews = safeParse<ViewDef[]>(localStorage.getItem(LS_VIEWS), []);
-    const av = localStorage.getItem(LS_ACTIVE_VIEW) || "main";
-
-    setTxs(Array.isArray(loadedTx) ? loadedTx : []);
-    setViews(loadedViews.length ? loadedViews : [defaultView()]);
-    setActiveViewId(av);
-  }, []);
-
-  // Save
-  useEffect(() => {
-    localStorage.setItem(LS_TX, JSON.stringify(txs));
-  }, [txs]);
-  useEffect(() => {
-    localStorage.setItem(LS_VIEWS, JSON.stringify(views));
-  }, [views]);
-  useEffect(() => {
-    localStorage.setItem(LS_ACTIVE_VIEW, activeViewId);
-  }, [activeViewId]);
-
-  const activeView = useMemo(() => {
-    const v = views.find((x) => x.id === activeViewId);
-    return v || views[0] || defaultView();
-  }, [views, activeViewId]);
-
-  // Filtered tx
-  const filtered = useMemo(() => {
-    const q = (activeView.q || "").trim().toLowerCase();
-    const list = txs.filter((t) => {
-      if (activeView.type !== "All" && t.type !== activeView.type) return false;
-      if (activeView.status !== "All" && t.status !== activeView.status) return false;
-      if (activeView.category !== "All" && t.category !== activeView.category) return false;
-      if (activeView.currency !== "All" && t.currency !== activeView.currency) return false;
-      if (!inRange(t.date, activeView.from, activeView.to)) return false;
-      if (q) {
-        const hay = [
-          t.title,
-          t.category,
-          t.status,
-          t.type,
-          t.currency,
-          t.clientName || "",
-          t.vendorName || "",
-          t.eventTitle || "",
-          t.invoiceNo || "",
-          t.referenceId || "",
-          t.notes || "",
-        ]
-          .join(" ")
-          .toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-
-    const sk = activeView.sortKey;
-    const dir = activeView.sortDir === "asc" ? 1 : -1;
-    list.sort((a, b) => {
-      const va =
-        sk === "amount" ? a.amount : sk === "date" ? a.date : sk === "status" ? a.status : sk === "category" ? a.category : a.title;
-      const vb =
-        sk === "amount" ? b.amount : sk === "date" ? b.date : sk === "status" ? b.status : sk === "category" ? b.category : b.title;
-      if (va < (vb as any)) return -1 * dir;
-      if (va > (vb as any)) return 1 * dir;
-      return 0;
-    });
-    return list;
-  }, [txs, activeView]);
-
-  // Month scoped KPIs
-  const monthTx = useMemo(() => filtered.filter((t) => t.date.slice(0, 7) === month), [filtered, month]);
-
-  const kpis = useMemo(() => {
-    const income = monthTx.filter((t) => t.type === "Income").reduce((s, t) => s + t.amount, 0);
-    const expense = monthTx.filter((t) => t.type === "Expense").reduce((s, t) => s + t.amount, 0);
-    const net = income - expense;
-
-    const ar = monthTx
-      .filter((t) => t.type === "Income" && (t.status === "Pending" || t.status === "Overdue"))
-      .reduce((s, t) => s + t.amount, 0);
-    const ap = monthTx
-      .filter((t) => t.type === "Expense" && (t.status === "Pending" || t.status === "Overdue"))
-      .reduce((s, t) => s + t.amount, 0);
-    const overdue = monthTx.filter((t) => t.status === "Overdue").length;
-
-    return { income, expense, net, ar, ap, overdue };
-  }, [monthTx]);
-
-  // Reports data
-  const reportByCategory = useMemo(() => {
-    const m = new Map<TxCategory, { income: number; expense: number }>();
-    for (const c of CATEGORIES) m.set(c, { income: 0, expense: 0 });
-    for (const t of monthTx) {
-      const cur = m.get(t.category) || { income: 0, expense: 0 };
-      if (t.type === "Income") cur.income += t.amount;
-      else cur.expense += t.amount;
-      m.set(t.category, cur);
-    }
-    return Array.from(m.entries()).map(([category, v]) => ({ category, ...v, net: v.income - v.expense }));
-  }, [monthTx]);
-
-  const reportByStatus = useMemo(() => {
-    const m = new Map<TxStatus, number>();
-    for (const s of TX_STATUSES) m.set(s, 0);
-    for (const t of monthTx) m.set(t.status, (m.get(t.status) || 0) + 1);
-    return Array.from(m.entries()).map(([status, count]) => ({ status, count }));
-  }, [monthTx]);
-
-  // Actions
-  function setView(patch: Partial<ViewDef>) {
-    setViews((prev) =>
-      prev.map((v) => (v.id === activeView.id ? { ...v, ...patch } : v))
-    );
-  }
-
-  function addOrUpdateTx(tx: FinanceTx) {
-    setTxs((prev) => {
-      const idx = prev.findIndex((x) => x.id === tx.id);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = { ...tx, updatedAt: nowISO() };
-        return next;
-      }
-      return [{ ...tx, createdAt: nowISO(), updatedAt: nowISO() }, ...prev];
-    });
-  }
-
-  function removeTx(id: string) {
-    setTxs((prev) => prev.filter((x) => x.id !== id));
-  }
-
-  function exportCSV() {
-    const cols = [
-      "id",
-      "title",
-      "date",
-      "type",
-      "status",
-      "amount",
-      "currency",
-      "category",
-      "paymentMethod",
-      "clientName",
-      "vendorName",
-      "eventTitle",
-      "dueDate",
-      "invoiceNo",
-      "referenceId",
-      "notes",
-      "createdAt",
-      "updatedAt",
-    ] as const;
-
-    const rows = filtered.map((t) =>
-      cols.map((c) => escCSV((t as any)[c]))
-    );
-    const csv = [cols.join(","), ...rows.map((r) => r.join(","))].join("\n");
-    downloadText(`eventura_finance_${toYMD(new Date())}.csv`, csv, "text/csv;charset=utf-8");
-  }
-
-  function exportExcel() {
-    const rows = filtered.map((t) => ({
-      id: t.id,
-      title: t.title,
-      date: t.date,
-      type: t.type,
-      status: t.status,
-      amount: t.amount,
-      currency: t.currency,
-      category: t.category,
-      paymentMethod: t.paymentMethod,
-      clientName: t.clientName || "",
-      vendorName: t.vendorName || "",
-      eventTitle: t.eventTitle || "",
-      dueDate: t.dueDate || "",
-      invoiceNo: t.invoiceNo || "",
-      referenceId: t.referenceId || "",
-      notes: t.notes || "",
-      createdAt: t.createdAt,
-      updatedAt: t.updatedAt,
-    }));
-    if (!rows.length) rows.push({ id: "", title: "", date: "", type: "", status: "", amount: 0, currency: "", category: "", paymentMethod: "", clientName: "", vendorName: "", eventTitle: "", dueDate: "", invoiceNo: "", referenceId: "", notes: "", createdAt: "", updatedAt: "" } as any);
-    buildExcelXls(`eventura_finance_${toYMD(new Date())}.xls`, rows);
-  }
-
-  async function importCSVFile(file: File) {
-    const text = await file.text();
-    const rows = parseCSV(text);
-    const imported: FinanceTx[] = [];
-    for (const r of rows) {
-      const tx = normalizeImported(r);
-      if (tx) imported.push(tx);
-    }
-    if (!imported.length) return;
-    setTxs((prev) => [...imported, ...prev]);
-  }
-
-  function loadDemo() {
-    setTxs((prev) => [...demoData(new Date()), ...prev]);
-  }
-
-  function duplicateTx(t: FinanceTx) {
-    const copy: FinanceTx = {
-      ...t,
-      id: uid(),
-      title: `${t.title} (copy)`,
-      createdAt: nowISO(),
-      updatedAt: nowISO(),
-    };
-    setTxs((prev) => [copy, ...prev]);
-  }
-
-  function saveNewView() {
-    const name = prompt("View name?", "My view");
-    if (!name) return;
-    const v: ViewDef = {
-      ...activeView,
-      id: uid("view"),
-      name,
-    };
-    setViews((prev) => [v, ...prev]);
-    setActiveViewId(v.id);
-  }
-
-  function deleteActiveView() {
-    if (activeView.id === "main") return;
-    const ok = confirm(`Delete view "${activeView.name}"?`);
-    if (!ok) return;
-    setViews((prev) => prev.filter((v) => v.id !== activeView.id));
-    setActiveViewId("main");
-  }
-
-  // Calendar (month grid)
-  const cal = useMemo(() => {
-    if (activeView.layout !== "Calendar") return null;
-    const first = new Date(`${month}-01T00:00:00`);
-    const startDow = first.getDay(); // 0 Sunday
-    const daysInMonth = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
-    const cells: Array<{ ymd: string; day: number; income: number; expense: number; count: number }> = [];
-
-    // pad
-    for (let i = 0; i < startDow; i++) cells.push({ ymd: "", day: 0, income: 0, expense: 0, count: 0 });
-
-    for (let d = 1; d <= daysInMonth; d++) {
-      const ymd = `${month}-${pad2(d)}`;
-      const list = monthTx.filter((t) => t.date === ymd);
-      const income = list.filter((t) => t.type === "Income").reduce((s, t) => s + t.amount, 0);
-      const expense = list.filter((t) => t.type === "Expense").reduce((s, t) => s + t.amount, 0);
-      cells.push({ ymd, day: d, income, expense, count: list.length });
-    }
-    while (cells.length % 7 !== 0) cells.push({ ymd: "", day: 0, income: 0, expense: 0, count: 0 });
-
-    return { cells };
-  }, [activeView.layout, month, monthTx]);
-
-  // OS nav
-  const nav = [
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/events", label: "Events" },
-    { href: "/finance", label: "Finance" },
-    { href: "/vendors", label: "Vendors" },
-    { href: "/ai", label: "AI" },
-    { href: "/hr", label: "HR" },
-    { href: "/reports", label: "Reports" },
-    { href: "/settings", label: "Settings" },
-  ];
-
-  // Form model
   const [form, setForm] = useState<FinanceTx>(() => ({
     id: uid(),
     createdAt: nowISO(),
@@ -851,7 +423,116 @@ export default function FinancePage() {
     notes: "",
   }));
 
-  function openAddModal() {
+  useEffect(() => {
+    const r = String(localStorage.getItem(LS_ROLE) || "CEO").toUpperCase() === "STAFF" ? "Staff" : "CEO";
+    setRole(r as Role);
+    setEmail(localStorage.getItem(LS_EMAIL) || "Unknown");
+
+    const loaded = safeParse<FinanceTx[]>(localStorage.getItem(LS_TX), []);
+    setTxs(Array.isArray(loaded) ? loaded : []);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(LS_TX, JSON.stringify(txs));
+  }, [txs]);
+
+  const filtered = useMemo(() => {
+    const qq = q.trim().toLowerCase();
+    const list = txs.filter((t) => {
+      if (t.date.slice(0, 7) !== month) return false;
+      if (typeF !== "All" && t.type !== typeF) return false;
+      if (statusF !== "All" && t.status !== statusF) return false;
+      if (catF !== "All" && t.category !== catF) return false;
+
+      if (qq) {
+        const hay = [
+          t.title,
+          t.type,
+          t.status,
+          t.category,
+          t.clientName || "",
+          t.vendorName || "",
+          t.eventTitle || "",
+          t.invoiceNo || "",
+          t.referenceId || "",
+          t.notes || "",
+        ]
+          .join(" ")
+          .toLowerCase();
+        if (!hay.includes(qq)) return false;
+      }
+      return true;
+    });
+
+    list.sort((a, b) => {
+      const dir = sortDir === "asc" ? 1 : -1;
+      const va = sortKey === "amount" ? a.amount : a.date;
+      const vb = sortKey === "amount" ? b.amount : b.date;
+      if (va < (vb as any)) return -1 * dir;
+      if (va > (vb as any)) return 1 * dir;
+      return 0;
+    });
+
+    return list;
+  }, [txs, q, typeF, statusF, catF, month, sortKey, sortDir]);
+
+  const kpis = useMemo(() => {
+    const income = filtered.filter((t) => t.type === "Income").reduce((s, t) => s + t.amount, 0);
+    const expense = filtered.filter((t) => t.type === "Expense").reduce((s, t) => s + t.amount, 0);
+    const net = income - expense;
+
+    const ar = filtered
+      .filter((t) => t.type === "Income" && (t.status === "Pending" || t.status === "Overdue"))
+      .reduce((s, t) => s + t.amount, 0);
+
+    const ap = filtered
+      .filter((t) => t.type === "Expense" && (t.status === "Pending" || t.status === "Overdue"))
+      .reduce((s, t) => s + t.amount, 0);
+
+    const overdue = filtered.filter((t) => t.status === "Overdue").length;
+    return { income, expense, net, ar, ap, overdue };
+  }, [filtered]);
+
+  const byCategory = useMemo(() => {
+    const m = new Map<TxCategory, { in: number; out: number }>();
+    for (const c of CATEGORIES) m.set(c, { in: 0, out: 0 });
+    for (const t of filtered) {
+      const cur = m.get(t.category) || { in: 0, out: 0 };
+      if (t.type === "Income") cur.in += t.amount;
+      else cur.out += t.amount;
+      m.set(t.category, cur);
+    }
+    return Array.from(m.entries()).map(([category, v]) => ({
+      category,
+      income: v.in,
+      expense: v.out,
+      net: v.in - v.out,
+    }));
+  }, [filtered]);
+
+  // Calendar cells
+  const cal = useMemo(() => {
+    if (tab !== "Calendar") return null;
+    const first = new Date(`${month}-01T00:00:00`);
+    const startDow = first.getDay();
+    const daysInMonth = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+
+    const cells: Array<{ ymd: string; day: number; income: number; expense: number; count: number }> = [];
+    for (let i = 0; i < startDow; i++) cells.push({ ymd: "", day: 0, income: 0, expense: 0, count: 0 });
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const ymd = `${month}-${pad2(d)}`;
+      const list = filtered.filter((t) => t.date === ymd);
+      const income = list.filter((t) => t.type === "Income").reduce((s, t) => s + t.amount, 0);
+      const expense = list.filter((t) => t.type === "Expense").reduce((s, t) => s + t.amount, 0);
+      cells.push({ ymd, day: d, income, expense, count: list.length });
+    }
+    while (cells.length % 7 !== 0) cells.push({ ymd: "", day: 0, income: 0, expense: 0, count: 0 });
+
+    return cells;
+  }, [tab, month, filtered]);
+
+  function openAdd() {
     setEditing(null);
     setForm({
       id: uid(),
@@ -873,10 +554,10 @@ export default function FinancePage() {
       invoiceNo: "",
       notes: "",
     });
-    setOpenAdd(true);
+    setOpen(true);
   }
 
-  function openEditModal(t: FinanceTx) {
+  function openEdit(t: FinanceTx) {
     setEditing(t);
     setForm({
       ...t,
@@ -888,22 +569,18 @@ export default function FinancePage() {
       invoiceNo: t.invoiceNo || "",
       notes: t.notes || "",
     });
-    setOpenAdd(true);
+    setOpen(true);
   }
 
-  function submitForm() {
-    if (!form.title.trim()) {
-      alert("Title is required.");
-      return;
-    }
-    if (!Number.isFinite(form.amount)) {
-      alert("Amount must be a number.");
-      return;
-    }
+  function saveTx() {
+    if (!form.title.trim()) return alert("Title is required.");
+    if (!Number.isFinite(Number(form.amount))) return alert("Amount must be a number.");
+
     const tx: FinanceTx = {
       ...form,
       title: form.title.trim(),
       amount: Number(form.amount),
+      updatedAt: nowISO(),
       clientName: form.clientName?.trim() ? form.clientName.trim() : undefined,
       vendorName: form.vendorName?.trim() ? form.vendorName.trim() : undefined,
       eventTitle: form.eventTitle?.trim() ? form.eventTitle.trim() : undefined,
@@ -912,26 +589,182 @@ export default function FinancePage() {
       invoiceNo: form.invoiceNo?.trim() ? form.invoiceNo.trim() : undefined,
       notes: form.notes?.trim() ? form.notes.trim() : undefined,
     };
-    addOrUpdateTx(tx);
-    setOpenAdd(false);
+
+    setTxs((prev) => {
+      const idx = prev.findIndex((x) => x.id === tx.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = tx;
+        return next;
+      }
+      return [tx, ...prev];
+    });
+
+    setOpen(false);
   }
 
-  // Color by
-  function pillToneForTx(t: FinanceTx) {
-    if (activeView.colorBy === "Type") return toneForType(t.type);
-    if (activeView.colorBy === "Category") return toneForCategory(t.category);
-    if (activeView.colorBy === "Status") return toneForStatus(t.status);
-    return "neutral";
+  function delTx(id: string) {
+    const ok = confirm("Delete this transaction?");
+    if (!ok) return;
+    setTxs((prev) => prev.filter((x) => x.id !== id));
   }
+
+  function exportCSV() {
+    const cols = [
+      "title",
+      "date",
+      "type",
+      "status",
+      "amount",
+      "currency",
+      "category",
+      "paymentMethod",
+      "clientName",
+      "vendorName",
+      "eventTitle",
+      "dueDate",
+      "invoiceNo",
+      "referenceId",
+      "notes",
+    ] as const;
+
+    const rows = filtered.map((t) => cols.map((c) => escCSV((t as any)[c])));
+    const csv = [cols.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    downloadText(`eventura_finance_${month}.csv`, csv, "text/csv;charset=utf-8");
+  }
+
+  function exportExcel() {
+    // Excel HTML (works in Excel)
+    const cols = [
+      "title",
+      "date",
+      "type",
+      "status",
+      "amount",
+      "currency",
+      "category",
+      "paymentMethod",
+      "clientName",
+      "vendorName",
+      "eventTitle",
+      "dueDate",
+      "invoiceNo",
+      "referenceId",
+      "notes",
+    ];
+    const head = `<tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>`;
+    const body = filtered
+      .map((t) => `<tr>${cols.map((c) => `<td>${String((t as any)[c] ?? "").replace(/</g, "&lt;")}</td>`).join("")}</tr>`)
+      .join("");
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8" /></head><body><table border="1">${head}${body}</table></body></html>`;
+    downloadText(`eventura_finance_${month}.xls`, html, "application/vnd.ms-excel;charset=utf-8");
+  }
+
+  async function importCSVFile(file: File) {
+    const text = await file.text();
+    const rows = parseCSV(text);
+    const imported: FinanceTx[] = [];
+    for (const r of rows) {
+      const tx = normalizeImported(r);
+      if (tx) imported.push(tx);
+    }
+    if (!imported.length) return alert("No valid rows found in CSV.");
+    setTxs((prev) => [...imported, ...prev]);
+    alert(`Imported ${imported.length} transactions.`);
+  }
+
+  function loadDemo() {
+    const ym = month;
+    const demo: FinanceTx[] = [
+      {
+        id: uid(),
+        createdAt: nowISO(),
+        updatedAt: nowISO(),
+        title: "Client advance — Wedding",
+        date: `${ym}-05`,
+        type: "Income",
+        status: "Paid",
+        amount: 50000,
+        currency: "INR",
+        category: "ClientAdvance",
+        paymentMethod: "UPI",
+        clientName: "Patel Family",
+        eventTitle: "Wedding @ Surat",
+        invoiceNo: "INV-1001",
+      },
+      {
+        id: uid(),
+        createdAt: nowISO(),
+        updatedAt: nowISO(),
+        title: "Vendor payment — Decor",
+        date: `${ym}-08`,
+        type: "Expense",
+        status: "Pending",
+        amount: 30000,
+        currency: "INR",
+        category: "VendorPayment",
+        paymentMethod: "Bank",
+        vendorName: "Decor House",
+        dueDate: `${ym}-12`,
+      },
+      {
+        id: uid(),
+        createdAt: nowISO(),
+        updatedAt: nowISO(),
+        title: "Marketing — Instagram ads",
+        date: `${ym}-10`,
+        type: "Expense",
+        status: "Paid",
+        amount: 8000,
+        currency: "INR",
+        category: "Marketing",
+        paymentMethod: "Card",
+      },
+      {
+        id: uid(),
+        createdAt: nowISO(),
+        updatedAt: nowISO(),
+        title: "Corporate booking",
+        date: `${ym}-18`,
+        type: "Income",
+        status: "Pending",
+        amount: 75000,
+        currency: "INR",
+        category: "Sales",
+        paymentMethod: "Bank",
+        clientName: "ABC Pvt Ltd",
+        dueDate: `${ym}-28`,
+      },
+    ];
+    setTxs((prev) => [...demo, ...prev]);
+  }
+
+  const nav = [
+    { href: "/dashboard", label: "Dashboard" },
+    { href: "/events", label: "Events" },
+    { href: "/finance", label: "Finance" },
+    { href: "/vendors", label: "Vendors" },
+    { href: "/ai", label: "AI" },
+    { href: "/hr", label: "HR" },
+    { href: "/reports", label: "Reports" },
+    { href: "/settings", label: "Settings" },
+  ] as const;
+
+  const side = [
+    { tab: "Overview" as Tab, icon: "▦", label: "Overview" },
+    { tab: "Transactions" as Tab, icon: "≡", label: "Transactions" },
+    { tab: "Calendar" as Tab, icon: "▣", label: "Calendar" },
+    { tab: "Reports" as Tab, icon: "▤", label: "Reports" },
+  ];
 
   return (
     <div className="min-h-screen bg-[#070707] text-white">
-      {/* TOP BAR */}
+      {/* TOP BAR (clean) */}
       <div className="sticky top-0 z-40 border-b border-white/10 bg-black/70 backdrop-blur">
         <div className="mx-auto flex max-w-[1400px] items-center justify-between px-4 py-3">
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 rounded-xl border border-white/15 bg-white/5" />
-            <div>
+            <div className="leading-tight">
               <div className="text-sm font-semibold">Eventura OS</div>
               <div className="text-xs text-white/50">Finance</div>
             </div>
@@ -956,7 +789,7 @@ export default function FinancePage() {
 
           <div className="flex items-center gap-2">
             <div className="hidden rounded-2xl border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/70 md:block">
-              Signed in <span className="text-white"> {email}</span> •{" "}
+              Signed in <span className="text-white">{email}</span> •{" "}
               <span className="text-white">{role}</span>
             </div>
             <Link
@@ -969,418 +802,327 @@ export default function FinancePage() {
         </div>
       </div>
 
-      {/* BODY */}
-      <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-4 px-4 py-4 md:grid-cols-[260px_1fr]">
-        {/* SIDEBAR */}
-        <aside className="rounded-2xl border border-white/10 bg-white/5 p-3">
-          <div className="mb-3 rounded-2xl border border-white/10 bg-black/30 p-3">
-            <div className="text-sm font-semibold">Eventura OS</div>
-            <div className="text-xs text-white/55">Finance module</div>
-
-            <div className="mt-3 flex items-center justify-between">
-              <Pill tone="muted">{role}</Pill>
-              <Pill tone="neutral">{email}</Pill>
-            </div>
-          </div>
-
-          <div className="grid gap-1">
-            {nav.map((n) => (
-              <Link
-                key={n.href}
-                href={n.href}
+      {/* LAYOUT: icon sidebar + main */}
+      <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-4 px-4 py-4 md:grid-cols-[72px_1fr]">
+        {/* ICON SIDEBAR (super clean) */}
+        <aside className="rounded-2xl border border-white/10 bg-white/5 p-2">
+          <div className="flex flex-col gap-2">
+            {side.map((s) => (
+              <button
+                key={s.tab}
+                onClick={() => setTab(s.tab)}
                 className={cls(
-                  "flex items-center justify-between rounded-xl px-3 py-2 text-sm transition",
-                  n.href === "/finance"
-                    ? "border border-white/20 bg-white/10 text-white"
-                    : "border border-transparent text-white/75 hover:bg-black hover:text-white"
+                  "group flex flex-col items-center justify-center rounded-2xl border px-2 py-3 transition",
+                  tab === s.tab
+                    ? "border-white/25 bg-white/10"
+                    : "border-transparent bg-transparent hover:bg-black hover:border-white/15"
                 )}
+                title={s.label}
               >
-                <span>{n.label}</span>
-                {n.href === "/finance" ? <span className="text-xs text-white/50">Active</span> : null}
-              </Link>
+                <div className="text-lg leading-none">{s.icon}</div>
+                <div className="mt-1 text-[10px] text-white/60 group-hover:text-white/80">{s.label}</div>
+              </button>
             ))}
           </div>
 
-          <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-3">
-            <div className="text-xs font-semibold text-white/80">Quick actions</div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Btn onClick={openAddModal} className="w-full justify-center">
-                + Add transaction
-              </Btn>
-              <Btn variant="outline" onClick={loadDemo} className="w-full justify-center">
-                Import demo
-              </Btn>
-              <Btn
-                variant="outline"
-                onClick={() => fileRef.current?.click()}
-                className="w-full justify-center"
-              >
-                Import CSV
-              </Btn>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".csv,text/csv"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (!f) return;
-                  importCSVFile(f).catch(() => alert("CSV import failed."));
-                  e.currentTarget.value = "";
-                }}
-              />
-            </div>
+          <div className="mt-3 rounded-2xl border border-white/10 bg-black/30 p-2">
+            <button
+              onClick={openAdd}
+              className="w-full rounded-xl border border-white/15 bg-white/10 px-2 py-2 text-xs hover:bg-black hover:border-white/25 transition"
+            >
+              + Add
+            </button>
           </div>
         </aside>
 
         {/* MAIN */}
-        <main className="rounded-2xl border border-white/10 bg-white/5 p-4">
-          {/* HEADER */}
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <div className="text-xl font-semibold">Finance Control Center</div>
-              <div className="text-sm text-white/55">
-                Transactions • Views • Import/Export • Reports • Calendar • Black Hover • Deploy Safe
+        <main className="rounded-2xl border border-white/10 bg-white/5">
+          {/* Sticky actions bar */}
+          <div className="sticky top-[57px] z-30 border-b border-white/10 bg-black/40 backdrop-blur">
+            <div className="flex flex-col gap-3 px-4 py-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="text-lg font-semibold">{tab}</div>
+                <div className="text-xs text-white/55">Clean finance workspace • fast actions • black hover</div>
               </div>
-            </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="w-[160px]">
-                <Input value={month} onChange={setMonth} type="month" />
-              </div>
-              <Btn onClick={exportExcel}>Export Excel</Btn>
-              <Btn variant="outline" onClick={exportCSV}>
-                Export CSV
-              </Btn>
-              <Btn variant="outline" onClick={() => fileRef.current?.click()}>
-                Import
-              </Btn>
-              <Btn onClick={openAddModal}>+ Add</Btn>
-            </div>
-          </div>
-
-          {/* KPI CARDS */}
-          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-6">
-            <div className="rounded-2xl border border-white/10 bg-black/30 p-3 hover:bg-black transition">
-              <div className="text-xs text-white/55">Income</div>
-              <div className="mt-1 text-sm font-semibold">{money(kpis.income, "INR")}</div>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-black/30 p-3 hover:bg-black transition">
-              <div className="text-xs text-white/55">Expense</div>
-              <div className="mt-1 text-sm font-semibold">{money(kpis.expense, "INR")}</div>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-black/30 p-3 hover:bg-black transition">
-              <div className="text-xs text-white/55">Net</div>
-              <div className="mt-1 text-sm font-semibold">{money(kpis.net, "INR")}</div>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-black/30 p-3 hover:bg-black transition">
-              <div className="text-xs text-white/55">AR</div>
-              <div className="mt-1 text-sm font-semibold">{money(kpis.ar, "INR")}</div>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-black/30 p-3 hover:bg-black transition">
-              <div className="text-xs text-white/55">AP</div>
-              <div className="mt-1 text-sm font-semibold">{money(kpis.ap, "INR")}</div>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-black/30 p-3 hover:bg-black transition">
-              <div className="text-xs text-white/55">Overdue</div>
-              <div className="mt-1 text-sm font-semibold">{kpis.overdue}</div>
-            </div>
-          </div>
-
-          {/* VIEWS + FILTERS */}
-          <div className="mt-4 rounded-2xl border border-white/10 bg-black/30 p-3">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="flex flex-wrap items-center gap-2">
-                <Pill tone="muted">Views</Pill>
-                <div className="min-w-[220px]">
-                  <Select
-                    value={activeViewId}
-                    onChange={setActiveViewId}
-                    options={views.map((v) => ({ value: v.id, label: v.name }))}
-                  />
+                <div className="w-[160px]">
+                  <Input value={month} onChange={setMonth} type="month" />
                 </div>
-                <Btn variant="outline" onClick={saveNewView}>
-                  + Save view
+
+                <Btn onClick={openAdd}>+ Add</Btn>
+
+                <Btn variant="outline" onClick={() => fileRef.current?.click()}>
+                  Import
                 </Btn>
-                <Btn variant="danger" onClick={deleteActiveView} disabled={activeView.id === "main"}>
-                  Delete
+                <Btn variant="outline" onClick={exportCSV}>
+                  Export CSV
                 </Btn>
-              </div>
+                <Btn onClick={exportExcel}>Export Excel</Btn>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <Pill tone="muted">Layout</Pill>
-                {(["Gallery", "Table", "Calendar", "Reports"] as Layout[]).map((l) => (
-                  <Btn
-                    key={l}
-                    variant={activeView.layout === l ? "primary" : "outline"}
-                    onClick={() => setView({ layout: l })}
-                  >
-                    {l}
-                  </Btn>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-12">
-              <div className="md:col-span-4">
-                <Input
-                  value={activeView.q}
-                  onChange={(v) => setView({ q: v })}
-                  placeholder="Search..."
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <Select
-                  value={activeView.type}
-                  onChange={(v) => setView({ type: v as any })}
-                  options={[
-                    { value: "All", label: "Type: All" },
-                    ...TX_TYPES.map((t) => ({ value: t, label: `Type: ${t}` })),
-                  ]}
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <Select
-                  value={activeView.status}
-                  onChange={(v) => setView({ status: v as any })}
-                  options={[
-                    { value: "All", label: "Status: All" },
-                    ...TX_STATUSES.map((s) => ({ value: s, label: `Status: ${s}` })),
-                  ]}
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <Select
-                  value={activeView.category}
-                  onChange={(v) => setView({ category: v as any })}
-                  options={[
-                    { value: "All", label: "Category: All" },
-                    ...CATEGORIES.map((c) => ({ value: c, label: `Category: ${c}` })),
-                  ]}
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <Select
-                  value={activeView.currency}
-                  onChange={(v) => setView({ currency: v as any })}
-                  options={[
-                    { value: "All", label: "Currency: All" },
-                    ...CURRENCIES.map((c) => ({ value: c, label: `Currency: ${c}` })),
-                  ]}
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <Input
-                  value={activeView.from}
-                  onChange={(v) => setView({ from: v })}
-                  type="date"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <Input value={activeView.to} onChange={(v) => setView({ to: v })} type="date" />
-              </div>
-
-              <div className="md:col-span-2">
-                <Select
-                  value={activeView.sortKey}
-                  onChange={(v) => setView({ sortKey: v as SortKey })}
-                  options={[
-                    { value: "date", label: "Sort: Date" },
-                    { value: "amount", label: "Sort: Amount" },
-                    { value: "status", label: "Sort: Status" },
-                    { value: "category", label: "Sort: Category" },
-                    { value: "title", label: "Sort: Title" },
-                  ]}
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <Select
-                  value={activeView.sortDir}
-                  onChange={(v) => setView({ sortDir: v as SortDir })}
-                  options={[
-                    { value: "desc", label: "Desc" },
-                    { value: "asc", label: "Asc" },
-                  ]}
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <Select
-                  value={activeView.colorBy}
-                  onChange={(v) => setView({ colorBy: v as ColorBy })}
-                  options={[
-                    { value: "None", label: "Color: None" },
-                    { value: "Status", label: "Color: Status" },
-                    { value: "Category", label: "Color: Category" },
-                    { value: "Type", label: "Color: Type" },
-                  ]}
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <Btn
-                  variant="outline"
-                  onClick={() =>
-                    setView({
-                      q: "",
-                      type: "All",
-                      status: "All",
-                      category: "All",
-                      currency: "All",
-                      from: "",
-                      to: "",
-                      sortKey: "date",
-                      sortDir: "desc",
-                      colorBy: "Status",
-                    })
-                  }
-                  className="w-full justify-center"
-                >
-                  Reset
+                <Btn variant="outline" onClick={loadDemo}>
+                  Demo
                 </Btn>
+
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    importCSVFile(f).catch(() => alert("CSV import failed."));
+                    e.currentTarget.value = "";
+                  }}
+                />
               </div>
             </div>
           </div>
 
-          {/* CONTENT */}
-          <div className="mt-4">
-            {activeView.layout === "Gallery" ? (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {filtered.length === 0 ? (
-                  <div className="rounded-2xl border border-white/10 bg-black/30 p-6 text-white/70">
-                    No rows found. Click <span className="text-white">+ Add</span> to create a transaction.
+          {/* CONTENT AREA */}
+          <div className="p-4">
+            {/* OVERVIEW */}
+            {tab === "Overview" ? (
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
+                {/* KPI row */}
+                <div className="lg:col-span-12 grid grid-cols-2 gap-3 md:grid-cols-6">
+                  {[
+                    { label: "Income", value: money(kpis.income, "INR") },
+                    { label: "Expense", value: money(kpis.expense, "INR") },
+                    { label: "Net", value: money(kpis.net, "INR") },
+                    { label: "AR", value: money(kpis.ar, "INR") },
+                    { label: "AP", value: money(kpis.ap, "INR") },
+                    { label: "Overdue", value: String(kpis.overdue) },
+                  ].map((k) => (
+                    <div
+                      key={k.label}
+                      className="rounded-2xl border border-white/10 bg-black/30 p-4 transition hover:bg-black hover:border-white/20"
+                    >
+                      <div className="text-xs text-white/55">{k.label}</div>
+                      <div className="mt-1 text-sm font-semibold">{k.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Quick filters + recent list */}
+                <div className="lg:col-span-5 rounded-2xl border border-white/10 bg-black/30 p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold">Quick filters</div>
+                    <Pill tone="muted">{month}</Pill>
                   </div>
-                ) : null}
 
-                {filtered.map((t) => (
-                  <div
-                    key={t.id}
-                    className="rounded-2xl border border-white/10 bg-black/30 p-4 transition hover:bg-black hover:border-white/20"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold">{t.title}</div>
-                        <div className="mt-1 flex flex-wrap gap-2">
-                          <Pill tone={pillToneForTx(t)}>{t.status}</Pill>
-                          <Pill tone={toneForType(t.type)}>{t.type}</Pill>
-                          <Pill tone={toneForCategory(t.category)}>{t.category}</Pill>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-sm font-semibold">{money(t.amount, t.currency)}</div>
-                        <div className="text-xs text-white/55">{t.date}</div>
-                      </div>
+                  <div className="mt-3 grid grid-cols-1 gap-3">
+                    <Input value={q} onChange={setQ} placeholder="Search..." />
+                    <div className="grid grid-cols-2 gap-3">
+                      <Select
+                        value={typeF}
+                        onChange={(v) => setTypeF(v as any)}
+                        options={[
+                          { value: "All", label: "Type: All" },
+                          ...TX_TYPES.map((t) => ({ value: t, label: `Type: ${t}` })),
+                        ]}
+                      />
+                      <Select
+                        value={statusF}
+                        onChange={(v) => setStatusF(v as any)}
+                        options={[
+                          { value: "All", label: "Status: All" },
+                          ...TX_STATUSES.map((s) => ({ value: s, label: `Status: ${s}` })),
+                        ]}
+                      />
+                      <Select
+                        value={catF}
+                        onChange={(v) => setCatF(v as any)}
+                        options={[
+                          { value: "All", label: "Category: All" },
+                          ...CATEGORIES.map((c) => ({ value: c, label: `Category: ${c}` })),
+                        ]}
+                      />
+                      <Select
+                        value={sortKey}
+                        onChange={(v) => setSortKey(v as any)}
+                        options={[
+                          { value: "date", label: "Sort: Date" },
+                          { value: "amount", label: "Sort: Amount" },
+                        ]}
+                      />
                     </div>
 
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-white/70">
-                      <div className="rounded-xl border border-white/10 bg-white/5 p-2">
-                        <div className="text-white/50">Client</div>
-                        <div className="truncate">{t.clientName || "-"}</div>
-                      </div>
-                      <div className="rounded-xl border border-white/10 bg-white/5 p-2">
-                        <div className="text-white/50">Vendor</div>
-                        <div className="truncate">{t.vendorName || "-"}</div>
-                      </div>
-                      <div className="col-span-2 rounded-xl border border-white/10 bg-white/5 p-2">
-                        <div className="text-white/50">Event</div>
-                        <div className="truncate">{t.eventTitle || "-"}</div>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Btn variant="outline" onClick={() => openEditModal(t)}>
-                        Edit
-                      </Btn>
-                      <Btn variant="outline" onClick={() => duplicateTx(t)}>
-                        Duplicate
+                    <div className="flex gap-2">
+                      <Btn
+                        variant="outline"
+                        onClick={() => {
+                          setQ("");
+                          setTypeF("All");
+                          setStatusF("All");
+                          setCatF("All");
+                          setSortKey("date");
+                          setSortDir("desc");
+                        }}
+                        className="w-full"
+                      >
+                        Reset
                       </Btn>
                       <Btn
-                        variant="danger"
-                        onClick={() => {
-                          const ok = confirm("Delete this transaction?");
-                          if (ok) removeTx(t.id);
-                        }}
+                        variant="outline"
+                        onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}
+                        className="w-full"
                       >
-                        Delete
+                        {sortDir === "desc" ? "Desc" : "Asc"}
                       </Btn>
                     </div>
                   </div>
-                ))}
+                </div>
+
+                <div className="lg:col-span-7 rounded-2xl border border-white/10 bg-black/30 p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm font-semibold">Recent transactions</div>
+                    <Btn variant="ghost" onClick={() => setTab("Transactions")}>
+                      Open list →
+                    </Btn>
+                  </div>
+
+                  <div className="mt-3 grid gap-2">
+                    {(filtered.slice(0, 6).length ? filtered.slice(0, 6) : []).map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => openEdit(t)}
+                        className="w-full rounded-2xl border border-white/10 bg-black/40 p-3 text-left transition hover:bg-black hover:border-white/20"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold">{t.title}</div>
+                            <div className="mt-1 flex flex-wrap gap-2">
+                              <Pill tone={toneForStatus(t.status)}>{t.status}</Pill>
+                              <Pill tone={toneForType(t.type)}>{t.type}</Pill>
+                              <Pill tone={toneForCategory(t.category)}>{t.category}</Pill>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-sm font-semibold">{money(t.amount, t.currency)}</div>
+                            <div className="text-xs text-white/55">{t.date}</div>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+
+                    {filtered.length === 0 ? (
+                      <div className="rounded-2xl border border-white/10 bg-black/40 p-6 text-sm text-white/70">
+                        No transactions for this month. Click <span className="text-white">+ Add</span> or load{" "}
+                        <span className="text-white">Demo</span>.
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
               </div>
             ) : null}
 
-            {activeView.layout === "Table" ? (
-              <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/30">
+            {/* TRANSACTIONS */}
+            {tab === "Transactions" ? (
+              <div className="rounded-2xl border border-white/10 bg-black/30 overflow-hidden">
+                <div className="p-4 border-b border-white/10">
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
+                    <div className="md:col-span-4">
+                      <Input value={q} onChange={setQ} placeholder="Search title, client, vendor, event..." />
+                    </div>
+                    <div className="md:col-span-2">
+                      <Select
+                        value={typeF}
+                        onChange={(v) => setTypeF(v as any)}
+                        options={[
+                          { value: "All", label: "Type: All" },
+                          ...TX_TYPES.map((t) => ({ value: t, label: `Type: ${t}` })),
+                        ]}
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <Select
+                        value={statusF}
+                        onChange={(v) => setStatusF(v as any)}
+                        options={[
+                          { value: "All", label: "Status: All" },
+                          ...TX_STATUSES.map((s) => ({ value: s, label: `Status: ${s}` })),
+                        ]}
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <Select
+                        value={catF}
+                        onChange={(v) => setCatF(v as any)}
+                        options={[
+                          { value: "All", label: "Category: All" },
+                          ...CATEGORIES.map((c) => ({ value: c, label: `Category: ${c}` })),
+                        ]}
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <div className="flex gap-2">
+                        <Select
+                          value={sortKey}
+                          onChange={(v) => setSortKey(v as any)}
+                          options={[
+                            { value: "date", label: "Sort: Date" },
+                            { value: "amount", label: "Sort: Amount" },
+                          ]}
+                        />
+                        <Btn variant="outline" onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}>
+                          {sortDir === "desc" ? "↓" : "↑"}
+                        </Btn>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="overflow-auto">
-                  <table className="min-w-[980px] w-full text-left text-sm">
-                    <thead className="border-b border-white/10 bg-black/40">
-                      <tr className="text-white/80">
-                        <th className="px-3 py-3">Date</th>
-                        <th className="px-3 py-3">Title</th>
-                        <th className="px-3 py-3">Type</th>
-                        <th className="px-3 py-3">Status</th>
-                        <th className="px-3 py-3">Category</th>
-                        <th className="px-3 py-3">Amount</th>
-                        <th className="px-3 py-3">Client/Vendor</th>
-                        <th className="px-3 py-3">Actions</th>
+                  <table className="min-w-[1000px] w-full text-left text-sm">
+                    <thead className="bg-black/40 border-b border-white/10">
+                      <tr className="text-white/75">
+                        <th className="px-4 py-3">Date</th>
+                        <th className="px-4 py-3">Title</th>
+                        <th className="px-4 py-3">Type</th>
+                        <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3">Category</th>
+                        <th className="px-4 py-3">Amount</th>
+                        <th className="px-4 py-3">Client/Vendor</th>
+                        <th className="px-4 py-3">Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filtered.length === 0 ? (
                         <tr>
-                          <td className="px-3 py-6 text-white/70" colSpan={8}>
-                            No rows found. Click + Add to create a transaction.
+                          <td className="px-4 py-6 text-white/70" colSpan={8}>
+                            No rows found. Add a transaction or import CSV.
                           </td>
                         </tr>
                       ) : null}
 
                       {filtered.map((t) => (
-                        <tr
-                          key={t.id}
-                          className="border-b border-white/10 hover:bg-black transition"
-                        >
-                          <td className="px-3 py-3 text-white/70">{t.date}</td>
-                          <td className="px-3 py-3">
+                        <tr key={t.id} className="border-b border-white/10 hover:bg-black transition">
+                          <td className="px-4 py-3 text-white/70">{t.date}</td>
+                          <td className="px-4 py-3">
                             <div className="font-semibold">{t.title}</div>
                             <div className="text-xs text-white/50">
                               {t.eventTitle || "-"} • {t.paymentMethod}
                             </div>
                           </td>
-                          <td className="px-3 py-3">
+                          <td className="px-4 py-3">
                             <Pill tone={toneForType(t.type)}>{t.type}</Pill>
                           </td>
-                          <td className="px-3 py-3">
+                          <td className="px-4 py-3">
                             <Pill tone={toneForStatus(t.status)}>{t.status}</Pill>
                           </td>
-                          <td className="px-3 py-3">
+                          <td className="px-4 py-3">
                             <Pill tone={toneForCategory(t.category)}>{t.category}</Pill>
                           </td>
-                          <td className="px-3 py-3 font-semibold">{money(t.amount, t.currency)}</td>
-                          <td className="px-3 py-3 text-white/70">
-                            {t.clientName || t.vendorName || "-"}
-                          </td>
-                          <td className="px-3 py-3">
-                            <div className="flex flex-wrap gap-2">
-                              <Btn variant="outline" onClick={() => openEditModal(t)}>
+                          <td className="px-4 py-3 font-semibold">{money(t.amount, t.currency)}</td>
+                          <td className="px-4 py-3 text-white/70">{t.clientName || t.vendorName || "-"}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-2">
+                              <Btn variant="outline" onClick={() => openEdit(t)}>
                                 Edit
                               </Btn>
-                              <Btn variant="outline" onClick={() => duplicateTx(t)}>
-                                Duplicate
-                              </Btn>
-                              <Btn
-                                variant="danger"
-                                onClick={() => {
-                                  const ok = confirm("Delete this transaction?");
-                                  if (ok) removeTx(t.id);
-                                }}
-                              >
+                              <Btn variant="danger" onClick={() => delTx(t.id)}>
                                 Delete
                               </Btn>
                             </div>
@@ -1393,14 +1135,15 @@ export default function FinancePage() {
               </div>
             ) : null}
 
-            {activeView.layout === "Calendar" ? (
-              <div className="rounded-2xl border border-white/10 bg-black/30 p-3">
-                <div className="mb-3 flex items-center justify-between">
+            {/* CALENDAR */}
+            {tab === "Calendar" ? (
+              <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+                <div className="flex items-center justify-between">
                   <div className="text-sm font-semibold">Calendar — {month}</div>
-                  <div className="text-xs text-white/60">Shows totals per day (filtered + month)</div>
+                  <div className="text-xs text-white/60">Totals per day (filtered)</div>
                 </div>
 
-                <div className="grid grid-cols-7 gap-2 text-xs text-white/55">
+                <div className="mt-3 grid grid-cols-7 gap-2 text-xs text-white/55">
                   {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
                     <div key={d} className="px-2 py-1">
                       {d}
@@ -1409,11 +1152,11 @@ export default function FinancePage() {
                 </div>
 
                 <div className="mt-2 grid grid-cols-7 gap-2">
-                  {cal?.cells.map((c, idx) => (
+                  {cal?.map((c, idx) => (
                     <div
                       key={idx}
                       className={cls(
-                        "min-h-[92px] rounded-2xl border border-white/10 bg-black/40 p-2 transition hover:bg-black",
+                        "min-h-[96px] rounded-2xl border border-white/10 bg-black/40 p-2 transition hover:bg-black hover:border-white/20",
                         !c.ymd && "opacity-30"
                       )}
                     >
@@ -1433,15 +1176,16 @@ export default function FinancePage() {
               </div>
             ) : null}
 
-            {activeView.layout === "Reports" ? (
+            {/* REPORTS */}
+            {tab === "Reports" ? (
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                 <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-                  <div className="text-sm font-semibold">By Category (Month)</div>
+                  <div className="text-sm font-semibold">By Category</div>
                   <div className="mt-3 grid gap-2">
-                    {reportByCategory.map((r) => (
+                    {byCategory.map((r) => (
                       <div
                         key={r.category}
-                        className="rounded-2xl border border-white/10 bg-black/40 p-3 hover:bg-black transition"
+                        className="rounded-2xl border border-white/10 bg-black/40 p-3 transition hover:bg-black hover:border-white/20"
                       >
                         <div className="flex items-center justify-between">
                           <div className="font-semibold">{r.category}</div>
@@ -1457,26 +1201,41 @@ export default function FinancePage() {
                 </div>
 
                 <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-                  <div className="text-sm font-semibold">By Status (Month)</div>
-                  <div className="mt-3 grid gap-2">
-                    {reportByStatus.map((r) => (
-                      <div
-                        key={r.status}
-                        className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/40 p-3 hover:bg-black transition"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Pill tone={toneForStatus(r.status)}>{r.status}</Pill>
-                        </div>
-                        <div className="text-sm font-semibold">{r.count}</div>
-                      </div>
-                    ))}
+                  <div className="text-sm font-semibold">Month Summary</div>
+                  <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3">
+                    <div className="rounded-2xl border border-white/10 bg-black/40 p-4 hover:bg-black transition">
+                      <div className="text-xs text-white/55">Income</div>
+                      <div className="mt-1 text-sm font-semibold">{money(kpis.income, "INR")}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-black/40 p-4 hover:bg-black transition">
+                      <div className="text-xs text-white/55">Expense</div>
+                      <div className="mt-1 text-sm font-semibold">{money(kpis.expense, "INR")}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-black/40 p-4 hover:bg-black transition">
+                      <div className="text-xs text-white/55">Net</div>
+                      <div className="mt-1 text-sm font-semibold">{money(kpis.net, "INR")}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-black/40 p-4 hover:bg-black transition">
+                      <div className="text-xs text-white/55">AR</div>
+                      <div className="mt-1 text-sm font-semibold">{money(kpis.ar, "INR")}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-black/40 p-4 hover:bg-black transition">
+                      <div className="text-xs text-white/55">AP</div>
+                      <div className="mt-1 text-sm font-semibold">{money(kpis.ap, "INR")}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-black/40 p-4 hover:bg-black transition">
+                      <div className="text-xs text-white/55">Overdue</div>
+                      <div className="mt-1 text-sm font-semibold">{kpis.overdue}</div>
+                    </div>
                   </div>
 
-                  <div className="mt-4 rounded-2xl border border-white/10 bg-black/40 p-3">
-                    <div className="text-xs text-white/55">Month summary</div>
-                    <div className="mt-1 text-sm font-semibold">
-                      Income {money(kpis.income, "INR")} • Expense {money(kpis.expense, "INR")} • Net{" "}
-                      {money(kpis.net, "INR")}
+                  <div className="mt-4 rounded-2xl border border-white/10 bg-black/40 p-4">
+                    <div className="text-xs text-white/55">Export</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Btn variant="outline" onClick={exportCSV}>
+                        Export CSV
+                      </Btn>
+                      <Btn onClick={exportExcel}>Export Excel</Btn>
                     </div>
                   </div>
                 </div>
@@ -1488,15 +1247,15 @@ export default function FinancePage() {
 
       {/* ADD/EDIT MODAL */}
       <Modal
-        open={openAdd}
+        open={open}
         title={editing ? "Edit transaction" : "Add transaction"}
-        onClose={() => setOpenAdd(false)}
+        onClose={() => setOpen(false)}
         footer={
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Btn variant="outline" onClick={() => setOpenAdd(false)}>
+          <div className="flex items-center justify-end gap-2">
+            <Btn variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Btn>
-            <Btn onClick={submitForm}>{editing ? "Save changes" : "Add transaction"}</Btn>
+            <Btn onClick={saveTx}>{editing ? "Save" : "Add"}</Btn>
           </div>
         }
       >
@@ -1518,38 +1277,22 @@ export default function FinancePage() {
 
           <div className="md:col-span-3">
             <div className="mb-1 text-xs text-white/55">Type</div>
-            <Select
-              value={form.type}
-              onChange={(v) => setForm((p) => ({ ...p, type: v as TxType }))}
-              options={TX_TYPES.map((t) => ({ value: t, label: t }))}
-            />
+            <Select value={form.type} onChange={(v) => setForm((p) => ({ ...p, type: v as TxType }))} options={TX_TYPES.map((t) => ({ value: t, label: t }))} />
           </div>
 
           <div className="md:col-span-3">
             <div className="mb-1 text-xs text-white/55">Status</div>
-            <Select
-              value={form.status}
-              onChange={(v) => setForm((p) => ({ ...p, status: v as TxStatus }))}
-              options={TX_STATUSES.map((s) => ({ value: s, label: s }))}
-            />
+            <Select value={form.status} onChange={(v) => setForm((p) => ({ ...p, status: v as TxStatus }))} options={TX_STATUSES.map((s) => ({ value: s, label: s }))} />
           </div>
 
           <div className="md:col-span-3">
             <div className="mb-1 text-xs text-white/55">Category</div>
-            <Select
-              value={form.category}
-              onChange={(v) => setForm((p) => ({ ...p, category: v as TxCategory }))}
-              options={CATEGORIES.map((c) => ({ value: c, label: c }))}
-            />
+            <Select value={form.category} onChange={(v) => setForm((p) => ({ ...p, category: v as TxCategory }))} options={CATEGORIES.map((c) => ({ value: c, label: c }))} />
           </div>
 
           <div className="md:col-span-3">
-            <div className="mb-1 text-xs text-white/55">Payment method</div>
-            <Select
-              value={form.paymentMethod}
-              onChange={(v) => setForm((p) => ({ ...p, paymentMethod: v as PayMethod }))}
-              options={METHODS.map((m) => ({ value: m, label: m }))}
-            />
+            <div className="mb-1 text-xs text-white/55">Method</div>
+            <Select value={form.paymentMethod} onChange={(v) => setForm((p) => ({ ...p, paymentMethod: v as PayMethod }))} options={METHODS.map((m) => ({ value: m, label: m }))} />
           </div>
 
           <div className="md:col-span-4">
@@ -1563,35 +1306,31 @@ export default function FinancePage() {
 
           <div className="md:col-span-2">
             <div className="mb-1 text-xs text-white/55">Currency</div>
-            <Select
-              value={form.currency}
-              onChange={(v) => setForm((p) => ({ ...p, currency: v as Currency }))}
-              options={CURRENCIES.map((c) => ({ value: c, label: c }))}
-            />
+            <Select value={form.currency} onChange={(v) => setForm((p) => ({ ...p, currency: v as Currency }))} options={CURRENCIES.map((c) => ({ value: c, label: c }))} />
           </div>
 
           <div className="md:col-span-6">
-            <div className="mb-1 text-xs text-white/55">Event title</div>
-            <Input value={form.eventTitle || ""} onChange={(v) => setForm((p) => ({ ...p, eventTitle: v }))} placeholder="e.g., Wedding @ Surat" />
+            <div className="mb-1 text-xs text-white/55">Event</div>
+            <Input value={form.eventTitle || ""} onChange={(v) => setForm((p) => ({ ...p, eventTitle: v }))} placeholder="Optional" />
           </div>
 
           <div className="md:col-span-6">
-            <div className="mb-1 text-xs text-white/55">Client name</div>
+            <div className="mb-1 text-xs text-white/55">Client</div>
             <Input value={form.clientName || ""} onChange={(v) => setForm((p) => ({ ...p, clientName: v }))} placeholder="Optional" />
           </div>
 
           <div className="md:col-span-6">
-            <div className="mb-1 text-xs text-white/55">Vendor name</div>
+            <div className="mb-1 text-xs text-white/55">Vendor</div>
             <Input value={form.vendorName || ""} onChange={(v) => setForm((p) => ({ ...p, vendorName: v }))} placeholder="Optional" />
           </div>
 
           <div className="md:col-span-3">
-            <div className="mb-1 text-xs text-white/55">Invoice no</div>
+            <div className="mb-1 text-xs text-white/55">Invoice</div>
             <Input value={form.invoiceNo || ""} onChange={(v) => setForm((p) => ({ ...p, invoiceNo: v }))} placeholder="Optional" />
           </div>
 
           <div className="md:col-span-3">
-            <div className="mb-1 text-xs text-white/55">Reference ID</div>
+            <div className="mb-1 text-xs text-white/55">Reference</div>
             <Input value={form.referenceId || ""} onChange={(v) => setForm((p) => ({ ...p, referenceId: v }))} placeholder="Optional" />
           </div>
 
