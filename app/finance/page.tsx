@@ -1,15 +1,12 @@
-ï»¿// app/finance/page.tsx
-"use client";
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
+// app/finance/page.tsx
+"use client"
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /* =========================================================
-   Eventura Finance â€” HR-style LAYOUT (Control Center + Cards)
-   âœ… Matches /hr structure (Header + Actions + KPI Cards + Sections)
-   âœ… Deploy-safe: no external libs, strict typing, localStorage only
+   Eventura Finance — HR-style LAYOUT (Control Center + Cards)
+   ? Matches /hr structure (Header + Actions + KPI Cards + Sections)
+   ? Deploy-safe: no external libs, strict typing, localStorage only
 ========================================================= */
 
 /* =========================
@@ -1001,7 +998,7 @@ export default function FinancePage() {
         id: Date.now() + 1,
         createdAt: nowISO(),
         updatedAt: nowISO(),
-        title: "Wedding package (Gold) â€” Advance",
+        title: "Wedding package (Gold) — Advance",
         date: d,
         eventType: "Wedding",
         type: "Income",
@@ -1010,7 +1007,7 @@ export default function FinancePage() {
         currency: "INR",
         category: "ClientAdvance",
         clientName: "Client A",
-        eventTitle: "Wedding â€” Surat",
+        eventTitle: "Wedding — Surat",
         paymentMethod: "Bank",
         invoiceNo: "INV-0001",
         referenceId: "UTR-AXIS-1122",
@@ -1029,7 +1026,7 @@ export default function FinancePage() {
         currency: "INR",
         category: "VendorPayment",
         vendorName: "Vendor X",
-        eventTitle: "Wedding â€” Surat",
+        eventTitle: "Wedding — Surat",
         paymentMethod: "UPI",
         dueDate: addDays(d, 7),
       },
@@ -1037,7 +1034,7 @@ export default function FinancePage() {
         id: Date.now() + 3,
         createdAt: nowISO(),
         updatedAt: nowISO(),
-        title: "Meta Ads â€” Lead Gen",
+        title: "Meta Ads — Lead Gen",
         date: d,
         eventType: "Other",
         type: "Expense",
@@ -1271,7 +1268,7 @@ export default function FinancePage() {
               <div className="text-xs text-white/60">Eventura OS</div>
               <div className="mt-1 text-2xl font-semibold tracking-tight">Finance Control Center</div>
               <div className="mt-2 text-sm text-white/60">
-                Transactions â€¢ Views â€¢ Import/Export â€¢ Reports â€¢ Calendar â€¢ Black Hover â€¢ Deploy Safe
+                Transactions • Views • Import/Export • Reports • Calendar • Black Hover • Deploy Safe
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -1444,7 +1441,7 @@ export default function FinancePage() {
 
             <Card
               title="Transactions"
-              subtitle="Black hover â€¢ CEO edit â€¢ Click Edit to update"
+              subtitle="Black hover • CEO edit • Click Edit to update"
               right={
                 <div className="flex items-center gap-2">
                   <Select
@@ -1475,12 +1472,12 @@ export default function FinancePage() {
                           <div className="col-span-4">
                             <div className="text-sm font-semibold">{t.title}</div>
                             <div className="mt-1 text-xs text-white/50">
-                              {t.eventTitle || t.clientName || t.vendorName || "â€”"}
+                              {t.eventTitle || t.clientName || t.vendorName || "—"}
                             </div>
                           </div>
                           <div className="col-span-2">
                             <div className="text-sm">{t.date}</div>
-                            <div className="mt-1 text-xs text-white/50">{t.dueDate ? `Due ${t.dueDate}` : "â€”"}</div>
+                            <div className="mt-1 text-xs text-white/50">{t.dueDate ? `Due ${t.dueDate}` : "—"}</div>
                           </div>
                           <div className="col-span-2">
                             <div className="flex flex-wrap gap-2">
@@ -1542,7 +1539,7 @@ export default function FinancePage() {
                                 </div>
                                 <div className="flex items-center justify-between">
                                   <span className="text-white/50">{t.type === "Income" ? "Client" : "Vendor"}</span>
-                                  <span className="truncate max-w-[180px]">{clientVendor || "â€”"}</span>
+                                  <span className="truncate max-w-[180px]">{clientVendor || "—"}</span>
                                 </div>
                               </div>
                             </div>
@@ -1586,7 +1583,7 @@ export default function FinancePage() {
                               <Pill tone={c.net >= 0 ? "good" : "bad"}>{money(c.net, "INR")}</Pill>
                             </div>
                             <div className="mt-1 text-xs text-white/55">
-                              Income {money(c.inc, "INR")} â€¢ Expense {money(c.exp, "INR")}
+                              Income {money(c.inc, "INR")} • Expense {money(c.exp, "INR")}
                             </div>
                           </div>
                         ))}
@@ -1733,7 +1730,7 @@ export default function FinancePage() {
                         <Pill>{v.layout}</Pill>
                       </div>
                       <div className="mt-1 text-xs text-white/55">
-                        Filter: {v.type}/{v.status}/{v.category} â€¢ Sort: {v.sortKey} {v.sortDir} â€¢ Color: {v.colorBy}
+                        Filter: {v.type}/{v.status}/{v.category} • Sort: {v.sortKey} {v.sortDir} • Color: {v.colorBy}
                       </div>
                     </button>
                   );
@@ -1767,7 +1764,7 @@ export default function FinancePage() {
                           <Pill tone={c.net >= 0 ? "good" : "bad"}>{money(c.net, "INR")}</Pill>
                         </div>
                         <div className="mt-1 text-xs text-white/55">
-                          Income {money(c.inc, "INR")} â€¢ Expense {money(c.exp, "INR")}
+                          Income {money(c.inc, "INR")} • Expense {money(c.exp, "INR")}
                         </div>
                       </div>
                     ))}
@@ -1997,7 +1994,7 @@ export default function FinancePage() {
                   value={editing.eventTitle || ""}
                   onChange={(v) => setEditing({ ...editing, eventTitle: v })}
                   disabled={!canEdit}
-                  placeholder="Wedding â€” Surat"
+                  placeholder="Wedding — Surat"
                 />
               </div>
             </div>
@@ -2175,4 +2172,7 @@ export default function FinancePage() {
   );
 }
 /* DEPLOY_STAMP: 2026-02-03 17:04:06 */
+
+
+/* DEPLOY_STAMP: 2026-02-03 17:11:07 */
 
