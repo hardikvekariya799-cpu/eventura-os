@@ -1,26 +1,25 @@
-﻿// app/finance/page.tsx
-"use client";
+﻿"use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 /* =========================================================
-  EVENTURA OS — FINANCE (BEST CLEAN LAYOUT)
-  ✅ Premium OS layout (not paragraph)
-  ✅ Left sidebar + Top command bar + Tabbed workspace
-  ✅ KPI strip + Quick actions + Transaction table + Calendar + Reports
-  ✅ Black hover everywhere
-  ✅ Deploy-safe (no libs) + localStorage
+   Eventura OS — Finance (Airtable-style layout)
+   - Clean OS header + tabs
+   - Views sidebar
+   - Toolbar: Customize / Filter / Sort / Color / Share + Search
+   - Gallery cards + Table view
+   - Add / Edit / Duplicate / Delete
+   - CSV Export + Excel-friendly Export (TSV)
+   - CSV Import
+   - Deploy-safe: no external libs
 ========================================================= */
-
-type Role = "CEO" | "Staff";
-type Tab = "Overview" | "Transactions" | "Calendar" | "Reports";
 
 type TxType = "Income" | "Expense";
 type TxStatus = "Planned" | "Pending" | "Paid" | "Overdue" | "Cancelled";
-type Currency = "INR" | "CAD" | "USD" | "Other";
-type PayMethod = "Cash" | "UPI" | "Bank" | "Card" | "Cheque" | "Other";
-type TxCategory =
+type Currency = "INR" | "CAD" | "USD";
+type PayMethod = "Cash" | "UPI" | "Bank" | "Card" | "Cheque";
+type TxTag =
   | "Sales"
   | "ClientAdvance"
   | "VendorPayment"
@@ -32,50 +31,67 @@ type TxCategory =
   | "Tax"
   | "Refund"
   | "Other";
+type EventType = "Wedding" | "Corporate" | "Conference" | "Party" | "Training" | "Exhibition" | "Festival" | "Other";
+
+type Layout = "Gallery" | "Table";
+
+type SortKey = "date" | "amount" | "title" | "status" | "category";
+type SortDir = "asc" | "desc";
+
+type ViewDef = {
+  id: string;
+  name: string;
+  layout: Layout;
+
+  q: string;
+  type: TxType | "All";
+  status: TxStatus | "All";
+  category: TxTag | "All";
+  currency: Currency | "All";
+  eventType: EventType | "All";
+  from: string; // YYYY-MM-DD
+  to: string; // YYYY-MM-DD
+
+  sortKey: SortKey;
+  sortDir: SortDir;
+
+  colorBy: "None" | "Status" | "Type" | "Category";
+};
 
 type FinanceTx = {
   id: string;
-  createdAt: string;
-  updatedAt: string;
+
   title: string;
   date: string; // YYYY-MM-DD
   type: TxType;
   status: TxStatus;
+
   amount: number;
   currency: Currency;
-  category: TxCategory;
-  paymentMethod: PayMethod;
+
+  category: TxTag;
+  eventType: EventType;
+
   clientName?: string;
   vendorName?: string;
   eventTitle?: string;
+
   dueDate?: string; // YYYY-MM-DD
+  paymentMethod: PayMethod;
+
   invoiceNo?: string;
   referenceId?: string;
   notes?: string;
+
+  createdAt: string;
+  updatedAt: string;
 };
 
-const LS_TX = "eventura_fin_tx_v8";
-const LS_ROLE = "eventura-role";
-const LS_EMAIL = "eventura-email";
+const LS_TX = "eventura_fin_tx_air_v1";
+const LS_VIEWS = "eventura_fin_views_air_v1";
+const LS_ACTIVE_VIEW = "eventura_fin_active_view_air_v1";
 
-const TX_TYPES: TxType[] = ["Income", "Expense"];
-const TX_STATUSES: TxStatus[] = ["Planned", "Pending", "Paid", "Overdue", "Cancelled"];
-const CURRENCIES: Currency[] = ["INR", "CAD", "USD", "Other"];
-const METHODS: PayMethod[] = ["Cash", "UPI", "Bank", "Card", "Cheque", "Other"];
-const CATEGORIES: TxCategory[] = [
-  "Sales",
-  "ClientAdvance",
-  "VendorPayment",
-  "Salary",
-  "Marketing",
-  "Office",
-  "Transport",
-  "Equipment",
-  "Tax",
-  "Refund",
-  "Other",
-];
-
+/* ----------------- helpers ----------------- */
 function cls(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }
@@ -88,9 +104,6 @@ function pad2(n: number) {
 function toYMD(d: Date) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
-function toYM(d: Date) {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
-}
 function safeParse<T>(raw: string | null, fallback: T): T {
   try {
     if (!raw) return fallback;
@@ -98,6 +111,10 @@ function safeParse<T>(raw: string | null, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+function parseNum(v: any, fallback = 0) {
+  const n = typeof v === "number" ? v : Number(String(v ?? "").replace(/,/g, "").trim());
+  return Number.isFinite(n) ? n : fallback;
 }
 function uid(prefix = "tx") {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}_${Date.now().toString(36)}`;
@@ -109,12 +126,12 @@ function money(n: number, cur: Currency) {
   parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return `${sign}${cur} ${parts.join(".")}`;
 }
-function escCSV(v: any) {
-  const s = String(v ?? "");
+function escCSV(val: any) {
+  const s = String(val ?? "");
   if (/[,"\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }
-function downloadText(filename: string, content: string, mime: string) {
+function downloadText(filename: string, content: string, mime = "text/plain;charset=utf-8") {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -123,78 +140,74 @@ function downloadText(filename: string, content: string, mime: string) {
   a.click();
   URL.revokeObjectURL(url);
 }
-function toneForStatus(s: TxStatus) {
-  if (s === "Paid") return "good";
-  if (s === "Overdue") return "bad";
-  if (s === "Pending") return "warn";
-  if (s === "Cancelled") return "muted";
-  return "neutral";
+function badgeToneByStatus(s: TxStatus) {
+  if (s === "Paid") return "bg-emerald-100 text-emerald-900 border-emerald-200";
+  if (s === "Overdue") return "bg-rose-100 text-rose-900 border-rose-200";
+  if (s === "Pending") return "bg-amber-100 text-amber-900 border-amber-200";
+  if (s === "Cancelled") return "bg-zinc-100 text-zinc-800 border-zinc-200";
+  return "bg-sky-100 text-sky-900 border-sky-200";
 }
-function toneForType(t: TxType) {
-  return t === "Income" ? "good" : "bad";
+function badgeToneByType(t: TxType) {
+  return t === "Income"
+    ? "bg-emerald-100 text-emerald-900 border-emerald-200"
+    : "bg-rose-100 text-rose-900 border-rose-200";
 }
-function toneForCategory(c: TxCategory) {
-  if (c === "Sales" || c === "ClientAdvance") return "good";
-  if (c === "VendorPayment" || c === "Salary") return "warn";
-  if (c === "Tax") return "bad";
-  return "neutral";
+function badgeToneByCategory(c: TxTag) {
+  if (c === "Sales" || c === "ClientAdvance") return "bg-emerald-100 text-emerald-900 border-emerald-200";
+  if (c === "VendorPayment" || c === "Salary") return "bg-amber-100 text-amber-900 border-amber-200";
+  if (c === "Tax") return "bg-rose-100 text-rose-900 border-rose-200";
+  return "bg-zinc-100 text-zinc-800 border-zinc-200";
 }
-function pillClass(t: "neutral" | "good" | "bad" | "warn" | "muted") {
-  return t === "good"
-    ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-200"
-    : t === "bad"
-      ? "border-rose-400/25 bg-rose-400/10 text-rose-200"
-      : t === "warn"
-        ? "border-amber-400/25 bg-amber-400/10 text-amber-200"
-        : t === "muted"
-          ? "border-white/10 bg-white/5 text-white/55"
-          : "border-white/15 bg-white/5 text-white/80";
+function badgeTone(colorBy: ViewDef["colorBy"], tx: FinanceTx) {
+  if (colorBy === "Status") return badgeToneByStatus(tx.status);
+  if (colorBy === "Type") return badgeToneByType(tx.type);
+  if (colorBy === "Category") return badgeToneByCategory(tx.category);
+  return "bg-zinc-100 text-zinc-800 border-zinc-200";
 }
 
-function Pill({
-  children,
-  tone = "neutral",
-}: {
-  children: React.ReactNode;
-  tone?: "neutral" | "good" | "bad" | "warn" | "muted";
-}) {
-  return (
-    <span className={cls("inline-flex items-center rounded-full border px-2.5 py-1 text-[11px]", pillClass(tone))}>
-      {children}
-    </span>
-  );
-}
-
-function Btn({
+/* ----------------- UI primitives (black hover) ----------------- */
+function HoverBtn({
   children,
   onClick,
-  variant = "primary",
-  disabled,
+  variant = "soft",
   className,
+  title,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
-  variant?: "primary" | "outline" | "ghost" | "danger";
-  disabled?: boolean;
+  variant?: "soft" | "outline" | "danger" | "ghost";
   className?: string;
+  title?: string;
 }) {
-  const base = "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm transition border select-none";
+  const base =
+    "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm border transition select-none";
   const v =
-    variant === "primary"
-      ? "border-white/15 bg-white/10 text-white hover:bg-black hover:border-white/25"
-      : variant === "outline"
-        ? "border-white/20 bg-transparent text-white/85 hover:bg-black hover:border-white/30"
-        : variant === "danger"
-          ? "border-rose-400/35 bg-rose-400/10 text-rose-200 hover:bg-black hover:border-rose-400/60"
-          : "border-transparent bg-transparent text-white/75 hover:bg-black hover:text-white";
+    variant === "outline"
+      ? "bg-white border-zinc-200 text-zinc-900 hover:bg-black hover:text-white hover:border-black"
+      : variant === "danger"
+      ? "bg-rose-50 border-rose-200 text-rose-900 hover:bg-black hover:text-white hover:border-black"
+      : variant === "ghost"
+      ? "bg-transparent border-transparent text-zinc-700 hover:bg-black hover:text-white"
+      : "bg-zinc-50 border-zinc-200 text-zinc-900 hover:bg-black hover:text-white hover:border-black";
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={cls(base, v, disabled && "opacity-50 pointer-events-none", className)}
-    >
+    <button title={title} onClick={onClick} className={cls(base, v, className)}>
       {children}
     </button>
+  );
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="text-[12px] font-medium text-zinc-600">{label}</div>
+      {children}
+    </div>
   );
 }
 
@@ -215,7 +228,7 @@ function Input({
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       type={type}
-      className="w-full rounded-xl border border-white/12 bg-black/40 px-3 py-2 text-sm text-white placeholder:text-white/35 outline-none transition hover:border-white/25 focus:border-white/30"
+      className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition hover:border-black focus:border-black"
     />
   );
 }
@@ -233,10 +246,10 @@ function Select({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full rounded-xl border border-white/12 bg-black/40 px-3 py-2 text-sm text-white outline-none transition hover:border-white/25 focus:border-white/30"
+      className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition hover:border-black focus:border-black"
     >
       {options.map((o) => (
-        <option key={o.value} value={o.value} className="bg-black text-white">
+        <option key={o.value} value={o.value}>
           {o.label}
         </option>
       ))}
@@ -244,364 +257,432 @@ function Select({
   );
 }
 
+function TextArea({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <textarea
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      rows={4}
+      className="w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none transition hover:border-black focus:border-black"
+    />
+  );
+}
+
 function Modal({
   open,
   title,
-  children,
   onClose,
+  children,
   footer,
+  maxW = "max-w-3xl",
 }: {
   open: boolean;
   title: string;
-  children: React.ReactNode;
   onClose: () => void;
+  children: React.ReactNode;
   footer?: React.ReactNode;
+  maxW?: string;
 }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-      <div className="w-full max-w-4xl overflow-hidden rounded-2xl border border-white/15 bg-[#0b0b0b] shadow-2xl">
-        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-          <div className="text-base font-semibold text-white">{title}</div>
-          <button
-            onClick={onClose}
-            className="rounded-lg border border-white/15 bg-white/5 px-2 py-1 text-xs text-white/80 hover:bg-black hover:text-white"
-          >
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+      <div className={cls("w-full overflow-hidden rounded-2xl bg-white shadow-2xl", maxW)}>
+        <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
+          <div className="text-base font-semibold text-zinc-900">{title}</div>
+          <HoverBtn variant="outline" onClick={onClose}>
             Close
-          </button>
+          </HoverBtn>
         </div>
-        <div className="max-h-[74vh] overflow-auto px-5 py-4">{children}</div>
-        {footer ? <div className="border-t border-white/10 px-5 py-4">{footer}</div> : null}
+        <div className="max-h-[75vh] overflow-auto px-5 py-4">{children}</div>
+        {footer ? <div className="border-t border-zinc-200 px-5 py-4">{footer}</div> : null}
       </div>
     </div>
   );
 }
 
-function parseCSV(text: string): Array<Record<string, string>> {
-  const rows: string[][] = [];
-  let cur = "";
-  let inQuotes = false;
-  let row: string[] = [];
+/* ----------------- defaults ----------------- */
+const TX_STATUSES: TxStatus[] = ["Planned", "Pending", "Paid", "Overdue", "Cancelled"];
+const TX_TYPES: TxType[] = ["Income", "Expense"];
+const CURRENCIES: Currency[] = ["INR", "CAD", "USD"];
+const TAGS: TxTag[] = [
+  "Sales",
+  "ClientAdvance",
+  "VendorPayment",
+  "Salary",
+  "Marketing",
+  "Office",
+  "Transport",
+  "Equipment",
+  "Tax",
+  "Refund",
+  "Other",
+];
+const EVENT_TYPES: EventType[] = [
+  "Wedding",
+  "Corporate",
+  "Conference",
+  "Party",
+  "Training",
+  "Exhibition",
+  "Festival",
+  "Other",
+];
+const METHODS: PayMethod[] = ["Cash", "UPI", "Bank", "Card", "Cheque"];
 
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    const next = text[i + 1];
-
-    if (ch === '"' && inQuotes && next === '"') {
-      cur += '"';
-      i++;
-      continue;
-    }
-    if (ch === '"') {
-      inQuotes = !inQuotes;
-      continue;
-    }
-    if (!inQuotes && (ch === "," || ch === "\t")) {
-      row.push(cur);
-      cur = "";
-      continue;
-    }
-    if (!inQuotes && (ch === "\n" || ch === "\r")) {
-      if (ch === "\r" && next === "\n") i++;
-      row.push(cur);
-      cur = "";
-      if (row.length > 1 || row[0] !== "") rows.push(row);
-      row = [];
-      continue;
-    }
-    cur += ch;
-  }
-  row.push(cur);
-  if (row.length > 1 || row[0] !== "") rows.push(row);
-
-  const header = (rows[0] ?? []).map((h) => h.trim());
-  const out: Array<Record<string, string>> = [];
-  for (let r = 1; r < rows.length; r++) {
-    const obj: Record<string, string> = {};
-    for (let c = 0; c < header.length; c++) obj[header[c] || `col_${c}`] = (rows[r][c] ?? "").trim();
-    out.push(obj);
-  }
-  return out;
+function defaultViews(): ViewDef[] {
+  return [
+    {
+      id: "v_main",
+      name: "Finance board",
+      layout: "Gallery",
+      q: "",
+      type: "All",
+      status: "All",
+      category: "All",
+      currency: "All",
+      eventType: "All",
+      from: "",
+      to: "",
+      sortKey: "date",
+      sortDir: "desc",
+      colorBy: "Status",
+    },
+    {
+      id: "v_income",
+      name: "Income",
+      layout: "Gallery",
+      q: "",
+      type: "Income",
+      status: "All",
+      category: "All",
+      currency: "All",
+      eventType: "All",
+      from: "",
+      to: "",
+      sortKey: "date",
+      sortDir: "desc",
+      colorBy: "Category",
+    },
+    {
+      id: "v_expense",
+      name: "Expenses",
+      layout: "Table",
+      q: "",
+      type: "Expense",
+      status: "All",
+      category: "All",
+      currency: "All",
+      eventType: "All",
+      from: "",
+      to: "",
+      sortKey: "date",
+      sortDir: "desc",
+      colorBy: "Type",
+    },
+    {
+      id: "v_overdue",
+      name: "Overdue",
+      layout: "Table",
+      q: "",
+      type: "All",
+      status: "Overdue",
+      category: "All",
+      currency: "All",
+      eventType: "All",
+      from: "",
+      to: "",
+      sortKey: "dueDate",
+      // @ts-expect-error keep sortKey typed; we’ll map dueDate to date fallback in sorter below
+      sortDir: "asc",
+      colorBy: "Status",
+    } as any,
+  ];
 }
 
-function normalizeImported(row: Record<string, string>): FinanceTx | null {
-  const get = (...keys: string[]) => {
-    for (const k of keys) {
-      const v = row[k];
-      if (v != null && String(v).trim() !== "") return String(v).trim();
-    }
-    return "";
-  };
-
-  const title = get("title", "Title", "description", "Description");
-  const date = get("date", "Date") || toYMD(new Date());
-  const amountRaw = get("amount", "Amount");
-  const amount = Number(String(amountRaw).replace(/,/g, ""));
-
-  if (!title || !Number.isFinite(amount)) return null;
-
-  const typeRaw = get("type", "Type") as any;
-  const statusRaw = get("status", "Status") as any;
-  const currencyRaw = get("currency", "Currency") as any;
-  const categoryRaw = get("category", "Category") as any;
-  const methodRaw = get("paymentMethod", "PaymentMethod", "method", "Method") as any;
-
-  const type: TxType = TX_TYPES.includes(typeRaw) ? typeRaw : "Expense";
-  const status: TxStatus = TX_STATUSES.includes(statusRaw) ? statusRaw : "Planned";
-  const currency: Currency = CURRENCIES.includes(currencyRaw) ? currencyRaw : "INR";
-  const category: TxCategory = CATEGORIES.includes(categoryRaw) ? categoryRaw : "Other";
-  const paymentMethod: PayMethod = METHODS.includes(methodRaw) ? methodRaw : "Bank";
-
-  return {
-    id: uid(),
-    createdAt: nowISO(),
-    updatedAt: nowISO(),
-    title,
-    date,
-    type,
-    status,
-    amount,
-    currency,
-    category,
-    paymentMethod,
-    clientName: get("clientName", "Client", "client") || undefined,
-    vendorName: get("vendorName", "Vendor", "vendor") || undefined,
-    eventTitle: get("eventTitle", "Event", "event") || undefined,
-    dueDate: get("dueDate", "DueDate") || undefined,
-    invoiceNo: get("invoiceNo", "Invoice", "InvoiceNo") || undefined,
-    referenceId: get("referenceId", "Ref", "Reference") || undefined,
-    notes: get("notes", "Notes") || undefined,
-  };
+function demoTx(): FinanceTx[] {
+  const today = toYMD(new Date());
+  const m1 = toYMD(new Date(Date.now() - 1000 * 60 * 60 * 24 * 12));
+  const m2 = toYMD(new Date(Date.now() - 1000 * 60 * 60 * 24 * 30));
+  return [
+    {
+      id: uid(),
+      title: "Client advance — Wedding",
+      date: m2,
+      type: "Income",
+      status: "Paid",
+      amount: 150000,
+      currency: "INR",
+      category: "ClientAdvance",
+      eventType: "Wedding",
+      clientName: "Client A",
+      eventTitle: "Wedding — Pal",
+      paymentMethod: "Bank",
+      invoiceNo: "INV-1001",
+      referenceId: "UTR123",
+      notes: "Advance received",
+      createdAt: nowISO(),
+      updatedAt: nowISO(),
+    },
+    {
+      id: uid(),
+      title: "Vendor payment — Decor",
+      date: m1,
+      type: "Expense",
+      status: "Pending",
+      amount: 65000,
+      currency: "INR",
+      category: "VendorPayment",
+      eventType: "Wedding",
+      vendorName: "Decor Vendor",
+      eventTitle: "Wedding — Pal",
+      paymentMethod: "UPI",
+      dueDate: today,
+      notes: "Final payment pending",
+      createdAt: nowISO(),
+      updatedAt: nowISO(),
+    },
+    {
+      id: uid(),
+      title: "Marketing — Instagram ads",
+      date: today,
+      type: "Expense",
+      status: "Paid",
+      amount: 12000,
+      currency: "INR",
+      category: "Marketing",
+      eventType: "Other",
+      paymentMethod: "Card",
+      notes: "Campaign for leads",
+      createdAt: nowISO(),
+      updatedAt: nowISO(),
+    },
+  ];
 }
 
+/* ========================================================= */
 export default function FinancePage() {
-  const [role, setRole] = useState<Role>("CEO");
-  const [email, setEmail] = useState<string>("Unknown");
+  const [views, setViews] = useState<ViewDef[]>([]);
+  const [activeViewId, setActiveViewId] = useState<string>("");
 
-  const [tab, setTab] = useState<Tab>("Overview");
-  const [month, setMonth] = useState<string>(toYM(new Date()));
   const [txs, setTxs] = useState<FinanceTx[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // filters
-  const [q, setQ] = useState("");
-  const [typeF, setTypeF] = useState<TxType | "All">("All");
-  const [statusF, setStatusF] = useState<TxStatus | "All">("All");
-  const [catF, setCatF] = useState<TxCategory | "All">("All");
-  const [sortKey, setSortKey] = useState<"date" | "amount">("date");
-  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
+  const [showTxModal, setShowTxModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-  // modal
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<FinanceTx | null>(null);
+  const importRef = useRef<HTMLInputElement | null>(null);
 
-  const fileRef = useRef<HTMLInputElement | null>(null);
-
-  const [form, setForm] = useState<FinanceTx>(() => ({
-    id: uid(),
-    createdAt: nowISO(),
-    updatedAt: nowISO(),
-    title: "",
-    date: toYMD(new Date()),
-    type: "Expense",
-    status: "Planned",
-    amount: 0,
-    currency: "INR",
-    category: "Other",
-    paymentMethod: "Bank",
-    clientName: "",
-    vendorName: "",
-    eventTitle: "",
-    dueDate: "",
-    invoiceNo: "",
-    referenceId: "",
-    notes: "",
-  }));
-
+  /* ---------- load ---------- */
   useEffect(() => {
-    const r = String(localStorage.getItem(LS_ROLE) || "CEO").toUpperCase() === "STAFF" ? "Staff" : "CEO";
-    setRole(r as Role);
-    setEmail(localStorage.getItem(LS_EMAIL) || "Unknown");
+    const savedTx = safeParse<FinanceTx[]>(localStorage.getItem(LS_TX), []);
+    const savedViews = safeParse<ViewDef[]>(localStorage.getItem(LS_VIEWS), []);
+    const savedActive = localStorage.getItem(LS_ACTIVE_VIEW);
 
-    const loaded = safeParse<FinanceTx[]>(localStorage.getItem(LS_TX), []);
-    setTxs(Array.isArray(loaded) ? loaded : []);
+    const txInit = savedTx.length ? savedTx : demoTx();
+    const viewInit = savedViews.length ? savedViews : defaultViews();
+    const activeInit = savedActive && viewInit.some((v) => v.id === savedActive) ? savedActive : viewInit[0]?.id ?? "v_main";
+
+    setTxs(txInit);
+    setViews(viewInit);
+    setActiveViewId(activeInit);
   }, []);
 
+  /* ---------- persist ---------- */
   useEffect(() => {
+    if (!views.length) return;
+    localStorage.setItem(LS_VIEWS, JSON.stringify(views));
+  }, [views]);
+
+  useEffect(() => {
+    if (!activeViewId) return;
+    localStorage.setItem(LS_ACTIVE_VIEW, activeViewId);
+  }, [activeViewId]);
+
+  useEffect(() => {
+    if (!txs.length) {
+      localStorage.setItem(LS_TX, JSON.stringify([]));
+      return;
+    }
     localStorage.setItem(LS_TX, JSON.stringify(txs));
   }, [txs]);
 
+  const activeView = useMemo(() => views.find((v) => v.id === activeViewId) ?? null, [views, activeViewId]);
+
+  /* ---------- filtering ---------- */
   const filtered = useMemo(() => {
-    const qq = q.trim().toLowerCase();
+    if (!activeView) return txs;
 
-    const list = txs.filter((t) => {
-      if (t.date.slice(0, 7) !== month) return false;
-      if (typeF !== "All" && t.type !== typeF) return false;
-      if (statusF !== "All" && t.status !== statusF) return false;
-      if (catF !== "All" && t.category !== catF) return false;
+    const q = activeView.q.trim().toLowerCase();
+    const from = activeView.from.trim();
+    const to = activeView.to.trim();
 
-      if (qq) {
+    const matches = (t: FinanceTx) => {
+      if (activeView.type !== "All" && t.type !== activeView.type) return false;
+      if (activeView.status !== "All" && t.status !== activeView.status) return false;
+      if (activeView.category !== "All" && t.category !== activeView.category) return false;
+      if (activeView.currency !== "All" && t.currency !== activeView.currency) return false;
+      if (activeView.eventType !== "All" && t.eventType !== activeView.eventType) return false;
+      if (from && t.date < from) return false;
+      if (to && t.date > to) return false;
+
+      if (q) {
         const hay = [
           t.title,
-          t.type,
-          t.status,
+          t.clientName,
+          t.vendorName,
+          t.eventTitle,
           t.category,
-          t.clientName || "",
-          t.vendorName || "",
-          t.eventTitle || "",
-          t.invoiceNo || "",
-          t.referenceId || "",
-          t.notes || "",
+          t.status,
+          t.type,
+          t.currency,
+          t.invoiceNo,
+          t.referenceId,
+          t.notes,
         ]
+          .filter(Boolean)
           .join(" ")
           .toLowerCase();
-        if (!hay.includes(qq)) return false;
+        if (!hay.includes(q)) return false;
       }
+
       return true;
-    });
-
-    list.sort((a, b) => {
-      const dir = sortDir === "asc" ? 1 : -1;
-      const va = sortKey === "amount" ? a.amount : a.date;
-      const vb = sortKey === "amount" ? b.amount : b.date;
-      if (va < (vb as any)) return -1 * dir;
-      if (va > (vb as any)) return 1 * dir;
-      return 0;
-    });
-
-    return list;
-  }, [txs, q, typeF, statusF, catF, month, sortKey, sortDir]);
-
-  const kpis = useMemo(() => {
-    const income = filtered.filter((t) => t.type === "Income").reduce((s, t) => s + t.amount, 0);
-    const expense = filtered.filter((t) => t.type === "Expense").reduce((s, t) => s + t.amount, 0);
-    const net = income - expense;
-
-    const ar = filtered
-      .filter((t) => t.type === "Income" && (t.status === "Pending" || t.status === "Overdue"))
-      .reduce((s, t) => s + t.amount, 0);
-
-    const ap = filtered
-      .filter((t) => t.type === "Expense" && (t.status === "Pending" || t.status === "Overdue"))
-      .reduce((s, t) => s + t.amount, 0);
-
-    const overdue = filtered.filter((t) => t.status === "Overdue").length;
-    return { income, expense, net, ar, ap, overdue };
-  }, [filtered]);
-
-  const byCategory = useMemo(() => {
-    const m = new Map<TxCategory, { in: number; out: number }>();
-    for (const c of CATEGORIES) m.set(c, { in: 0, out: 0 });
-    for (const t of filtered) {
-      const cur = m.get(t.category) || { in: 0, out: 0 };
-      if (t.type === "Income") cur.in += t.amount;
-      else cur.out += t.amount;
-      m.set(t.category, cur);
-    }
-    return Array.from(m.entries()).map(([category, v]) => ({
-      category,
-      income: v.in,
-      expense: v.out,
-      net: v.in - v.out,
-    }));
-  }, [filtered]);
-
-  const cal = useMemo(() => {
-    if (tab !== "Calendar") return null;
-    const first = new Date(`${month}-01T00:00:00`);
-    const startDow = first.getDay();
-    const daysInMonth = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
-
-    const cells: Array<{ ymd: string; day: number; income: number; expense: number; count: number }> = [];
-    for (let i = 0; i < startDow; i++) cells.push({ ymd: "", day: 0, income: 0, expense: 0, count: 0 });
-
-    for (let d = 1; d <= daysInMonth; d++) {
-      const ymd = `${month}-${pad2(d)}`;
-      const list = filtered.filter((t) => t.date === ymd);
-      const income = list.filter((t) => t.type === "Income").reduce((s, t) => s + t.amount, 0);
-      const expense = list.filter((t) => t.type === "Expense").reduce((s, t) => s + t.amount, 0);
-      cells.push({ ymd, day: d, income, expense, count: list.length });
-    }
-    while (cells.length % 7 !== 0) cells.push({ ymd: "", day: 0, income: 0, expense: 0, count: 0 });
-    return cells;
-  }, [tab, month, filtered]);
-
-  function openAdd() {
-    setEditing(null);
-    setForm({
-      id: uid(),
-      createdAt: nowISO(),
-      updatedAt: nowISO(),
-      title: "",
-      date: toYMD(new Date()),
-      type: "Expense",
-      status: "Planned",
-      amount: 0,
-      currency: "INR",
-      category: "Other",
-      paymentMethod: "Bank",
-      clientName: "",
-      vendorName: "",
-      eventTitle: "",
-      dueDate: "",
-      invoiceNo: "",
-      referenceId: "",
-      notes: "",
-    });
-    setOpen(true);
-  }
-
-  function openEdit(t: FinanceTx) {
-    setEditing(t);
-    setForm({
-      ...t,
-      clientName: t.clientName || "",
-      vendorName: t.vendorName || "",
-      eventTitle: t.eventTitle || "",
-      dueDate: t.dueDate || "",
-      invoiceNo: t.invoiceNo || "",
-      referenceId: t.referenceId || "",
-      notes: t.notes || "",
-    });
-    setOpen(true);
-  }
-
-  function saveTx() {
-    if (!form.title.trim()) return alert("Title is required.");
-    if (!Number.isFinite(Number(form.amount))) return alert("Amount must be a number.");
-
-    const tx: FinanceTx = {
-      ...form,
-      title: form.title.trim(),
-      amount: Number(form.amount),
-      updatedAt: nowISO(),
-      clientName: form.clientName?.trim() ? form.clientName.trim() : undefined,
-      vendorName: form.vendorName?.trim() ? form.vendorName.trim() : undefined,
-      eventTitle: form.eventTitle?.trim() ? form.eventTitle.trim() : undefined,
-      dueDate: form.dueDate?.trim() ? form.dueDate.trim() : undefined,
-      invoiceNo: form.invoiceNo?.trim() ? form.invoiceNo.trim() : undefined,
-      referenceId: form.referenceId?.trim() ? form.referenceId.trim() : undefined,
-      notes: form.notes?.trim() ? form.notes.trim() : undefined,
     };
 
-    setTxs((prev) => {
-      const idx = prev.findIndex((x) => x.id === tx.id);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = tx;
-        return next;
-      }
-      return [tx, ...prev];
+    const rows = txs.filter(matches);
+
+    const dir = activeView.sortDir === "asc" ? 1 : -1;
+    const key = activeView.sortKey;
+
+    rows.sort((a, b) => {
+      const av =
+        key === "amount"
+          ? a.amount
+          : key === "title"
+          ? a.title.toLowerCase()
+          : key === "status"
+          ? a.status
+          : key === "category"
+          ? a.category
+          : a.date; // date
+
+      const bv =
+        key === "amount"
+          ? b.amount
+          : key === "title"
+          ? b.title.toLowerCase()
+          : key === "status"
+          ? b.status
+          : key === "category"
+          ? b.category
+          : b.date;
+
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
     });
 
-    setOpen(false);
+    return rows;
+  }, [txs, activeView]);
+
+  /* ---------- KPIs ---------- */
+  const kpis = useMemo(() => {
+    const cur = (activeView?.currency && activeView.currency !== "All" ? activeView.currency : "INR") as Currency;
+    let income = 0;
+    let expense = 0;
+    let overdue = 0;
+
+    for (const t of filtered) {
+      const amt = t.currency === cur ? t.amount : 0; // (simple: only sum selected currency)
+      if (t.type === "Income") income += amt;
+      else expense += amt;
+
+      if (t.status === "Overdue") overdue += 1;
+      if (t.dueDate && t.status !== "Paid" && t.dueDate < toYMD(new Date())) overdue += 0; // keep count via status
+    }
+
+    return {
+      cur,
+      income,
+      expense,
+      net: income - expense,
+      rows: filtered.length,
+      overdue,
+    };
+  }, [filtered, activeView]);
+
+  /* ---------- CRUD ---------- */
+  function openAdd() {
+    setEditingId(null);
+    setShowTxModal(true);
+  }
+  function openEdit(id: string) {
+    setEditingId(id);
+    setShowTxModal(true);
+  }
+  function removeTx(id: string) {
+    setTxs((p) => p.filter((x) => x.id !== id));
+    if (selectedId === id) setSelectedId(null);
+  }
+  function duplicateTx(id: string) {
+    const t = txs.find((x) => x.id === id);
+    if (!t) return;
+    const copy: FinanceTx = {
+      ...t,
+      id: uid(),
+      title: t.title + " (Copy)",
+      createdAt: nowISO(),
+      updatedAt: nowISO(),
+    };
+    setTxs((p) => [copy, ...p]);
   }
 
-  function delTx(id: string) {
-    if (!confirm("Delete this transaction?")) return;
-    setTxs((prev) => prev.filter((x) => x.id !== id));
-  }
-
+  /* ---------- export/import ---------- */
   function exportCSV() {
+    const cols = [
+      "id",
+      "title",
+      "date",
+      "type",
+      "status",
+      "amount",
+      "currency",
+      "category",
+      "eventType",
+      "clientName",
+      "vendorName",
+      "eventTitle",
+      "dueDate",
+      "paymentMethod",
+      "invoiceNo",
+      "referenceId",
+      "notes",
+      "createdAt",
+      "updatedAt",
+    ] as const;
+
+    const header = cols.join(",");
+    const lines = filtered.map((t) =>
+      cols
+        .map((c) => {
+          const v = (t as any)[c];
+          return escCSV(v);
+        })
+        .join(",")
+    );
+
+    downloadText(`eventura_finance_${toYMD(new Date())}.csv`, [header, ...lines].join("\n"), "text/csv;charset=utf-8");
+  }
+
+  function exportExcelTSV() {
+    // Excel-friendly: TSV opens cleanly without CSV comma issues.
     const cols = [
       "title",
       "date",
@@ -610,774 +691,785 @@ export default function FinancePage() {
       "amount",
       "currency",
       "category",
-      "paymentMethod",
+      "eventType",
       "clientName",
       "vendorName",
       "eventTitle",
       "dueDate",
+      "paymentMethod",
       "invoiceNo",
       "referenceId",
       "notes",
     ] as const;
 
-    const rows = filtered.map((t) => cols.map((c) => escCSV((t as any)[c])));
-    const csv = [cols.join(","), ...rows.map((r) => r.join(","))].join("\n");
-    downloadText(`eventura_finance_${month}.csv`, csv, "text/csv;charset=utf-8");
-  }
-
-  function exportExcel() {
-    const cols = [
-      "title",
-      "date",
-      "type",
-      "status",
-      "amount",
-      "currency",
-      "category",
-      "paymentMethod",
-      "clientName",
-      "vendorName",
-      "eventTitle",
-      "dueDate",
-      "invoiceNo",
-      "referenceId",
-      "notes",
-    ];
-    const head = `<tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>`;
-    const body = filtered
-      .map(
-        (t) =>
-          `<tr>${cols
-            .map((c) => `<td>${String((t as any)[c] ?? "").replace(/</g, "&lt;")}</td>`)
-            .join("")}</tr>`
-      )
-      .join("");
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8" /></head><body><table border="1">${head}${body}</table></body></html>`;
-    downloadText(`eventura_finance_${month}.xls`, html, "application/vnd.ms-excel;charset=utf-8");
-  }
-
-  async function importCSVFile(file: File) {
-    const text = await file.text();
-    const rows = parseCSV(text);
-    const imported: FinanceTx[] = [];
-    for (const r of rows) {
-      const tx = normalizeImported(r);
-      if (tx) imported.push(tx);
-    }
-    if (!imported.length) return alert("No valid rows found in CSV.");
-    setTxs((prev) => [...imported, ...prev]);
-    alert(`Imported ${imported.length} transactions.`);
-  }
-
-  function loadDemo() {
-    const ym = month;
-    const demo: FinanceTx[] = [
-      {
-        id: uid(),
-        createdAt: nowISO(),
-        updatedAt: nowISO(),
-        title: "Client advance — Wedding",
-        date: `${ym}-05`,
-        type: "Income",
-        status: "Paid",
-        amount: 50000,
-        currency: "INR",
-        category: "ClientAdvance",
-        paymentMethod: "UPI",
-        clientName: "Patel Family",
-        eventTitle: "Wedding @ Surat",
-        invoiceNo: "INV-1001",
-      },
-      {
-        id: uid(),
-        createdAt: nowISO(),
-        updatedAt: nowISO(),
-        title: "Vendor payment — Decor",
-        date: `${ym}-08`,
-        type: "Expense",
-        status: "Pending",
-        amount: 30000,
-        currency: "INR",
-        category: "VendorPayment",
-        paymentMethod: "Bank",
-        vendorName: "Decor House",
-        dueDate: `${ym}-12`,
-      },
-      {
-        id: uid(),
-        createdAt: nowISO(),
-        updatedAt: nowISO(),
-        title: "Marketing — Instagram ads",
-        date: `${ym}-10`,
-        type: "Expense",
-        status: "Paid",
-        amount: 8000,
-        currency: "INR",
-        category: "Marketing",
-        paymentMethod: "Card",
-      },
-      {
-        id: uid(),
-        createdAt: nowISO(),
-        updatedAt: nowISO(),
-        title: "Corporate booking",
-        date: `${ym}-18`,
-        type: "Income",
-        status: "Pending",
-        amount: 75000,
-        currency: "INR",
-        category: "Sales",
-        paymentMethod: "Bank",
-        clientName: "ABC Pvt Ltd",
-        dueDate: `${ym}-28`,
-      },
-    ];
-    setTxs((prev) => [...demo, ...prev]);
-  }
-
-  const appNav = [
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/events", label: "Events" },
-    { href: "/finance", label: "Finance" },
-    { href: "/vendors", label: "Vendors" },
-    { href: "/ai", label: "AI" },
-    { href: "/hr", label: "HR" },
-    { href: "/reports", label: "Reports" },
-    { href: "/settings", label: "Settings" },
-  ] as const;
-
-  function TabBtn({ t }: { t: Tab }) {
-    const active = tab === t;
-    return (
-      <button
-        onClick={() => setTab(t)}
-        className={cls(
-          "rounded-xl border px-3 py-2 text-sm transition",
-          active ? "border-white/25 bg-white/10 text-white" : "border-transparent text-white/70 hover:bg-black hover:text-white"
-        )}
-      >
-        {t}
-      </button>
+    const header = cols.join("\t");
+    const lines = filtered.map((t) =>
+      cols
+        .map((c) => {
+          const v = (t as any)[c];
+          return String(v ?? "").replace(/\t/g, " ");
+        })
+        .join("\t")
     );
+
+    downloadText(`eventura_finance_${toYMD(new Date())}.xls`, [header, ...lines].join("\n"), "application/vnd.ms-excel");
   }
 
+  function clickImport() {
+    importRef.current?.click();
+  }
+
+  function importCSV(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result ?? "");
+      const rows = text.split(/\r?\n/).filter(Boolean);
+      if (rows.length < 2) return;
+
+      const header = rows[0].split(",").map((x) => x.trim());
+      const idx = (k: string) => header.findIndex((h) => h === k);
+
+      const out: FinanceTx[] = [];
+      for (let i = 1; i < rows.length; i++) {
+        const line = rows[i];
+        if (!line.trim()) continue;
+
+        // basic CSV parse (supports quotes)
+        const cells: string[] = [];
+        let cur = "";
+        let inQ = false;
+        for (let j = 0; j < line.length; j++) {
+          const ch = line[j];
+          if (ch === '"' && line[j + 1] === '"') {
+            cur += '"';
+            j++;
+            continue;
+          }
+          if (ch === '"') {
+            inQ = !inQ;
+            continue;
+          }
+          if (ch === "," && !inQ) {
+            cells.push(cur);
+            cur = "";
+            continue;
+          }
+          cur += ch;
+        }
+        cells.push(cur);
+
+        const get = (k: string) => {
+          const p = idx(k);
+          if (p < 0) return "";
+          return (cells[p] ?? "").trim();
+        };
+
+        const tx: FinanceTx = {
+          id: get("id") || uid(),
+          title: get("title") || "Untitled",
+          date: get("date") || toYMD(new Date()),
+          type: (get("type") as TxType) || "Expense",
+          status: (get("status") as TxStatus) || "Planned",
+          amount: parseNum(get("amount"), 0),
+          currency: (get("currency") as Currency) || "INR",
+          category: (get("category") as TxTag) || "Other",
+          eventType: (get("eventType") as EventType) || "Other",
+          clientName: get("clientName") || undefined,
+          vendorName: get("vendorName") || undefined,
+          eventTitle: get("eventTitle") || undefined,
+          dueDate: get("dueDate") || undefined,
+          paymentMethod: (get("paymentMethod") as PayMethod) || "Bank",
+          invoiceNo: get("invoiceNo") || undefined,
+          referenceId: get("referenceId") || undefined,
+          notes: get("notes") || undefined,
+          createdAt: get("createdAt") || nowISO(),
+          updatedAt: nowISO(),
+        };
+
+        out.push(tx);
+      }
+
+      if (out.length) setTxs((p) => [...out, ...p]);
+    };
+    reader.readAsText(file);
+  }
+
+  /* ---------- views ---------- */
+  function updateView(patch: Partial<ViewDef>) {
+    setViews((prev) => prev.map((v) => (v.id === activeViewId ? { ...v, ...patch } : v)));
+  }
+
+  function addView() {
+    const v: ViewDef = {
+      id: uid("view"),
+      name: "New view",
+      layout: "Gallery",
+      q: "",
+      type: "All",
+      status: "All",
+      category: "All",
+      currency: "All",
+      eventType: "All",
+      from: "",
+      to: "",
+      sortKey: "date",
+      sortDir: "desc",
+      colorBy: "Status",
+    };
+    setViews((p) => [v, ...p]);
+    setActiveViewId(v.id);
+  }
+
+  function renameView() {
+    const name = prompt("Rename view:", activeView?.name ?? "");
+    if (!name || !activeView) return;
+    updateView({ name: name.trim().slice(0, 40) });
+  }
+
+  function deleteView() {
+    if (!activeView) return;
+    if (!confirm(`Delete view "${activeView.name}"?`)) return;
+    setViews((p) => p.filter((x) => x.id !== activeView.id));
+    setActiveViewId((p) => {
+      const remain = views.filter((x) => x.id !== activeView.id);
+      return remain[0]?.id ?? "v_main";
+    });
+  }
+
+  /* ---------- record form ---------- */
+  const editingTx = useMemo(() => (editingId ? txs.find((t) => t.id === editingId) ?? null : null), [editingId, txs]);
+
+  const [form, setForm] = useState<FinanceTx | null>(null);
+  useEffect(() => {
+    if (!showTxModal) return;
+
+    if (editingTx) {
+      setForm({ ...editingTx });
+    } else {
+      setForm({
+        id: uid(),
+        title: "",
+        date: toYMD(new Date()),
+        type: "Expense",
+        status: "Planned",
+        amount: 0,
+        currency: "INR",
+        category: "Other",
+        eventType: "Other",
+        paymentMethod: "Bank",
+        createdAt: nowISO(),
+        updatedAt: nowISO(),
+      });
+    }
+  }, [showTxModal, editingTx]);
+
+  function saveTx() {
+    if (!form) return;
+
+    const clean: FinanceTx = {
+      ...form,
+      title: form.title.trim() || "Untitled",
+      amount: parseNum(form.amount, 0),
+      updatedAt: nowISO(),
+    };
+
+    setTxs((prev) => {
+      const exists = prev.some((t) => t.id === clean.id);
+      if (exists) return prev.map((t) => (t.id === clean.id ? clean : t));
+      return [clean, ...prev];
+    });
+
+    setShowTxModal(false);
+    setEditingId(null);
+    setSelectedId(clean.id);
+  }
+
+  /* ========================================================= */
   return (
-    <div className="min-h-screen bg-[#050505] text-white">
-      {/* PREMIUM BACKDROP */}
-      <div className="pointer-events-none fixed inset-0 opacity-60">
-        <div className="absolute -top-40 left-1/2 h-[520px] w-[760px] -translate-x-1/2 rounded-full bg-white/5 blur-3xl" />
-        <div className="absolute bottom-[-180px] right-[-180px] h-[420px] w-[420px] rounded-full bg-white/5 blur-3xl" />
-      </div>
+    <div className="min-h-screen bg-[#f6f7fb] text-zinc-900">
+      {/* Top OS bar */}
+      <div className="border-b border-zinc-200 bg-white">
+        <div className="mx-auto max-w-[1400px] px-4">
+          <div className="flex items-center justify-between py-3">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-xl bg-black text-white grid place-items-center font-semibold">
+                E
+              </div>
+              <div className="leading-tight">
+                <div className="text-sm font-semibold">Eventura OS</div>
+                <div className="text-[12px] text-zinc-500">Finance</div>
+              </div>
+            </div>
 
-      {/* TOP OS BAR */}
-      <div className="sticky top-0 z-50 border-b border-white/10 bg-black/70 backdrop-blur">
-        <div className="mx-auto flex max-w-[1450px] items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl border border-white/15 bg-white/5" />
-            <div className="leading-tight">
-              <div className="text-sm font-semibold">Eventura OS</div>
-              <div className="text-xs text-white/50">Finance Control Center</div>
+            <div className="hidden md:flex items-center gap-2">
+              <span className="text-xs text-zinc-500">Signed in</span>
+              <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs">
+                CEO
+              </span>
             </div>
           </div>
 
-          <div className="hidden items-center gap-2 lg:flex">
-            {appNav.map((n) => (
-              <Link
-                key={n.href}
-                href={n.href}
-                className={cls(
-                  "rounded-xl border px-3 py-2 text-sm transition",
-                  n.href === "/finance"
-                    ? "border-white/25 bg-white/10 text-white"
-                    : "border-transparent bg-transparent text-white/70 hover:bg-black hover:text-white"
-                )}
-              >
-                {n.label}
-              </Link>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div className="hidden rounded-2xl border border-white/12 bg-white/5 px-3 py-2 text-xs text-white/70 md:block">
-              Signed in <span className="text-white">{email}</span> • <span className="text-white">{role}</span>
+          {/* App nav like your OS */}
+          <div className="flex items-center justify-between pb-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {[
+                ["Dashboard", "/dashboard"],
+                ["Events", "/events"],
+                ["Finance", "/finance"],
+                ["Vendors", "/vendors"],
+                ["AI", "/ai"],
+                ["HR", "/hr"],
+                ["Reports", "/reports"],
+                ["Settings", "/settings"],
+              ].map(([label, href]) => {
+                const active = href === "/finance";
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    className={cls(
+                      "rounded-xl border px-3 py-2 text-sm transition",
+                      active
+                        ? "border-black bg-black text-white"
+                        : "border-zinc-200 bg-white text-zinc-800 hover:bg-black hover:text-white hover:border-black"
+                    )}
+                  >
+                    {label}
+                  </Link>
+                );
+              })}
             </div>
-            <Link
-              href="/settings"
-              className="rounded-xl border border-white/12 bg-white/5 px-3 py-2 text-sm text-white/85 hover:bg-black hover:text-white"
-            >
-              Settings
-            </Link>
+
+            <div className="hidden lg:flex items-center gap-2">
+              <HoverBtn variant="outline" onClick={renameView} title="Rename current view">
+                Rename view
+              </HoverBtn>
+              <HoverBtn variant="outline" onClick={addView} title="Add a new view">
+                + View
+              </HoverBtn>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* MAIN SHELL */}
-      <div className="mx-auto grid max-w-[1450px] grid-cols-1 gap-4 px-4 py-4 lg:grid-cols-[280px_1fr]">
-        {/* LEFT SIDEBAR (premium, clean, fast access) */}
-        <aside className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/5">
-          <div className="border-b border-white/10 bg-black/35 px-4 py-4">
-            <div className="text-sm font-semibold">Finance Workspace</div>
-            <div className="mt-1 text-xs text-white/55">Fast navigation • clean layout</div>
-          </div>
-
-          <div className="p-3">
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setTab("Overview")}
-                className={cls(
-                  "rounded-2xl border px-3 py-3 text-left transition",
-                  tab === "Overview" ? "border-white/25 bg-white/10" : "border-white/10 bg-black/20 hover:bg-black hover:border-white/20"
-                )}
-              >
-                <div className="text-xs text-white/55">Tab</div>
-                <div className="mt-1 text-sm font-semibold">Overview</div>
-              </button>
-
-              <button
-                onClick={() => setTab("Transactions")}
-                className={cls(
-                  "rounded-2xl border px-3 py-3 text-left transition",
-                  tab === "Transactions" ? "border-white/25 bg-white/10" : "border-white/10 bg-black/20 hover:bg-black hover:border-white/20"
-                )}
-              >
-                <div className="text-xs text-white/55">Tab</div>
-                <div className="mt-1 text-sm font-semibold">Transactions</div>
-              </button>
-
-              <button
-                onClick={() => setTab("Calendar")}
-                className={cls(
-                  "rounded-2xl border px-3 py-3 text-left transition",
-                  tab === "Calendar" ? "border-white/25 bg-white/10" : "border-white/10 bg-black/20 hover:bg-black hover:border-white/20"
-                )}
-              >
-                <div className="text-xs text-white/55">Tab</div>
-                <div className="mt-1 text-sm font-semibold">Calendar</div>
-              </button>
-
-              <button
-                onClick={() => setTab("Reports")}
-                className={cls(
-                  "rounded-2xl border px-3 py-3 text-left transition",
-                  tab === "Reports" ? "border-white/25 bg-white/10" : "border-white/10 bg-black/20 hover:bg-black hover:border-white/20"
-                )}
-              >
-                <div className="text-xs text-white/55">Tab</div>
-                <div className="mt-1 text-sm font-semibold">Reports</div>
-              </button>
-            </div>
-
-            <div className="mt-3 rounded-2xl border border-white/10 bg-black/25 p-3">
-              <div className="text-xs text-white/55">Month</div>
-              <div className="mt-2">
-                <Input value={month} onChange={setMonth} type="month" />
-              </div>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <Btn onClick={openAdd}>+ Add</Btn>
-                <Btn variant="outline" onClick={loadDemo}>
-                  Demo
-                </Btn>
-              </div>
-            </div>
-
-            <div className="mt-3 rounded-2xl border border-white/10 bg-black/25 p-3">
-              <div className="text-xs text-white/55">Quick export</div>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <Btn variant="outline" onClick={exportCSV}>
-                  CSV
-                </Btn>
-                <Btn onClick={exportExcel}>Excel</Btn>
-              </div>
-            </div>
-
-            <div className="mt-3 rounded-2xl border border-white/10 bg-black/25 p-3">
-              <div className="text-xs text-white/55">Import</div>
-              <div className="mt-2">
-                <Btn variant="outline" onClick={() => fileRef.current?.click()} className="w-full">
-                  Import CSV
-                </Btn>
-              </div>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".csv,text/csv"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (!f) return;
-                  importCSVFile(f).catch(() => alert("CSV import failed."));
-                  e.currentTarget.value = "";
-                }}
-              />
+      {/* Page header */}
+      <div className="mx-auto max-w-[1400px] px-4 pt-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <div className="text-2xl font-semibold">Finance Control Center</div>
+            <div className="text-sm text-zinc-600">
+              Transactions • Views • Import/Export • Reports • Clean OS layout • Black hover
             </div>
           </div>
-        </aside>
 
-        {/* MAIN CONTENT */}
-        <main className="overflow-hidden rounded-2xl border border-white/10 bg-white/5">
-          {/* COMMAND BAR */}
-          <div className="border-b border-white/10 bg-black/35 px-4 py-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="text-lg font-semibold">{tab}</div>
-                <div className="text-xs text-white/55">Clean • attractive • easy to access • black hover</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <HoverBtn onClick={exportExcelTSV} title="Excel-friendly export">
+              Export Excel
+            </HoverBtn>
+            <HoverBtn onClick={exportCSV} title="Export filtered rows as CSV">
+              Export CSV
+            </HoverBtn>
+            <HoverBtn onClick={clickImport} title="Import CSV">
+              Import
+            </HoverBtn>
+            <HoverBtn onClick={() => setTxs(demoTx())} variant="outline" title="Load demo data">
+              Demo
+            </HoverBtn>
+            <HoverBtn onClick={openAdd} variant="outline" title="Add transaction">
+              + Add
+            </HoverBtn>
+            <input
+              ref={importRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) importCSV(f);
+                e.currentTarget.value = "";
+              }}
+            />
+          </div>
+        </div>
+
+        {/* KPI row */}
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-6">
+          {[
+            ["Month", toYMD(new Date()).slice(0, 7)],
+            ["Income", money(kpis.income, kpis.cur)],
+            ["Expense", money(kpis.expense, kpis.cur)],
+            ["Net", money(kpis.net, kpis.cur)],
+            ["Rows", String(kpis.rows)],
+            ["Overdue", String(kpis.overdue)],
+          ].map(([k, v]) => (
+            <div key={k} className="rounded-2xl border border-zinc-200 bg-white p-3">
+              <div className="text-[12px] text-zinc-500">{k}</div>
+              <div className="mt-1 text-sm font-semibold">{v}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Workspace layout */}
+        <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-[280px_1fr]">
+          {/* Views sidebar */}
+          <div className="rounded-2xl border border-zinc-200 bg-white p-3">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold">Views</div>
+              <HoverBtn variant="ghost" onClick={addView} title="Add view">
+                +
+              </HoverBtn>
+            </div>
+
+            <div className="mt-2 space-y-1">
+              {views.map((v) => {
+                const active = v.id === activeViewId;
+                return (
+                  <button
+                    key={v.id}
+                    onClick={() => setActiveViewId(v.id)}
+                    className={cls(
+                      "w-full text-left rounded-xl border px-3 py-2 text-sm transition",
+                      active
+                        ? "border-black bg-black text-white"
+                        : "border-transparent bg-white text-zinc-800 hover:bg-black hover:text-white hover:border-black"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{v.name}</span>
+                      <span className="text-[11px] opacity-70">{v.layout}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 flex items-center gap-2">
+              <HoverBtn variant="outline" onClick={renameView}>
+                Rename
+              </HoverBtn>
+              <HoverBtn variant="danger" onClick={deleteView}>
+                Delete
+              </HoverBtn>
+            </div>
+          </div>
+
+          {/* Main board */}
+          <div className="rounded-2xl border border-zinc-200 bg-white">
+            {/* Toolbar (Airtable-like) */}
+            <div className="flex flex-col gap-3 border-b border-zinc-200 p-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <HoverBtn
+                  variant="soft"
+                  onClick={() => updateView({ layout: activeView?.layout === "Gallery" ? "Table" : "Gallery" })}
+                  title="Toggle layout"
+                >
+                  Layout: {activeView?.layout ?? "Gallery"}
+                </HoverBtn>
+
+                <HoverBtn variant="soft" onClick={() => {}} title="Customize cards">
+                  Customize cards
+                </HoverBtn>
+
+                <HoverBtn
+                  variant="soft"
+                  onClick={() => updateView({ colorBy: activeView?.colorBy === "Status" ? "Category" : "Status" })}
+                  title="Color style"
+                >
+                  Color: {activeView?.colorBy ?? "Status"}
+                </HoverBtn>
+
+                <HoverBtn variant="soft" onClick={() => alert("Share link feature can be wired later (Supabase/auth).")} title="Share">
+                  Share view
+                </HoverBtn>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <div className="w-[260px]">
-                  <Input value={q} onChange={setQ} placeholder="Search title, client, vendor, invoice..." />
+                <div className="w-full md:w-[340px]">
+                  <Input
+                    value={activeView?.q ?? ""}
+                    onChange={(v) => updateView({ q: v })}
+                    placeholder="Search..."
+                  />
                 </div>
-
-                <div className="hidden lg:flex items-center gap-2 rounded-2xl border border-white/10 bg-black/30 p-1">
-                  <TabBtn t="Overview" />
-                  <TabBtn t="Transactions" />
-                  <TabBtn t="Calendar" />
-                  <TabBtn t="Reports" />
-                </div>
-
-                <Btn onClick={openAdd}>+ Add</Btn>
-                <Btn variant="outline" onClick={() => fileRef.current?.click()}>
-                  Import
-                </Btn>
-                <Btn variant="outline" onClick={exportCSV}>
-                  Export CSV
-                </Btn>
-                <Btn onClick={exportExcel}>Export Excel</Btn>
               </div>
             </div>
-          </div>
 
-          {/* KPI STRIP */}
-          <div className="px-4 py-4">
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-              {[
-                { label: "Income", value: money(kpis.income, "INR") },
-                { label: "Expense", value: money(kpis.expense, "INR") },
-                { label: "Net", value: money(kpis.net, "INR") },
-                { label: "AR", value: money(kpis.ar, "INR") },
-                { label: "AP", value: money(kpis.ap, "INR") },
-                { label: "Overdue", value: String(kpis.overdue) },
-              ].map((k) => (
-                <div
-                  key={k.label}
-                  className="rounded-2xl border border-white/10 bg-black/25 p-4 transition hover:bg-black hover:border-white/20"
-                >
-                  <div className="text-xs text-white/55">{k.label}</div>
-                  <div className="mt-1 text-sm font-semibold">{k.value}</div>
-                </div>
-              ))}
+            {/* Filters row */}
+            <div className="grid grid-cols-1 gap-2 border-b border-zinc-200 p-3 md:grid-cols-6">
+              <Select
+                value={activeView?.type ?? "All"}
+                onChange={(v) => updateView({ type: v as any })}
+                options={[{ value: "All", label: "Type: All" }, ...TX_TYPES.map((x) => ({ value: x, label: `Type: ${x}` }))]}
+              />
+              <Select
+                value={activeView?.status ?? "All"}
+                onChange={(v) => updateView({ status: v as any })}
+                options={[{ value: "All", label: "Status: All" }, ...TX_STATUSES.map((x) => ({ value: x, label: `Status: ${x}` }))]}
+              />
+              <Select
+                value={activeView?.category ?? "All"}
+                onChange={(v) => updateView({ category: v as any })}
+                options={[{ value: "All", label: "Category: All" }, ...TAGS.map((x) => ({ value: x, label: `Category: ${x}` }))]}
+              />
+              <Select
+                value={activeView?.eventType ?? "All"}
+                onChange={(v) => updateView({ eventType: v as any })}
+                options={[{ value: "All", label: "Event: All" }, ...EVENT_TYPES.map((x) => ({ value: x, label: `Event: ${x}` }))]}
+              />
+              <Input value={activeView?.from ?? ""} onChange={(v) => updateView({ from: v })} placeholder="From (YYYY-MM-DD)" />
+              <Input value={activeView?.to ?? ""} onChange={(v) => updateView({ to: v })} placeholder="To (YYYY-MM-DD)" />
             </div>
-          </div>
 
-          {/* WORKSPACE BODY */}
-          <div className="px-4 pb-5">
-            {/* FILTER BAR (only show for list-like tabs) */}
-            {tab !== "Overview" ? (
-              <div className="mb-3 rounded-2xl border border-white/10 bg-black/25 p-3">
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
-                  <div className="md:col-span-3">
-                    <Select
-                      value={typeF}
-                      onChange={(v) => setTypeF(v as any)}
-                      options={[
-                        { value: "All", label: "Type: All" },
-                        ...TX_TYPES.map((t) => ({ value: t, label: `Type: ${t}` })),
-                      ]}
-                    />
-                  </div>
-                  <div className="md:col-span-3">
-                    <Select
-                      value={statusF}
-                      onChange={(v) => setStatusF(v as any)}
-                      options={[
-                        { value: "All", label: "Status: All" },
-                        ...TX_STATUSES.map((s) => ({ value: s, label: `Status: ${s}` })),
-                      ]}
-                    />
-                  </div>
-                  <div className="md:col-span-3">
-                    <Select
-                      value={catF}
-                      onChange={(v) => setCatF(v as any)}
-                      options={[
-                        { value: "All", label: "Category: All" },
-                        ...CATEGORIES.map((c) => ({ value: c, label: `Category: ${c}` })),
-                      ]}
-                    />
-                  </div>
-                  <div className="md:col-span-3">
-                    <div className="flex gap-2">
-                      <Select
-                        value={sortKey}
-                        onChange={(v) => setSortKey(v as any)}
-                        options={[
-                          { value: "date", label: "Sort: Date" },
-                          { value: "amount", label: "Sort: Amount" },
-                        ]}
-                      />
-                      <Btn variant="outline" onClick={() => setSortDir((d) => (d === "desc" ? "asc" : "desc"))}>
-                        {sortDir === "desc" ? "↓" : "↑"}
-                      </Btn>
-                      <Btn
-                        variant="outline"
-                        onClick={() => {
-                          setQ("");
-                          setTypeF("All");
-                          setStatusF("All");
-                          setCatF("All");
-                          setSortKey("date");
-                          setSortDir("desc");
-                        }}
-                      >
-                        Reset
-                      </Btn>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : null}
+            {/* Sort row */}
+            <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 p-3">
+              <Select
+                value={activeView?.sortKey ?? "date"}
+                onChange={(v) => updateView({ sortKey: v as any })}
+                options={[
+                  { value: "date", label: "Sort: Date" },
+                  { value: "amount", label: "Sort: Amount" },
+                  { value: "title", label: "Sort: Title" },
+                  { value: "status", label: "Sort: Status" },
+                  { value: "category", label: "Sort: Category" },
+                ]}
+              />
+              <Select
+                value={activeView?.sortDir ?? "desc"}
+                onChange={(v) => updateView({ sortDir: v as any })}
+                options={[
+                  { value: "desc", label: "Desc" },
+                  { value: "asc", label: "Asc" },
+                ]}
+              />
+              <Select
+                value={activeView?.currency ?? "All"}
+                onChange={(v) => updateView({ currency: v as any })}
+                options={[{ value: "All", label: "Currency: All" }, ...CURRENCIES.map((x) => ({ value: x, label: `Currency: ${x}` }))]}
+              />
+              <HoverBtn
+                variant="outline"
+                onClick={() => updateView({ q: "", type: "All", status: "All", category: "All", currency: "All", eventType: "All", from: "", to: "" })}
+                title="Clear filters"
+              >
+                Clear
+              </HoverBtn>
+            </div>
 
-            {/* OVERVIEW GRID */}
-            {tab === "Overview" ? (
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-12">
-                {/* Focus cards */}
-                <div className="lg:col-span-7 rounded-2xl border border-white/10 bg-black/25 p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-semibold">Recent activity</div>
-                    <Btn variant="ghost" onClick={() => setTab("Transactions")}>
-                      Open table →
-                    </Btn>
-                  </div>
-
-                  <div className="mt-3 grid gap-2">
-                    {(filtered.slice(0, 7).length ? filtered.slice(0, 7) : []).map((t) => (
-                      <button
-                        key={t.id}
-                        onClick={() => openEdit(t)}
-                        className="w-full rounded-2xl border border-white/10 bg-black/35 p-3 text-left transition hover:bg-black hover:border-white/20"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-semibold">{t.title}</div>
-                            <div className="mt-1 flex flex-wrap gap-2">
-                              <Pill tone={toneForStatus(t.status)}>{t.status}</Pill>
-                              <Pill tone={toneForType(t.type)}>{t.type}</Pill>
-                              <Pill tone={toneForCategory(t.category)}>{t.category}</Pill>
-                            </div>
-                            <div className="mt-2 text-xs text-white/55">
-                              {t.clientName || t.vendorName || "-"} • {t.eventTitle || "No event"} • {t.paymentMethod}
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-sm font-semibold">{money(t.amount, t.currency)}</div>
-                            <div className="text-xs text-white/55">{t.date}</div>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-
-                    {filtered.length === 0 ? (
-                      <div className="rounded-2xl border border-white/10 bg-black/35 p-6 text-sm text-white/70">
-                        No transactions for this month. Click <span className="text-white">+ Add</span> or load{" "}
-                        <span className="text-white">Demo</span>.
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-
-                {/* Category summary */}
-                <div className="lg:col-span-5 rounded-2xl border border-white/10 bg-black/25 p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-semibold">Category summary</div>
-                    <Pill tone="muted">{month}</Pill>
-                  </div>
-
-                  <div className="mt-3 grid gap-2">
-                    {byCategory.slice(0, 8).map((r) => (
-                      <div
-                        key={r.category}
-                        className="rounded-2xl border border-white/10 bg-black/35 p-3 transition hover:bg-black hover:border-white/20"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="font-semibold">{r.category}</div>
-                          <Pill tone={toneForCategory(r.category)}>{money(r.net, "INR")}</Pill>
-                        </div>
-                        <div className="mt-1 text-xs text-white/60">
-                          Income {money(r.income, "INR")} • Expense {money(r.expense, "INR")}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {/* TRANSACTIONS TABLE */}
-            {tab === "Transactions" ? (
-              <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/25">
-                <div className="overflow-auto">
-                  <table className="min-w-[1050px] w-full text-left text-sm">
-                    <thead className="bg-black/45 border-b border-white/10">
-                      <tr className="text-white/75">
-                        <th className="px-4 py-3">Date</th>
-                        <th className="px-4 py-3">Title</th>
-                        <th className="px-4 py-3">Type</th>
-                        <th className="px-4 py-3">Status</th>
-                        <th className="px-4 py-3">Category</th>
-                        <th className="px-4 py-3">Amount</th>
-                        <th className="px-4 py-3">Client/Vendor</th>
-                        <th className="px-4 py-3">Actions</th>
+            {/* Content */}
+            <div className="relative p-4">
+              {activeView?.layout === "Table" ? (
+                <div className="overflow-auto rounded-2xl border border-zinc-200">
+                  <table className="min-w-[980px] w-full text-sm">
+                    <thead className="bg-zinc-50 text-zinc-700">
+                      <tr>
+                        {["Title", "Date", "Type", "Status", "Amount", "Category", "Event", "Client/Vendor", "Due", "Actions"].map((h) => (
+                          <th key={h} className="px-3 py-2 text-left font-semibold border-b border-zinc-200">
+                            {h}
+                          </th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {filtered.length === 0 ? (
-                        <tr>
-                          <td className="px-4 py-6 text-white/70" colSpan={8}>
-                            No rows found. Add a transaction or import CSV.
-                          </td>
-                        </tr>
-                      ) : null}
-
                       {filtered.map((t) => (
-                        <tr key={t.id} className="border-b border-white/10 hover:bg-black transition">
-                          <td className="px-4 py-3 text-white/70">{t.date}</td>
-                          <td className="px-4 py-3">
-                            <div className="font-semibold">{t.title}</div>
-                            <div className="text-xs text-white/55">
-                              {t.eventTitle || "-"} • {t.paymentMethod} • {t.invoiceNo || "No invoice"}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <Pill tone={toneForType(t.type)}>{t.type}</Pill>
-                          </td>
-                          <td className="px-4 py-3">
-                            <Pill tone={toneForStatus(t.status)}>{t.status}</Pill>
-                          </td>
-                          <td className="px-4 py-3">
-                            <Pill tone={toneForCategory(t.category)}>{t.category}</Pill>
-                          </td>
-                          <td className="px-4 py-3 font-semibold">{money(t.amount, t.currency)}</td>
-                          <td className="px-4 py-3 text-white/70">{t.clientName || t.vendorName || "-"}</td>
-                          <td className="px-4 py-3">
-                            <div className="flex gap-2">
-                              <Btn variant="outline" onClick={() => openEdit(t)}>
+                        <tr
+                          key={t.id}
+                          className={cls(
+                            "border-b border-zinc-100 transition",
+                            selectedId === t.id ? "bg-zinc-50" : "bg-white",
+                            "hover:bg-black hover:text-white"
+                          )}
+                          onClick={() => setSelectedId(t.id)}
+                        >
+                          <td className="px-3 py-2 font-medium">{t.title}</td>
+                          <td className="px-3 py-2">{t.date}</td>
+                          <td className="px-3 py-2">{t.type}</td>
+                          <td className="px-3 py-2">{t.status}</td>
+                          <td className="px-3 py-2">{money(t.amount, t.currency)}</td>
+                          <td className="px-3 py-2">{t.category}</td>
+                          <td className="px-3 py-2">{t.eventType}</td>
+                          <td className="px-3 py-2">{t.clientName || t.vendorName || "-"}</td>
+                          <td className="px-3 py-2">{t.dueDate || "-"}</td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <button
+                                className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-900 hover:bg-black hover:text-white hover:border-black"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEdit(t.id);
+                                }}
+                              >
                                 Edit
-                              </Btn>
-                              <Btn variant="danger" onClick={() => delTx(t.id)}>
+                              </button>
+                              <button
+                                className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-900 hover:bg-black hover:text-white hover:border-black"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  duplicateTx(t.id);
+                                }}
+                              >
+                                Duplicate
+                              </button>
+                              <button
+                                className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-900 hover:bg-black hover:text-white hover:border-black"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (confirm("Delete this transaction?")) removeTx(t.id);
+                                }}
+                              >
                                 Delete
-                              </Btn>
+                              </button>
                             </div>
                           </td>
                         </tr>
                       ))}
+                      {!filtered.length ? (
+                        <tr>
+                          <td colSpan={10} className="px-4 py-10 text-center text-zinc-500">
+                            No rows found. Click <span className="font-semibold">+ Add</span> to create a transaction.
+                          </td>
+                        </tr>
+                      ) : null}
                     </tbody>
                   </table>
                 </div>
-              </div>
-            ) : null}
-
-            {/* CALENDAR */}
-            {tab === "Calendar" ? (
-              <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold">Calendar — {month}</div>
-                  <div className="text-xs text-white/60">Totals per day (filtered)</div>
-                </div>
-
-                <div className="mt-3 grid grid-cols-7 gap-2 text-xs text-white/55">
-                  {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
-                    <div key={d} className="px-2 py-1">
-                      {d}
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-2 grid grid-cols-7 gap-2">
-                  {cal?.map((c, idx) => (
-                    <div
-                      key={idx}
+              ) : (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                  {filtered.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => setSelectedId(t.id)}
                       className={cls(
-                        "min-h-[96px] rounded-2xl border border-white/10 bg-black/35 p-2 transition hover:bg-black hover:border-white/20",
-                        !c.ymd && "opacity-25"
+                        "text-left rounded-2xl border border-zinc-200 bg-white shadow-sm transition overflow-hidden",
+                        "hover:bg-black hover:text-white hover:border-black",
+                        selectedId === t.id && "ring-2 ring-black"
                       )}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs text-white/60">{c.day ? c.day : ""}</div>
-                        {c.count ? <Pill tone="muted">{c.count}</Pill> : null}
-                      </div>
-                      {c.day ? (
-                        <div className="mt-2 grid gap-1 text-xs">
-                          <div className="text-white/70">In: {money(c.income, "INR")}</div>
-                          <div className="text-white/70">Out: {money(c.expense, "INR")}</div>
+                      {/* cover */}
+                      <div className="h-24 w-full bg-gradient-to-r from-zinc-100 to-zinc-50" />
+                      <div className="p-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="font-semibold leading-snug">{t.title}</div>
+                          <span className={cls("shrink-0 rounded-full border px-2 py-1 text-[11px]", badgeTone(activeView?.colorBy ?? "Status", t))}>
+                            {activeView?.colorBy === "Type" ? t.type : activeView?.colorBy === "Category" ? t.category : t.status}
+                          </span>
                         </div>
-                      ) : null}
-                    </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-[12px]">
+                          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-2 py-2">
+                            <div className="text-zinc-500">Date</div>
+                            <div className="font-medium">{t.date}</div>
+                          </div>
+                          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-2 py-2">
+                            <div className="text-zinc-500">Amount</div>
+                            <div className="font-medium">{money(t.amount, t.currency)}</div>
+                          </div>
+                          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-2 py-2">
+                            <div className="text-zinc-500">Type</div>
+                            <div className="font-medium">{t.type}</div>
+                          </div>
+                          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-2 py-2">
+                            <div className="text-zinc-500">Category</div>
+                            <div className="font-medium">{t.category}</div>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <span className={cls("rounded-full border px-2 py-1 text-[11px]", badgeToneByType(t.type))}>
+                            {t.type}
+                          </span>
+                          <span className={cls("rounded-full border px-2 py-1 text-[11px]", badgeToneByStatus(t.status))}>
+                            {t.status}
+                          </span>
+                          <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1 text-[11px] text-zinc-700">
+                            {t.eventType}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 flex items-center gap-2">
+                          <span className="text-[12px] text-zinc-600 truncate">
+                            {t.clientName ? `Client: ${t.clientName}` : t.vendorName ? `Vendor: ${t.vendorName}` : "—"}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 flex items-center gap-2">
+                          <button
+                            className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-900 hover:bg-white hover:text-zinc-900"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEdit(t.id);
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-900 hover:bg-white hover:text-zinc-900"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              duplicateTx(t.id);
+                            }}
+                          >
+                            Duplicate
+                          </button>
+                          <button
+                            className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-900 hover:bg-white hover:text-zinc-900"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (confirm("Delete this transaction?")) removeTx(t.id);
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </button>
                   ))}
-                </div>
-              </div>
-            ) : null}
 
-            {/* REPORTS */}
-            {tab === "Reports" ? (
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-                  <div className="text-sm font-semibold">By Category</div>
-                  <div className="mt-3 grid gap-2">
-                    {byCategory.map((r) => (
-                      <div
-                        key={r.category}
-                        className="rounded-2xl border border-white/10 bg-black/35 p-3 transition hover:bg-black hover:border-white/20"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="font-semibold">{r.category}</div>
-                          <Pill tone={toneForCategory(r.category)}>{money(r.net, "INR")}</Pill>
-                        </div>
-                        <div className="mt-2 flex flex-wrap gap-2 text-xs text-white/70">
-                          <span>Income: {money(r.income, "INR")}</span>
-                          <span>Expense: {money(r.expense, "INR")}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-                  <div className="text-sm font-semibold">Month Summary</div>
-                  <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3">
-                    {[
-                      { label: "Income", value: money(kpis.income, "INR") },
-                      { label: "Expense", value: money(kpis.expense, "INR") },
-                      { label: "Net", value: money(kpis.net, "INR") },
-                      { label: "AR", value: money(kpis.ar, "INR") },
-                      { label: "AP", value: money(kpis.ap, "INR") },
-                      { label: "Overdue", value: String(kpis.overdue) },
-                    ].map((k) => (
-                      <div
-                        key={k.label}
-                        className="rounded-2xl border border-white/10 bg-black/35 p-4 transition hover:bg-black hover:border-white/20"
-                      >
-                        <div className="text-xs text-white/55">{k.label}</div>
-                        <div className="mt-1 text-sm font-semibold">{k.value}</div>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="mt-4 rounded-2xl border border-white/10 bg-black/35 p-4">
-                    <div className="text-xs text-white/55">Export</div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      <Btn variant="outline" onClick={exportCSV}>
-                        Export CSV
-                      </Btn>
-                      <Btn onClick={exportExcel}>Export Excel</Btn>
+                  {!filtered.length ? (
+                    <div className="col-span-full rounded-2xl border border-zinc-200 bg-white p-10 text-center text-zinc-500">
+                      No cards found. Click <span className="font-semibold">+ Add</span> to create a transaction.
                     </div>
-                  </div>
+                  ) : null}
                 </div>
-              </div>
-            ) : null}
+              )}
+
+              {/* Floating + button like Airtable */}
+              <button
+                onClick={openAdd}
+                className="fixed bottom-7 right-7 h-14 w-14 rounded-full bg-black text-white shadow-xl transition hover:scale-[1.03]"
+                title="Add transaction"
+              >
+                <span className="text-2xl leading-none">+</span>
+              </button>
+            </div>
           </div>
-        </main>
+        </div>
       </div>
 
-      {/* ADD/EDIT MODAL */}
+      {/* Add/Edit Modal */}
       <Modal
-        open={open}
-        title={editing ? "Edit transaction" : "Add transaction"}
-        onClose={() => setOpen(false)}
+        open={showTxModal}
+        title={editingId ? "Edit transaction" : "Add transaction"}
+        onClose={() => {
+          setShowTxModal(false);
+          setEditingId(null);
+        }}
         footer={
           <div className="flex items-center justify-end gap-2">
-            <Btn variant="outline" onClick={() => setOpen(false)}>
+            <HoverBtn
+              variant="outline"
+              onClick={() => {
+                setShowTxModal(false);
+                setEditingId(null);
+              }}
+            >
               Cancel
-            </Btn>
-            <Btn onClick={saveTx}>{editing ? "Save" : "Add"}</Btn>
+            </HoverBtn>
+            <HoverBtn onClick={saveTx}>{editingId ? "Save changes" : "Create"}</HoverBtn>
           </div>
         }
       >
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-12">
-          <div className="md:col-span-6">
-            <div className="mb-1 text-xs text-white/55">Title</div>
-            <Input value={form.title} onChange={(v) => setForm((p) => ({ ...p, title: v }))} placeholder="e.g., Vendor payment — Decor" />
-          </div>
+        {!form ? null : (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <Field label="Title">
+                <Input value={form.title} onChange={(v) => setForm((p) => (p ? { ...p, title: v } : p))} placeholder="Ex: Vendor payment — Decor" />
+              </Field>
+            </div>
 
-          <div className="md:col-span-3">
-            <div className="mb-1 text-xs text-white/55">Date</div>
-            <Input value={form.date} onChange={(v) => setForm((p) => ({ ...p, date: v }))} type="date" />
-          </div>
+            <Field label="Date">
+              <Input value={form.date} onChange={(v) => setForm((p) => (p ? { ...p, date: v } : p))} placeholder="YYYY-MM-DD" />
+            </Field>
 
-          <div className="md:col-span-3">
-            <div className="mb-1 text-xs text-white/55">Due date</div>
-            <Input value={form.dueDate || ""} onChange={(v) => setForm((p) => ({ ...p, dueDate: v }))} type="date" />
-          </div>
+            <Field label="Due date (optional)">
+              <Input value={form.dueDate ?? ""} onChange={(v) => setForm((p) => (p ? { ...p, dueDate: v || undefined } : p))} placeholder="YYYY-MM-DD" />
+            </Field>
 
-          <div className="md:col-span-3">
-            <div className="mb-1 text-xs text-white/55">Type</div>
-            <Select value={form.type} onChange={(v) => setForm((p) => ({ ...p, type: v as TxType }))} options={TX_TYPES.map((t) => ({ value: t, label: t }))} />
-          </div>
+            <Field label="Type">
+              <Select
+                value={form.type}
+                onChange={(v) => setForm((p) => (p ? { ...p, type: v as TxType } : p))}
+                options={TX_TYPES.map((x) => ({ value: x, label: x }))}
+              />
+            </Field>
 
-          <div className="md:col-span-3">
-            <div className="mb-1 text-xs text-white/55">Status</div>
-            <Select value={form.status} onChange={(v) => setForm((p) => ({ ...p, status: v as TxStatus }))} options={TX_STATUSES.map((s) => ({ value: s, label: s }))} />
-          </div>
+            <Field label="Status">
+              <Select
+                value={form.status}
+                onChange={(v) => setForm((p) => (p ? { ...p, status: v as TxStatus } : p))}
+                options={TX_STATUSES.map((x) => ({ value: x, label: x }))}
+              />
+            </Field>
 
-          <div className="md:col-span-3">
-            <div className="mb-1 text-xs text-white/55">Category</div>
-            <Select value={form.category} onChange={(v) => setForm((p) => ({ ...p, category: v as TxCategory }))} options={CATEGORIES.map((c) => ({ value: c, label: c }))} />
-          </div>
+            <Field label="Amount">
+              <Input
+                value={String(form.amount)}
+                onChange={(v) => setForm((p) => (p ? { ...p, amount: parseNum(v, 0) } : p))}
+                placeholder="0"
+                type="number"
+              />
+            </Field>
 
-          <div className="md:col-span-3">
-            <div className="mb-1 text-xs text-white/55">Method</div>
-            <Select value={form.paymentMethod} onChange={(v) => setForm((p) => ({ ...p, paymentMethod: v as PayMethod }))} options={METHODS.map((m) => ({ value: m, label: m }))} />
-          </div>
+            <Field label="Currency">
+              <Select
+                value={form.currency}
+                onChange={(v) => setForm((p) => (p ? { ...p, currency: v as Currency } : p))}
+                options={CURRENCIES.map((x) => ({ value: x, label: x }))}
+              />
+            </Field>
 
-          <div className="md:col-span-4">
-            <div className="mb-1 text-xs text-white/55">Amount</div>
-            <Input
-              value={String(form.amount)}
-              onChange={(v) => setForm((p) => ({ ...p, amount: Number(String(v).replace(/,/g, "")) || 0 }))}
-              type="number"
-            />
-          </div>
+            <Field label="Category">
+              <Select
+                value={form.category}
+                onChange={(v) => setForm((p) => (p ? { ...p, category: v as TxTag } : p))}
+                options={TAGS.map((x) => ({ value: x, label: x }))}
+              />
+            </Field>
 
-          <div className="md:col-span-2">
-            <div className="mb-1 text-xs text-white/55">Currency</div>
-            <Select value={form.currency} onChange={(v) => setForm((p) => ({ ...p, currency: v as Currency }))} options={CURRENCIES.map((c) => ({ value: c, label: c }))} />
-          </div>
+            <Field label="Event type">
+              <Select
+                value={form.eventType}
+                onChange={(v) => setForm((p) => (p ? { ...p, eventType: v as EventType } : p))}
+                options={EVENT_TYPES.map((x) => ({ value: x, label: x }))}
+              />
+            </Field>
 
-          <div className="md:col-span-6">
-            <div className="mb-1 text-xs text-white/55">Event</div>
-            <Input value={form.eventTitle || ""} onChange={(v) => setForm((p) => ({ ...p, eventTitle: v }))} placeholder="Optional" />
-          </div>
+            <Field label="Payment method">
+              <Select
+                value={form.paymentMethod}
+                onChange={(v) => setForm((p) => (p ? { ...p, paymentMethod: v as PayMethod } : p))}
+                options={METHODS.map((x) => ({ value: x, label: x }))}
+              />
+            </Field>
 
-          <div className="md:col-span-6">
-            <div className="mb-1 text-xs text-white/55">Client</div>
-            <Input value={form.clientName || ""} onChange={(v) => setForm((p) => ({ ...p, clientName: v }))} placeholder="Optional" />
-          </div>
+            <Field label="Client name (optional)">
+              <Input value={form.clientName ?? ""} onChange={(v) => setForm((p) => (p ? { ...p, clientName: v || undefined } : p))} placeholder="Client" />
+            </Field>
 
-          <div className="md:col-span-6">
-            <div className="mb-1 text-xs text-white/55">Vendor</div>
-            <Input value={form.vendorName || ""} onChange={(v) => setForm((p) => ({ ...p, vendorName: v }))} placeholder="Optional" />
-          </div>
+            <Field label="Vendor name (optional)">
+              <Input value={form.vendorName ?? ""} onChange={(v) => setForm((p) => (p ? { ...p, vendorName: v || undefined } : p))} placeholder="Vendor" />
+            </Field>
 
-          <div className="md:col-span-3">
-            <div className="mb-1 text-xs text-white/55">Invoice</div>
-            <Input value={form.invoiceNo || ""} onChange={(v) => setForm((p) => ({ ...p, invoiceNo: v }))} placeholder="Optional" />
-          </div>
+            <div className="md:col-span-2">
+              <Field label="Event title (optional)">
+                <Input value={form.eventTitle ?? ""} onChange={(v) => setForm((p) => (p ? { ...p, eventTitle: v || undefined } : p))} placeholder="Ex: Wedding — Pal" />
+              </Field>
+            </div>
 
-          <div className="md:col-span-3">
-            <div className="mb-1 text-xs text-white/55">Reference</div>
-            <Input value={form.referenceId || ""} onChange={(v) => setForm((p) => ({ ...p, referenceId: v }))} placeholder="Optional" />
-          </div>
+            <Field label="Invoice no (optional)">
+              <Input value={form.invoiceNo ?? ""} onChange={(v) => setForm((p) => (p ? { ...p, invoiceNo: v || undefined } : p))} placeholder="INV-1001" />
+            </Field>
 
-          <div className="md:col-span-12">
-            <div className="mb-1 text-xs text-white/55">Notes</div>
-            <textarea
-              value={form.notes || ""}
-              onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
-              rows={4}
-              className="w-full rounded-2xl border border-white/12 bg-black/50 p-3 text-sm text-white outline-none transition hover:border-white/25 focus:border-white/30"
-              placeholder="Optional"
-            />
+            <Field label="Reference id (optional)">
+              <Input value={form.referenceId ?? ""} onChange={(v) => setForm((p) => (p ? { ...p, referenceId: v || undefined } : p))} placeholder="UTR / Txn id" />
+            </Field>
+
+            <div className="md:col-span-2">
+              <Field label="Notes (optional)">
+                <TextArea value={form.notes ?? ""} onChange={(v) => setForm((p) => (p ? { ...p, notes: v || undefined } : p))} placeholder="Extra details..." />
+              </Field>
+            </div>
           </div>
-        </div>
+        )}
       </Modal>
     </div>
   );
